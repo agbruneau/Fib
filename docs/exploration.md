@@ -80,3 +80,23 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
   - Avec l'oracle, les quatre implémentations sont passées au vert dès le premier lancement de `npm run check`. Les sondes jetables des agents avaient fait leur travail, et l'oracle réel n'a révélé aucun écart.
 - **Friction** : exiger une copie conforme de l'OEIS était plus fort que nécessaire. Quand le téléchargement a été refusé, cette contrainte a bloqué les quatre tickets.
 - **À changer** : exiger de l'oracle une propriété vérifiable (la définition de la suite) plutôt qu'une provenance.
+
+## Bilan au 2026-10-10
+
+| Skill | Usage |
+|---|---|
+| `/setup-matt-pocock-skills` | utilisée : tracker GitHub, étiquettes, docs du domaine |
+| `/grill-with-docs` (`grilling`, `domain-modeling`) | utilisée : glossaire, ADR-0001 et ADR-0002, PRD éprouvé |
+| `/to-spec` | utilisée : spec #1 |
+| `/to-tickets` | utilisée : tickets #2 à #5, avec dépendances natives |
+| `tdd` | utilisée : catalogue de cas, puis cycles des quatre `fib-dev` |
+| `/implement` | remplacée par l'agent `fib-dev`, qui applique `tdd` directement |
+| `resolving-merge-conflicts` | non nécessaire : aucune fusion n'a conflicté |
+| `research`, `prototype` | non utilisées; un `prototype` aurait détecté plus tôt le piège de `go run` |
+| `/code-review`, `diagnosing-bugs`, `/improve-codebase-architecture`, `/handoff` | à venir (étapes 8 à 11 du PRD) |
+
+Trois leçons :
+
+1. **Un catalogue de cas avant le code** a fait converger quatre implémentations indépendantes. Elles sont passées au vert d'un seul coup quand l'oracle est arrivé.
+2. **Les sondes par sous-agents valent le coût quand elles exécutent**, plus que quand elles lisent de la doc. Le piège de `go run`, la toolchain MSVC et les fins de ligne CRLF ne sont apparus qu'à l'exécution.
+3. **Les données externes sont un prérequis à traiter avant les agents.** L'oracle bloqué a immobilisé les quatre tickets.

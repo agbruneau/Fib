@@ -1,6 +1,6 @@
 # PRD — Fib : calculateur Fibonacci académique en quatre langages
 
-Version 1.5 · 2026-10-10 · André-Guy Bruneau. Révisée par `/grill-with-docs`, par un audit, par le catalogue de cas de test, puis par l'implémentation des tickets #2 à #5 : le vocabulaire est dans `CONTEXT.md`, les décisions durables dans `docs/adr/`.
+Version 1.6 · 2026-10-10 · André-Guy Bruneau. Révisée par `/grill-with-docs`, par un audit, par le catalogue de cas de test, puis par l'implémentation des tickets #2 à #5 : le vocabulaire est dans `CONTEXT.md`, les décisions durables dans `docs/adr/`.
 
 ## 1. Contexte et objectifs
 
@@ -120,7 +120,7 @@ Durée indicative du calcul itératif de F(100 000) sur la machine de développe
 ```
 Fib/
 ├── README.md, PRD.md, CLAUDE.md, CONTEXT.md, .gitignore
-├── docs/adr/, docs/agents/, docs/cas-de-test.md, docs/exploration.md
+├── docs/adr/ (0001 à 0003), docs/agents/, docs/cas-de-test.md, docs/exploration.md
 ├── contracts/
 │   ├── b000045.txt      oracle : F(0) … F(2000), au format du b-file OEIS A000045
 │   ├── generer_oracle.py  génère l'oracle par la formule de Binet
@@ -168,7 +168,7 @@ Le chemin de la discordance (code 3) dans la CLI n'a pas de test automatique, pu
 
 - **A1** — Chaque ticket de langage : les cas ORA, les cas BIB de son langage et tous les cas CLI de son identifiant passent, donc `npm run check:<id>` et `npm run contract` sont verts sur `main`. Le projet : `npm run check` passe sous Windows 11 une fois les quatre implémentations livrées.
 - **A2** — Aucune dépendance hors de celles du § 5.
-- **A3** — Environ 200 lignes de code par langage, tests exclus. Un dépassement se justifie dans un ADR.
+- **A3** — Environ 200 lignes de code par langage, tests exclus. Un dépassement se justifie dans un ADR. Mesuré : TypeScript 151, Python 158, Rust 205, Go 255 (ADR-0003).
 - **A4** — `docs/exploration.md` contient une entrée pour chaque skill du § 9 réellement utilisée.
 
 ## 8. Hors périmètre
@@ -177,7 +177,7 @@ FFT, GMP, Strassen, parallélisme, TUI, mode serveur, calibration et seuils, lim
 
 ## 9. Démarche d'exploration des skills
 
-L'orchestrateur est la session principale (Opus 5.5 en `ultracode`); le code revient au sous-agent `fib-dev` (Sonnet 5.5). Voir `CLAUDE.md`. Les étapes 0, 1, 4, 5 et 6 sont faites : les quatre implémentations passent `npm run check`.
+L'orchestrateur est la session principale (Opus 5.5 en `ultracode`); le code revient au sous-agent `fib-dev` (Sonnet 5.5). Voir `CLAUDE.md`. Les étapes 0, 1 et 4 à 7 sont faites : les quatre implémentations passent `npm run check`. Les étapes 2 et 3 n'ont pas servi. Les étapes 8 à 11 restent à faire.
 
 | # | Étape | Skill | Livrable |
 |---|---|---|---|

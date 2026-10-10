@@ -22,9 +22,9 @@ Ce dépôt demande la délégation : la règle globale « ne lance un sous-agent
 
 - `npm run check:<go|rust|ts|py>` : un langage, avec son contrat.
 - `npm run contract` : le contrat des implémentations présentes.
-- `npm run check` : les quatre langages. Il ne passe qu'une fois les quatre livrés.
+- `npm run check` : les quatre langages, vert depuis le 2026-10-10.
 
-Les scripts vivent dans `package.json`, créé par le ticket « contrat » (PRD § 6). Sous Windows, Rust passe par une override rustup GNU propre à ce dossier (PRD § 5).
+Les scripts vivent dans `package.json`, créé par le ticket « contrat » (PRD § 6). Sous Windows, Rust passe par une override rustup GNU propre à ce dossier (PRD § 5). L'oracle se régénère avec `python contracts/generer_oracle.py` (`contracts/README.md`).
 
 ## Agent skills
 

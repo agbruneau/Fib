@@ -13,8 +13,16 @@ Fib est un banc d'essai académique. Il sert à explorer, avec Claude Code, les 
 | Catalogue de cas de test | fait |
 | Contrat commun et implémentation TypeScript ([agbruneau/Fib#2](https://github.com/agbruneau/Fib/issues/2)) | fait |
 | Go ([agbruneau/Fib#3](https://github.com/agbruneau/Fib/issues/3)), Rust ([agbruneau/Fib#4](https://github.com/agbruneau/Fib/issues/4)), Python ([agbruneau/Fib#5](https://github.com/agbruneau/Fib/issues/5)) | fait |
+| Revue de code (`/code-review`) | à faire |
 
-Les quatre implémentations sont livrées et passent `npm run check` sous Windows 11.
+Les quatre implémentations sont livrées et passent `npm run check` sous Windows 11 : chaque cas du catalogue passe dans chaque langage.
+
+| Implémentation | Grand entier | Lignes hors tests |
+|---|---|---|
+| TypeScript | `bigint` natif | 151 |
+| Python | `int` natif | 158 |
+| Rust | `num-bigint` 0.5 | 205 |
+| Go | `math/big` | 255 ([ADR-0003](docs/adr/0003-taille-de-l-implementation-go.md)) |
 
 ## Utilisation
 
@@ -41,7 +49,7 @@ iterative 0.004 ms
 matrix 0.015 ms
 ```
 
-Les durées affichées sont illustratives.
+Les durées affichées sont illustratives. Ici, `fib` désigne l'une des quatre commandes de la section suivante.
 
 | Algorithme | Principe | Coût |
 |---|---|---|
@@ -63,7 +71,7 @@ Depuis la racine du dépôt :
 | Langage | Commande |
 |---|---|
 | TypeScript | `node ts/src/cli.ts 10` |
-| Go | `go -C go build -o ../.build/fib ./cmd/fib`, puis `.build/fib 10` |
+| Go | `go -C go build -o ../.build/fib.exe ./cmd/fib`, puis `.build/fib.exe 10` (sans `.exe` hors de Windows) |
 | Rust | `cargo run -q --release --manifest-path rust/Cargo.toml -- 10` |
 | Python | `python python/fib.py 10` |
 
@@ -128,7 +136,7 @@ Les quatre implémentations ne partagent aucun code ([ADR-0001](docs/adr/0001-im
 - [PRD.md](PRD.md) : exigences, contrat de la CLI, pièges vérifiés par langage, démarche.
 - [CONTEXT.md](CONTEXT.md) : glossaire du domaine (indice, terme, liste, comparaison, discordance, écart, oracle…).
 - [docs/cas-de-test.md](docs/cas-de-test.md) : les cas de test, leurs attendus, leurs sources et l'ordre des cycles TDD.
-- [docs/adr/](docs/adr/) : [implémentations indépendantes](docs/adr/0001-implementations-independantes.md) et [analyse manuelle des arguments](docs/adr/0002-analyse-manuelle-des-arguments.md).
+- [docs/adr/](docs/adr/) : [implémentations indépendantes](docs/adr/0001-implementations-independantes.md), [analyse manuelle des arguments](docs/adr/0002-analyse-manuelle-des-arguments.md) et [taille de l'implémentation Go](docs/adr/0003-taille-de-l-implementation-go.md).
 - [docs/exploration.md](docs/exploration.md) : ce que chaque skill a apporté et ce qu'elle a coûté.
 
 ## Démarche
