@@ -1,6 +1,6 @@
 # PRD — Fib : calculateur Fibonacci académique en quatre langages
 
-Version 1.2 · 2026-10-10 · André-Guy Bruneau. Révisée par `/grill-with-docs`, puis par un audit : le vocabulaire est dans `CONTEXT.md`, les décisions durables dans `docs/adr/`.
+Version 1.3 · 2026-10-10 · André-Guy Bruneau. Révisée par `/grill-with-docs`, par un audit, puis par le catalogue de cas de test : le vocabulaire est dans `CONTEXT.md`, les décisions durables dans `docs/adr/`.
 
 ## 1. Contexte et objectifs
 
@@ -46,7 +46,7 @@ Le vocabulaire (indice, terme, liste, borne, algorithme, comparaison, discordanc
 Chaque implémentation analyse ses arguments à la main selon cette grammaire (ADR-0002). Options et indice peuvent venir dans n'importe quel ordre.
 
 1. Avant toute autre analyse : si un argument vaut exactement `--help` ou `-h`, y compris à la place de la valeur de `--algo`, le texte d'usage va sur stdout, code 0, quels que soient les autres arguments.
-2. `--algo X` ou `--algo=X`, avec X parmi `iterative`, `matrix`, `fast` ou `all`. Si l'option est répétée, la dernière gagne. Sans valeur, c'est une erreur d'usage.
+2. `--algo X` ou `--algo=X`, avec X exactement l'un de `iterative`, `matrix`, `fast` ou `all`, casse comprise. Dans la forme `--algo X`, X est l'argument suivant, quel qu'il soit : `--algo --list 5` est une erreur. Si l'option est répétée, la dernière gagne. Sans valeur, ou avec une valeur vide, c'est une erreur d'usage.
 3. `--list` et `--time` sont des drapeaux; les répéter ne change rien.
 4. Tout autre argument qui commence par `-` est une option inconnue, `-1` compris.
 5. Il reste exactement un argument, l'indice `N`. Il doit correspondre à `^[0-9]+$` (chiffres ASCII) **avant toute conversion**. Les zéros de tête sont permis : `007` vaut 7.
@@ -119,8 +119,8 @@ Durée indicative du calcul itératif de F(100 000) sur la machine de développe
 
 ```
 Fib/
-├── PRD.md, CLAUDE.md, CONTEXT.md, .gitignore
-├── docs/adr/, docs/agents/, docs/exploration.md
+├── README.md, PRD.md, CLAUDE.md, CONTEXT.md, .gitignore
+├── docs/adr/, docs/agents/, docs/cas-de-test.md, docs/exploration.md
 ├── contracts/
 │   ├── b000045.txt      oracle : copie du b-file OEIS A000045
 │   ├── README.md        source, date de téléchargement, licence
@@ -151,37 +151,19 @@ Les quatre implémentations sont indépendantes (ADR-0001) : la seule frontière
 
 - `contracts/b000045.txt` est une copie du b-file de N. J. A. Sloane, « The first 2000 Fibonacci numbers » (<https://oeis.org/A000045/b000045.txt>). Chaque ligne a la forme `n F(n)`, avec une espace, pour n = 0..2000, sans en-tête (lu sur la page OEIS le 2026-10-10; les octets bruts, fins de ligne comprises, n'ont pas été inspectés). `.gitattributes` normalise les fins de ligne en LF. Les lecteurs ignorent les lignes vides.
 - `contracts/README.md` en donne l'attribution exigée par la licence CC BY-SA 4.0 : « The On-Line Encyclopedia of Integer Sequences », avec le lien.
-- Avant tout cas, le test de contrat vérifie l'oracle lui-même : 2 001 lignes, indices consécutifs de 0 à 2000, F(0) = 0, F(1) = 1, et chaque terme égal à la somme des deux précédents.
 - Les termes attendus viennent de l'oracle ou de faits mathématiques indépendants du code. Ils ne sont jamais recalculés comme le fait le code (anti-pattern « tautologique » de `tdd`).
 
-**Bibliothèque**, dans chaque langage :
+**Cas de test** : `docs/cas-de-test.md` est la source unique des cas. Il donne, pour chacun, l'attendu et sa source, ainsi que l'ordre des cycles TDD.
 
-- les trois algorithmes égalent l'oracle pour n = 0..2000;
-- `fibList(2000)` égale l'oracle;
-- pour n = 100 000, les trois algorithmes concordent et le terme compte 20 899 chiffres;
-- un algorithme inconnu est rejeté, ainsi que n < 0 là où le type l'admet (TypeScript, Python).
+- ORA-01 à ORA-06 : vérification de l'oracle par le test de contrat, avant tout cas CLI.
+- BIB-01 à BIB-14 : la bibliothèque, dans chaque langage (seam 1).
+- 82 cas CLI : le contrat de la CLI, joué sur chaque implémentation (seam 2). Des assertions communes s'appliquent à chaque cas : code de sortie, stdout octet pour octet, stderr, format ASCII.
 
-**Contrat CLI** : chaque cas s'exécute dans chaque implémentation; stdout est comparé octet par octet.
-
-| Arguments | Attendu |
-|---|---|
-| `0`, `1`, `2`, `10`, `93`, `94`, `1000`, `2000` | le terme de l'oracle, code 0 |
-| `--algo X 2000` pour chaque X; `--algo=matrix 2000`; `2000 --algo matrix`; `--algo fast --algo matrix 2000` | le terme de l'oracle, code 0 |
-| `007`; `00000000000000000000000000010` | F(7); F(10) |
-| `--list 20` | les 21 premières lignes de l'oracle, code 0 |
-| `--list 0`; `--list 1` | `0\n`; `0\n1\n`, code 0 |
-| `--list 10000` | 10 001 lignes; les 2 001 premières égalent l'oracle; la dernière compte 2 090 chiffres |
-| `100000` | 20 899 chiffres, congru à F(1696) modulo 2048 et à F(1000) modulo 1000 (périodes de Pisano 3 072 et 1 500) |
-| `--time --algo all 50` | stdout `12586269025\n`; stderr : exactement 3 lignes `fast …`, `iterative …`, `matrix …`, chacune de la forme `^[a-z]+ [0-9]+\.[0-9]{3} ms$` |
-| `--time --list 5` | stderr : exactement 1 ligne `iterative …` |
-| `--help`; `-h`; `--help --bogus`; `5 -h`; `--algo --help` | le texte d'usage exact, code 0 |
-| aucun argument; `""`; `-1`; `+5`; `abc`; `1.5`; `1_000`; `0x10`; `٣`; `100001`; `99999999999999999999`; `--list 10001`; `--algo`; `--algo= 5`; `--algo bogus 5`; `--list --algo fast 5`; `--bogus 5`; `-`; `-- 5`; `5 6` | code 2, stdout vide, stderr réduit à une ligne qui commence par `fib: ` |
-
-La discordance (code 3) ne peut pas être provoquée par la CLI. Les tests de bibliothèque la couvrent en vérifiant que les trois algorithmes concordent.
+Le chemin de la discordance (code 3) dans la CLI n'a pas de test automatique, puisque aucun cas ne peut la provoquer. BIB-08 vérifie que les algorithmes concordent.
 
 **Acceptation globale**
 
-- **A1** — Chaque ticket de langage : `npm run check:<id>` et `npm run contract` passent sur `main`. Le projet : `npm run check` passe sous Windows 11 une fois les quatre implémentations livrées.
+- **A1** — Chaque ticket de langage : les cas ORA, les cas BIB de son langage et tous les cas CLI de son identifiant passent, donc `npm run check:<id>` et `npm run contract` sont verts sur `main`. Le projet : `npm run check` passe sous Windows 11 une fois les quatre implémentations livrées.
 - **A2** — Aucune dépendance hors de celles du § 5.
 - **A3** — Environ 200 lignes de code par langage, tests exclus. Un dépassement se justifie dans un ADR.
 - **A4** — `docs/exploration.md` contient une entrée pour chaque skill du § 9 réellement utilisée.
@@ -192,7 +174,7 @@ FFT, GMP, Strassen, parallélisme, TUI, mode serveur, calibration et seuils, lim
 
 ## 9. Démarche d'exploration des skills
 
-L'orchestrateur est la session principale (Opus 5.5 en `ultracode`); le code revient au sous-agent `fib-dev` (Sonnet 5.5). Voir `CLAUDE.md`. Les étapes 0 et 1 sont faites.
+L'orchestrateur est la session principale (Opus 5.5 en `ultracode`); le code revient au sous-agent `fib-dev` (Sonnet 5.5). Voir `CLAUDE.md`. Les étapes 0, 1, 4 et 5 sont faites, et le catalogue de cas de test existe.
 
 | # | Étape | Skill | Livrable |
 |---|---|---|---|

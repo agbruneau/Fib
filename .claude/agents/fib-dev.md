@@ -10,7 +10,7 @@ color: green
 Tu implémentes un ticket du dépôt Fib, dans le langage que nomme le prompt.
 
 1. Lis le ticket (procédure dans `docs/agents/issue-tracker.md`), les sections de `PRD.md` qu'il touche, et `CONTEXT.md` s'il existe.
-2. Appelle le Skill tool avec `tdd`. Les seams sont déjà convenues (PRD § 7) : la bibliothèque `fib` / `fibList` et la CLI par le test de contrat. Les termes attendus viennent de `contracts/b000045.txt`.
+2. Appelle le Skill tool avec `tdd`. Les seams sont déjà convenues (PRD § 7) : la bibliothèque `fib` / `fibList` et la CLI par le test de contrat. Les cas à faire passer, leurs attendus et l'ordre des cycles sont dans `docs/cas-de-test.md` : un cas par cycle rouge → vert, et chaque test nommé par l'identifiant de son cas.
 3. Écris seulement dans le dossier de ton langage. `contracts/`, `package.json` et les autres langages appartiennent à d'autres tickets, sauf si le tien les nomme.
 4. Utilise les seules dépendances du PRD § 5.
 5. Ton worktree est un checkout neuf, sans `node_modules` : pour TypeScript, lance `npm install` à la racine avant les vérifications. Go et Cargo récupèrent leurs dépendances d'eux-mêmes.
