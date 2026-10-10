@@ -100,6 +100,7 @@ const I: Case[] = [
   ['CLI-I13', 'la borne s’applique malgré les zéros de tête', ['00000000000000000000000000100001'], 'erreur'],
   ['CLI-I14', 'un indice trop grand pour un entier natif est une erreur, pas une panique', ['99999999999999999999'], 'erreur'],
   ['CLI-I15', 'deux indices sont refusés', ['5', '6'], 'erreur'],
+  ['CLI-I16', 'un saut de ligne après l’indice est refusé', ['5\n'], 'erreur'],
 ];
 
 const A: Case[] = [

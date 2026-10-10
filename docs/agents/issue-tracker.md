@@ -14,15 +14,15 @@ Les issues et les specs de ce dépôt sont des issues GitHub de `agbruneau/Fib`.
 
 `gh` déduit le dépôt de `git remote -v` quand il s'exécute dans un clone.
 
-## Statut en cours
+## Statuts
 
-GitHub n'a que deux états, Open et Closed. Le statut « en cours » est l'étiquette `in-progress` :
+GitHub n'a que deux états, Open et Closed. Deux étiquettes précisent l'état d'un ticket ouvert, qui porte l'une ou l'autre, jamais les deux :
 
-- **Open** : sans `in-progress`. Le ticket attend qu'on le prenne.
-- **In Progress** : `gh issue edit <numéro> --add-label in-progress`, posée au lancement du travail (agent ou humain), avant toute écriture.
-- **Closed** : `gh issue edit <numéro> --remove-label in-progress`, puis `gh issue close <numéro> --comment "..."`.
+- **Waiting** (`waiting`) : le ticket attend son exécution. Soit personne ne l'a encore pris, soit le travail attend un prérequis externe; dans ce cas, un commentaire nomme le prérequis.
+- **In Progress** (`in-progress`) : `gh issue edit <numéro> --remove-label waiting --add-label in-progress`, au lancement du travail (agent ou humain), avant toute écriture.
+- **Closed** : `gh issue edit <numéro> --remove-label in-progress --remove-label waiting`, puis `gh issue close <numéro> --comment "..."`.
 
-Un ticket `in-progress` sort de la frontière : personne d'autre ne le prend.
+Un ticket `in-progress` sort de la frontière : personne d'autre ne le prend. Un travail qui s'arrête sans pouvoir fermer son ticket le repasse à `waiting`, avec un commentaire qui dit ce qu'il attend.
 
 ## Pull requests as a triage surface
 

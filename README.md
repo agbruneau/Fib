@@ -11,10 +11,10 @@ Fib est un banc d'essai académique. Il sert à explorer, avec Claude Code, les 
 | PRD, glossaire, décisions (ADR) | fait |
 | Spec ([agbruneau/Fib#1](https://github.com/agbruneau/Fib/issues/1)) et tickets | fait |
 | Catalogue de cas de test | fait |
-| Contrat commun et implémentation TypeScript ([agbruneau/Fib#2](https://github.com/agbruneau/Fib/issues/2)) | à faire, aucun prérequis |
-| Go ([agbruneau/Fib#3](https://github.com/agbruneau/Fib/issues/3)), Rust ([agbruneau/Fib#4](https://github.com/agbruneau/Fib/issues/4)), Python ([agbruneau/Fib#5](https://github.com/agbruneau/Fib/issues/5)) | à faire, en parallèle après #2 |
+| Contrat commun et implémentation TypeScript ([agbruneau/Fib#2](https://github.com/agbruneau/Fib/issues/2)) | implémenté, en attente de l'oracle |
+| Go ([agbruneau/Fib#3](https://github.com/agbruneau/Fib/issues/3)), Rust ([agbruneau/Fib#4](https://github.com/agbruneau/Fib/issues/4)), Python ([agbruneau/Fib#5](https://github.com/agbruneau/Fib/issues/5)) | implémentés, en attente de l'oracle |
 
-Aucune implémentation n'existe encore : les commandes ci-dessous fonctionneront à mesure que les tickets seront livrés.
+Les quatre implémentations sont livrées. Leur vérification complète attend l'oracle OEIS (`contracts/b000045.txt`), dont le téléchargement a été bloqué. Sans lui, dans chaque langage, les cas qui lisent un terme de l'oracle échouent avec « oracle absent »; tous les autres passent.
 
 ## Utilisation
 

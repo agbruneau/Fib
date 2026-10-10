@@ -137,6 +137,7 @@ Chacun de ces cas attend une erreur.
 | CLI-I13 | `00000000000000000000000000100001` | borne dépassée malgré les zéros de tête |
 | CLI-I14 | `99999999999999999999` | trop grand pour un uint64 : erreur, pas une panique |
 | CLI-I15 | `5 6` | deux indices |
+| CLI-I16 | `5` suivi d'un saut de ligne, dans le même argument | le `$` d'une expression régulière Python accepte un `\n` final |
 
 ### 5.3 Algorithmes — A (F2, F3, règle 2)
 
@@ -243,13 +244,13 @@ Chacun de ces cas attend une erreur.
 | F6 — durées | D01–D08, L06 (aucune durée sans `--time`), V01 |
 | F7 — aide | H01–H07 |
 | F8 — bornes | T12, I12–I14, L06, L09 |
-| F9 — erreurs d'usage | I01–I15, A09–A16, L09–L14, D09–D11, H08–H10, U01–U03 |
+| F9 — erreurs d'usage | I01–I16, A09–A16, L09–L14, D09–D11, H08–H10, U01–U03 |
 | F10 — format des sorties | X-4 sur chaque cas, V02 |
 | Règle 1 — aide d'abord | H01–H10 |
 | Règle 2 — `--algo` | A06–A16, D04, D05 |
 | Règle 3 — drapeaux | L08, L14, D08, D10 |
 | Règle 4 — options inconnues | I11, A14, H08, H09, U01–U03 |
-| Règle 5 — indice | T10, T11, I01–I15 |
+| Règle 5 — indice | T10, T11, I01–I16 |
 | Règle 6 — `--list` sans `--algo` | L10–L12 |
 | Seam 1 — bibliothèque | BIB-01–BIB-14 |
 | Oracle | ORA-01–ORA-06 |

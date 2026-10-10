@@ -55,3 +55,20 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
   - Rédiger le catalogue a fait surgir des cas encore non couverts : la casse de `--algo FAST`, `-help` avec un seul tiret, `--list=5`, `--algo 5`, `--time abc`, la répétition de `--algo` (visible seulement avec `--time`), la locale et le forçage des couleurs. Il a aussi révélé une ambiguïté de la grammaire (`--algo --list 5`), tranchée dans le PRD 1.3.
 - **Friction** : la demande d'un catalogue exhaustif écrit d'avance heurte l'anti-pattern du découpage horizontal. Je l'ai résolu en traitant le catalogue comme un carnet de cycles ordonnés, chaque test n'étant écrit qu'à son cycle. Pour Go, Rust et Python, en revanche, le test de contrat existe d'avance : c'est une boucle externe d'acceptation, choisie en connaissance de cause.
 - **À changer** : rédiger le catalogue en même temps que le PRD. Ces trous seraient apparus pendant le grilling.
+
+## 2026-10-10 — Implémentation par `fib-dev` (`tdd`, étape 6)
+
+- **A aidé** :
+  - Le catalogue et le contrat commun ont fait converger les quatre implémentations : 54 cas verts dans chacune, avec le harnais du ticket #2, réutilisé tel quel par Go, Rust et Python.
+  - Les agents ont trouvé de vrais trous :
+    - la répétition de `--algo` avec une valeur invalide (cas CLI-A16);
+    - la discordance combinée à `--time`;
+    - le `$` de Python, qui accepte un saut de ligne final (cas CLI-I16);
+    - des indices négatifs qui font boucler `fast` en Go et `matrix` en Python.
+  - `worktree.baseRef: "head"` fonctionne : les worktrees sont partis du `main` local fusionné.
+- **Friction** :
+  - Le téléchargement de l'oracle a été refusé par les permissions, même après accord dans le chat. Aucun ticket n'a donc pu être vérifié en entier, et les cycles qui dépendaient de l'oracle ont été guidés par des sondes jetables.
+  - Les agents ne peuvent pas supprimer de fichiers : des sondes sont restées dans les worktrees Go et Rust.
+  - Un agent a été interrompu, puis repris à partir de son travail partiel.
+  - Le coût : environ un million de jetons et 40 minutes pour les trois langages en parallèle.
+- **À changer** : obtenir les données externes (l'oracle) avant de lancer les agents, idéalement à l'étape de la spec, et dire d'emblée aux agents de garder leurs sondes hors du dépôt. C'est maintenant une règle de `fib-dev`.

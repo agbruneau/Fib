@@ -105,7 +105,7 @@ Durée indicative du calcul itératif de F(100 000) sur la machine de développe
 
 ### Pièges vérifiés le 2026-10-10
 
-- **Tous les langages** : valider `N` par l'expression régulière avant de le convertir. `int()` de Python accepte `+5`, `1_000`, ` 5 ` et des chiffres non ASCII; `Number` et `BigInt` acceptent `+5`, ` 5` et `0x10`, et valent 0 pour la chaîne vide; `parse::<u64>()` de Rust accepte `+5`, tout comme `strconv.Atoi` de Go (mais pas `ParseUint`). Vérifié le 2026-10-10.
+- **Tous les langages** : valider `N` par l'expression régulière avant de le convertir. `int()` de Python accepte `+5`, `1_000`, ` 5 ` et des chiffres non ASCII; `Number` et `BigInt` acceptent `+5`, ` 5` et `0x10`, et valent 0 pour la chaîne vide; `parse::<u64>()` de Rust accepte `+5`, tout comme `strconv.Atoi` de Go (mais pas `ParseUint`). Vérifié le 2026-10-10. En Python, valider avec `re.fullmatch` : le `$` de `^[0-9]+$` accepte un saut de ligne final (cas CLI-I16).
 - **Python** : sous Windows, stdout et stderr écrivent `\r\n`. Appeler `sys.stdout.reconfigure(newline="\n")`, et de même pour stderr. `str()` d'un terme de plus de 4 300 chiffres lève `ValueError` : appeler `sys.set_int_max_str_digits(0)` au chargement du module.
 - **TypeScript** :
   - Le `package.json` racine doit déclarer `"type": "module"`, sans quoi tsc 7 refuse les imports ES.
@@ -175,7 +175,7 @@ FFT, GMP, Strassen, parallélisme, TUI, mode serveur, calibration et seuils, lim
 
 ## 9. Démarche d'exploration des skills
 
-L'orchestrateur est la session principale (Opus 5.5 en `ultracode`); le code revient au sous-agent `fib-dev` (Sonnet 5.5). Voir `CLAUDE.md`. Les étapes 0, 1, 4 et 5 sont faites, et le catalogue de cas de test existe.
+L'orchestrateur est la session principale (Opus 5.5 en `ultracode`); le code revient au sous-agent `fib-dev` (Sonnet 5.5). Voir `CLAUDE.md`. Les étapes 0, 1, 4, 5 et 6 sont faites, et le catalogue de cas de test existe. La vérification finale de l'étape 6 attend l'oracle.
 
 | # | Étape | Skill | Livrable |
 |---|---|---|---|

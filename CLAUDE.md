@@ -11,11 +11,11 @@ Ce dépôt demande la délégation : la règle globale « ne lance un sous-agent
 
 ## Boucle de livraison
 
-1. Prendre la frontière : les tickets `ready-for-agent`, sans `in-progress`, dont tous les bloqueurs sont fusionnés dans `main`.
-2. Poser `in-progress` sur le ticket (`docs/agents/issue-tracker.md`), puis lancer un `fib-dev` par ticket, en parallèle quand les langages diffèrent. Dans un workflow : `agent(prompt, { agentType: 'fib-dev', isolation: 'worktree' })`. Le prompt donne le numéro du ticket et le langage. Les worktrees partent du `HEAD` local (`worktree.baseRef: "head"` dans `.claude/settings.json`), donc le travail fusionné sur `main` y est visible sans push.
+1. Prendre la frontière : les tickets `ready-for-agent` marqués `waiting`, dont tous les bloqueurs sont fusionnés dans `main` et qui n'attendent aucun prérequis externe.
+2. Passer le ticket de `waiting` à `in-progress` (`docs/agents/issue-tracker.md`), puis lancer un `fib-dev` par ticket, en parallèle quand les langages diffèrent. Dans un workflow : `agent(prompt, { agentType: 'fib-dev', isolation: 'worktree' })`. Le prompt donne le numéro du ticket et le langage. Les worktrees partent du `HEAD` local (`worktree.baseRef: "head"` dans `.claude/settings.json`), donc le travail fusionné sur `main` y est visible sans push.
 3. Au retour, fusionner la branche dans `main` (conflit : skill `resolving-merge-conflicts`), puis lancer `npm run check:<id>` et `npm run contract`.
 4. `/code-review` depuis le commit d'avant la fusion. Un constat à corriger repart chez un `fib-dev` avec le rapport.
-5. Quand ces deux commandes sont vertes sur `main`, retirer `in-progress` et fermer le ticket.
+5. Quand ces deux commandes sont vertes sur `main`, retirer l'étiquette de statut et fermer le ticket. S'il manque un prérequis externe, repasser le ticket à `waiting`, avec un commentaire qui le nomme.
 6. Ajouter à `docs/exploration.md` le constat sur chaque skill utilisée (format : PRD § 9).
 
 ## Vérification
