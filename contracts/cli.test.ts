@@ -118,6 +118,7 @@ const A: Case[] = [
   ['CLI-A13', '--algo 5 prend 5 pour valeur, et l’indice manque', ['--algo', '5'], 'erreur'],
   ['CLI-A14', 'le nom de l’option est sensible à la casse', ['--Algo', 'fast', '5'], 'erreur'],
   ['CLI-A15', '--algo --list 5 prend --list pour valeur', ['--algo', '--list', '5'], 'erreur'],
+  ['CLI-A16', 'chaque occurrence de --algo doit être valide, même si une valide suit', ['--algo', 'bogus', '--algo', 'fast', '5'], 'erreur'],
 ];
 
 const L: Case[] = [
