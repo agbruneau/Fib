@@ -46,7 +46,7 @@ Valeurs de référence, vérifiées le 2026-10-10. En cas de doute, l'oracle et 
 
 ## 3. Oracle — ORA
 
-Le test de contrat vérifie l'oracle avant tout cas CLI. Si l'oracle échoue, aucun cas CLI n'est joué.
+Le test de contrat vérifie l'oracle avant tout cas CLI. Si l'oracle manque ou échoue, les cas CLI sont joués quand même : ceux dont l'attendu vient de l'oracle échouent avec le motif de l'oracle, les autres restent valables.
 
 | ID | Vérification | Source |
 |---|---|---|
@@ -157,6 +157,7 @@ Chacun de ces cas attend une erreur.
 | CLI-A13 | `--algo 5` | erreur : `5` devient la valeur de `--algo`, et l'indice manque | C |
 | CLI-A14 | `--Algo fast 5` | erreur : le nom de l'option est sensible à la casse | C |
 | CLI-A15 | `--algo --list 5` | erreur : `--list` devient la valeur de `--algo` | C |
+| CLI-A16 | `--algo bogus --algo fast 5` | erreur : chaque occurrence doit être valide, même si une occurrence valide suit | C |
 
 ### 5.4 Liste — L (F4, F5, F8, règles 3 et 6)
 
@@ -228,7 +229,7 @@ Chacun de ces cas attend une erreur.
 ## 6. Hors catalogue
 
 - **Hors contrat, donc non testé** : un stdout fermé avant la fin (`fib --list 10000 | head`) et un argument qui n'est pas de l'Unicode valide.
-- **Lacune connue** : aucun cas CLI ne peut provoquer une discordance, donc le chemin du code 3 dans la CLI n'a pas de test automatique. BIB-08 vérifie que les algorithmes concordent; la revue de code vérifie ce chemin.
+- **Lacune connue** : aucun cas CLI ne peut provoquer une discordance, donc le chemin du code 3 dans la CLI n'a pas de test automatique, et pas davantage la règle qui le restreint à une seule ligne `fib:` sans durée, même avec `--time`. BIB-08 vérifie que les algorithmes concordent; la revue de code vérifie ce chemin.
 
 ## 7. Traçabilité
 
@@ -242,10 +243,10 @@ Chacun de ces cas attend une erreur.
 | F6 — durées | D01–D08, L06 (aucune durée sans `--time`), V01 |
 | F7 — aide | H01–H07 |
 | F8 — bornes | T12, I12–I14, L06, L09 |
-| F9 — erreurs d'usage | I01–I15, A09–A15, L09–L14, D09–D11, H08–H10, U01–U03 |
+| F9 — erreurs d'usage | I01–I15, A09–A16, L09–L14, D09–D11, H08–H10, U01–U03 |
 | F10 — format des sorties | X-4 sur chaque cas, V02 |
 | Règle 1 — aide d'abord | H01–H10 |
-| Règle 2 — `--algo` | A06–A15, D04, D05 |
+| Règle 2 — `--algo` | A06–A16, D04, D05 |
 | Règle 3 — drapeaux | L08, L14, D08, D10 |
 | Règle 4 — options inconnues | I11, A14, H08, H09, U01–U03 |
 | Règle 5 — indice | T10, T11, I01–I15 |

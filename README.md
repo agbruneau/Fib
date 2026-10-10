@@ -10,7 +10,7 @@ Fib est un banc d'essai académique. Il sert à explorer, avec Claude Code, les 
 |---|---|
 | PRD, glossaire, décisions (ADR) | fait |
 | Spec ([agbruneau/Fib#1](https://github.com/agbruneau/Fib/issues/1)) et tickets | fait |
-| Catalogue de cas de test (102 cas) | fait |
+| Catalogue de cas de test | fait |
 | Contrat commun et implémentation TypeScript ([agbruneau/Fib#2](https://github.com/agbruneau/Fib/issues/2)) | à faire, aucun prérequis |
 | Go ([agbruneau/Fib#3](https://github.com/agbruneau/Fib/issues/3)), Rust ([agbruneau/Fib#4](https://github.com/agbruneau/Fib/issues/4)), Python ([agbruneau/Fib#5](https://github.com/agbruneau/Fib/issues/5)) | à faire, en parallèle après #2 |
 
@@ -127,7 +127,7 @@ Les quatre implémentations ne partagent aucun code ([ADR-0001](docs/adr/0001-im
 
 - [PRD.md](PRD.md) : exigences, contrat de la CLI, pièges vérifiés par langage, démarche.
 - [CONTEXT.md](CONTEXT.md) : glossaire du domaine (indice, terme, liste, comparaison, discordance, écart, oracle…).
-- [docs/cas-de-test.md](docs/cas-de-test.md) : les 102 cas de test, leurs attendus, leurs sources et l'ordre des cycles TDD.
+- [docs/cas-de-test.md](docs/cas-de-test.md) : les cas de test, leurs attendus, leurs sources et l'ordre des cycles TDD.
 - [docs/adr/](docs/adr/) : [implémentations indépendantes](docs/adr/0001-implementations-independantes.md) et [analyse manuelle des arguments](docs/adr/0002-analyse-manuelle-des-arguments.md).
 - [docs/exploration.md](docs/exploration.md) : ce que chaque skill a apporté et ce qu'elle a coûté.
 

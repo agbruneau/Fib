@@ -1,6 +1,6 @@
 # PRD — Fib : calculateur Fibonacci académique en quatre langages
 
-Version 1.3 · 2026-10-10 · André-Guy Bruneau. Révisée par `/grill-with-docs`, par un audit, puis par le catalogue de cas de test : le vocabulaire est dans `CONTEXT.md`, les décisions durables dans `docs/adr/`.
+Version 1.4 · 2026-10-10 · André-Guy Bruneau. Révisée par `/grill-with-docs`, par un audit, par le catalogue de cas de test, puis par l'implémentation du ticket #2 : le vocabulaire est dans `CONTEXT.md`, les décisions durables dans `docs/adr/`.
 
 ## 1. Contexte et objectifs
 
@@ -46,7 +46,7 @@ Le vocabulaire (indice, terme, liste, borne, algorithme, comparaison, discordanc
 Chaque implémentation analyse ses arguments à la main selon cette grammaire (ADR-0002). Options et indice peuvent venir dans n'importe quel ordre.
 
 1. Avant toute autre analyse : si un argument vaut exactement `--help` ou `-h`, y compris à la place de la valeur de `--algo`, le texte d'usage va sur stdout, code 0, quels que soient les autres arguments.
-2. `--algo X` ou `--algo=X`, avec X exactement l'un de `iterative`, `matrix`, `fast` ou `all`, casse comprise. Dans la forme `--algo X`, X est l'argument suivant, quel qu'il soit : `--algo --list 5` est une erreur. Si l'option est répétée, la dernière gagne. Sans valeur, ou avec une valeur vide, c'est une erreur d'usage.
+2. `--algo X` ou `--algo=X`, avec X exactement l'un de `iterative`, `matrix`, `fast` ou `all`, casse comprise. Dans la forme `--algo X`, X est l'argument suivant, quel qu'il soit : `--algo --list 5` est une erreur. Chaque occurrence doit être valide : `--algo bogus --algo fast 5` est une erreur. Parmi des occurrences valides, la dernière gagne. Sans valeur, ou avec une valeur vide, c'est une erreur d'usage.
 3. `--list` et `--time` sont des drapeaux; les répéter ne change rien.
 4. Tout autre argument qui commence par `-` est une option inconnue, `-1` compris.
 5. Il reste exactement un argument, l'indice `N`. Il doit correspondre à `^[0-9]+$` (chiffres ASCII) **avant toute conversion**. Les zéros de tête sont permis : `007` vaut 7.
@@ -66,7 +66,7 @@ usage: fib [--algo iterative|matrix|fast|all] [--time] N
 |---|---|
 | F1 | `fib N` écrit le terme F(N) en décimal, suivi de `\n`, sur stdout. Code 0. Algorithme par défaut : `fast`. |
 | F2 | `--algo X` choisit l'algorithme. La sortie est la même pour tout X. |
-| F3 | `--algo all` lance la comparaison : `fast`, `iterative` puis `matrix`, l'un après l'autre (ordre alphabétique, comme FibCalc). S'ils concordent, le terme est écrit une seule fois. En cas de discordance, stdout reste vide, une ligne qui commence par `fib: ` va sur stderr, et le code est 3. |
+| F3 | `--algo all` lance la comparaison : `fast`, `iterative` puis `matrix`, l'un après l'autre (ordre alphabétique, comme FibCalc). S'ils concordent, le terme est écrit une seule fois. En cas de discordance, stdout reste vide, une seule ligne qui commence par `fib: ` va sur stderr, sans durée même avec `--time`, et le code est 3. |
 | F4 | `--list N` écrit la liste F(0) … F(N), un terme par ligne (N + 1 lignes, chacune terminée par `\n`, la dernière comprise), générée par l'algorithme `iterative`. |
 | F5 | `--list` et `--algo` s'excluent (grammaire, règle 6). |
 | F6 | `--time` écrit sur stderr une ligne par algorithme exécuté, dans l'ordre d'exécution : `<algo> <durée> ms`, la durée à 3 décimales avec un point décimal, quelle que soit la locale. La durée ne couvre que le calcul : ni l'analyse des arguments, ni la conversion décimale, ni l'écriture. `--list` compte comme `iterative`. stdout ne change pas. |
@@ -124,6 +124,7 @@ Fib/
 ├── contracts/
 │   ├── b000045.txt      oracle : copie du b-file OEIS A000045
 │   ├── README.md        source, date de téléchargement, licence
+│   ├── oracle.ts        lecture et vérification de l'oracle (ORA), en TypeScript
 │   └── cli.test.ts      test de contrat
 ├── go/  rust/  ts/  python/
 ├── package.json         "type": "module", point d'entrée unique
@@ -157,7 +158,7 @@ Les quatre implémentations sont indépendantes (ADR-0001) : la seule frontière
 
 - ORA-01 à ORA-06 : vérification de l'oracle par le test de contrat, avant tout cas CLI.
 - BIB-01 à BIB-14 : la bibliothèque, dans chaque langage (seam 1).
-- 82 cas CLI : le contrat de la CLI, joué sur chaque implémentation (seam 2). Des assertions communes s'appliquent à chaque cas : code de sortie, stdout octet pour octet, stderr, format ASCII.
+- les cas CLI : le contrat de la CLI, joué sur chaque implémentation (seam 2). Des assertions communes s'appliquent à chaque cas : code de sortie, stdout octet pour octet, stderr, format ASCII.
 
 Le chemin de la discordance (code 3) dans la CLI n'a pas de test automatique, puisque aucun cas ne peut la provoquer. BIB-08 vérifie que les algorithmes concordent.
 
