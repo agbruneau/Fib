@@ -122,7 +122,7 @@ Fib/
 ├── PRD.md, CLAUDE.md, CONTEXT.md, .gitignore
 ├── docs/adr/, docs/agents/, docs/exploration.md
 ├── contracts/
-│   ├── b000045.txt      oracle : copie conforme du b-file OEIS A000045
+│   ├── b000045.txt      oracle : copie du b-file OEIS A000045
 │   ├── README.md        source, date de téléchargement, licence
 │   └── cli.test.ts      test de contrat
 ├── go/  rust/  ts/  python/
