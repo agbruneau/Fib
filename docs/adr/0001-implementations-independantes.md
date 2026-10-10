@@ -5,8 +5,8 @@ Fib réalise le même calcul en Go, Rust, TypeScript et Python sans aucun code p
 ## Considered Options
 
 - **Noyau Rust appelé par les trois autres** : moins de code dupliqué, mais trois implémentations deviennent des enveloppes et le dépôt exige une chaîne de build FFI et WASM.
-- **Valeurs attendues générées par l'une des implémentations**, comme le golden de FibCalc : un oracle qui partage les défauts du code qu'il vérifie. L'OEIS est une source indépendante.
+- **Termes attendus générés par l'une des implémentations**, comme le golden de FibCalc : un oracle qui partage les défauts du code qu'il vérifie. L'OEIS est une source indépendante.
 
 ## Consequences
 
-Une divergence entre langages ne se voit qu'à l'exécution du test de contrat. Celui-ci est donc le critère de fin de chaque ticket de langage.
+Un écart entre langages ne se voit qu'à l'exécution du test de contrat. Celui-ci est donc le critère de fin de chaque ticket de langage.

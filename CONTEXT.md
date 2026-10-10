@@ -47,8 +47,12 @@ Le calcul d'un même terme par les trois algorithmes, suivi de la vérification 
 _Avoid_ : benchmark, mode all
 
 **Discordance** :
-Le cas où deux algorithmes rendent des termes différents pour le même indice.
-_Avoid_ : mismatch, divergence, écart
+Le cas où deux algorithmes d'une même implémentation rendent des termes différents pour le même indice.
+_Avoid_ : mismatch, incohérence
+
+**Écart** :
+Ce qu'une implémentation produit (stdout, stderr ou code de sortie) autrement que le contrat l'exige, ou autrement qu'une autre implémentation pour les mêmes arguments.
+_Avoid_ : divergence, bug
 
 ## Vérification
 
