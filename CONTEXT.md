@@ -1,0 +1,65 @@
+# Fib
+
+Calcul exact des termes de la suite de Fibonacci, réalisé quatre fois (Go, Rust, TypeScript, Python) derrière un même contrat, pour explorer des pratiques d'ingénierie assistée par agents.
+
+## Suite et termes
+
+**Suite de Fibonacci** :
+La suite infinie F(0), F(1), F(2), … définie par F(0) = 0, F(1) = 1 et F(n) = F(n−1) + F(n−2).
+_Avoid_ : série, séquence
+
+**Indice** :
+L'entier n ≥ 0 qui désigne une position dans la suite de Fibonacci.
+_Avoid_ : rang, position, N-ième
+
+**Terme** :
+Le nombre F(n) à un indice donné, toujours un entier exact.
+_Avoid_ : valeur, résultat, nombre
+
+**Liste** :
+Les termes F(0) à F(N), dans l'ordre des indices.
+_Avoid_ : suite (réservé à la suite infinie), séquence, préfixe
+
+**Borne** :
+Le plus grand indice accepté, plus bas pour une liste que pour un terme seul.
+_Avoid_ : limite, maximum
+
+## Calcul
+
+**Algorithme** :
+Une méthode de calcul d'un terme : `iterative`, `matrix` ou `fast`.
+_Avoid_ : méthode, mode, stratégie, calculateur
+
+**Itératif** (`iterative`) :
+L'algorithme qui applique la définition indice par indice, avec deux termes consécutifs en mémoire.
+_Avoid_ : naïf, linéaire
+
+**Matriciel** (`matrix`) :
+L'algorithme qui élève la matrice [[1,1],[1,0]] à la puissance n par carrés successifs.
+_Avoid_ : puissance de matrice
+
+**Doublement rapide** (`fast`) :
+L'algorithme qui passe de (F(k), F(k+1)) à (F(2k), F(2k+1)) en suivant les bits de l'indice.
+_Avoid_ : fast doubling, doubling, rapide
+
+**Comparaison** (`all`) :
+Le calcul d'un même terme par les trois algorithmes, suivi de la vérification qu'ils concordent. Ce n'est pas un algorithme.
+_Avoid_ : benchmark, mode all
+
+**Discordance** :
+Le cas où deux algorithmes rendent des termes différents pour le même indice.
+_Avoid_ : mismatch, divergence, écart
+
+## Vérification
+
+**Oracle** :
+La table de référence des termes F(0) à F(2000), tirée de l'OEIS et donc indépendante de toute implémentation.
+_Avoid_ : golden, fixture, valeurs attendues
+
+**Contrat** :
+Le comportement observable que les quatre implémentations doivent partager à l'octet près : sorties, erreurs et codes de sortie.
+_Avoid_ : spec CLI, interface
+
+**Implémentation** :
+L'une des quatre réalisations de Fib, une par langage.
+_Avoid_ : port, version, variante
