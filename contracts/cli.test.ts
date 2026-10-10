@@ -1,0 +1,223 @@
+// Test de contrat : vérifie l'oracle, puis joue les cas CLI de docs/cas-de-test.md sur chaque implémentation.
+// Usage : node contracts/cli.test.ts [go|rust|ts|py …]
+import { before, describe, test } from 'node:test';
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { CHECKS, lines, terms } from './oracle.ts';
+
+const root = fileURLToPath(new URL('..', import.meta.url));
+const exe = process.platform === 'win32' ? '.exe' : '';
+
+// Commande de lancement depuis la racine (PRD § 5). Go passe par un binaire, car `go run` falsifie code et stderr.
+const IMPLS: Record<string, { dir: string; cmd: string[] }> = {
+  go: { dir: 'go', cmd: [join(root, '.build', `fib${exe}`)] },
+  rust: { dir: 'rust', cmd: ['cargo', 'run', '-q', '--release', '--manifest-path', 'rust/Cargo.toml', '--'] },
+  ts: { dir: 'ts', cmd: [process.execPath, 'ts/src/cli.ts'] },
+  py: { dir: 'python', cmd: ['python', 'python/fib.py'] },
+};
+
+const USAGE = `usage: fib [--algo iterative|matrix|fast|all] [--time] N
+       fib --list [--time] N
+       fib --help
+`;
+
+// 'erreur' : code 2, stdout vide, une seule ligne `fib: …`. Sinon code 0 : `out` exact et/ou `check`, `times` = algos chronométrés.
+type Want = 'erreur' | { out?: string | (() => string); check?: (out: string) => void; times?: string[] };
+type Case = [id: string, title: string, args: string[], want: Want, env?: Record<string, string>];
+
+const term = (k: number) => () => `${terms()[k]}\n`;
+const list = (n: number) => () => terms().slice(0, n + 1).map((t) => `${t}\n`).join('');
+
+function run(id: string, args: string[], env: Record<string, string> = {}) {
+  const [cmd, ...head] = IMPLS[id].cmd;
+  const r = spawnSync(cmd, [...head, ...args], {
+    cwd: root, env: { ...process.env, ...env }, encoding: 'latin1', maxBuffer: 1 << 28,
+  });
+  assert.ifError(r.error);
+  return { code: r.status, out: r.stdout, err: r.stderr };
+}
+
+// Assertions communes X-1 à X-4.
+function verify(r: ReturnType<typeof run>, want: Want): void {
+  const ctx = `code ${r.code}, stderr ${JSON.stringify(r.err.slice(0, 200))}`;
+  const ascii = () => assert.ok(/^[\n\x20-\x7e]*$/.test(r.out + r.err), 'X-4 : sortie non ASCII, ou avec \\r ou ESC');
+  if (want === 'erreur') {
+    assert.equal(r.code, 2, `X-1 : ${ctx}`);
+    assert.match(r.err, /^fib: [^\n]*\n$/, 'X-3 : une seule ligne « fib: … »');
+    assert.equal(r.out, '', 'X-2 : stdout vide');
+    return ascii();
+  }
+  assert.equal(r.code, 0, `X-1 : ${ctx}`);
+  const got = r.err.split('\n');
+  assert.equal(got.pop(), '', `X-3 : stderr se termine par \\n (${ctx})`);
+  got.forEach((l) => assert.match(l, /^(fast|iterative|matrix) [0-9]+\.[0-9]{3} ms$/, 'X-3 : ligne de durée'));
+  assert.deepEqual(got.map((l) => l.split(' ')[0]), want.times ?? [], 'X-3 : algorithmes chronométrés');
+  ascii();
+  const exact = typeof want.out === 'function' ? want.out() : want.out;
+  if (exact !== undefined) assert.equal(r.out, exact, 'X-2');
+  want.check?.(r.out);
+}
+
+const T: Case[] = [
+  ['CLI-T01', '10 écrit F(10)', ['10'], { out: term(10) }],
+  ['CLI-T02', '0 écrit F(0)', ['0'], { out: term(0) }],
+  ['CLI-T03', '1 écrit F(1)', ['1'], { out: term(1) }],
+  ['CLI-T04', '2 écrit F(2)', ['2'], { out: term(2) }],
+  ['CLI-T05', '92 écrit F(92), dernier terme d’un int64', ['92'], { out: term(92) }],
+  ['CLI-T06', '93 écrit F(93), dernier terme d’un uint64', ['93'], { out: term(93) }],
+  ['CLI-T07', '94 écrit F(94), au-delà d’un uint64', ['94'], { out: term(94) }],
+  ['CLI-T08', '1000 écrit F(1000)', ['1000'], { out: term(1000) }],
+  ['CLI-T09', '2000 écrit F(2000)', ['2000'], { out: term(2000) }],
+  ['CLI-T10', 'des zéros de tête sont permis : 007 vaut 7', ['007'], { out: term(7) }],
+  ['CLI-T11', 'de nombreux zéros de tête : …010 vaut 10', ['00000000000000000000000000010'], { out: term(10) }],
+  ['CLI-T12', '100000 écrit un terme de 20 899 chiffres, congru à F(1696) mod 2048 et à F(1000) mod 1000', ['100000'], {
+    check: (out) => {
+      assert.match(out, /^[1-9][0-9]*\n$/);
+      assert.equal(out.length - 1, 20899);
+      const t = BigInt(out);
+      assert.equal(t % 2048n, BigInt(terms()[1696]) % 2048n);
+      assert.equal(t % 1000n, BigInt(terms()[1000]) % 1000n);
+    },
+  }],
+];
+
+const I: Case[] = [
+  ['CLI-I01', 'aucun argument : indice absent', [], 'erreur'],
+  ['CLI-I02', 'un argument vide est refusé', [''], 'erreur'],
+  ['CLI-I03', 'abc n’est pas un nombre', ['abc'], 'erreur'],
+  ['CLI-I04', 'un décimal est refusé', ['1.5'], 'erreur'],
+  ['CLI-I05', 'un signe + est refusé', ['+5'], 'erreur'],
+  ['CLI-I06', 'un soulignement est refusé', ['1_000'], 'erreur'],
+  ['CLI-I07', 'un hexadécimal est refusé', ['0x10'], 'erreur'],
+  ['CLI-I08', 'une espace de tête est refusée', [' 5'], 'erreur'],
+  ['CLI-I09', 'une espace de queue est refusée', ['5 '], 'erreur'],
+  ['CLI-I10', 'un chiffre non ASCII est refusé', ['٣'], 'erreur'],
+  ['CLI-I11', '-1 est une option inconnue', ['-1'], 'erreur'],
+  ['CLI-I12', '100001 dépasse la borne d’un terme', ['100001'], 'erreur'],
+  ['CLI-I13', 'la borne s’applique malgré les zéros de tête', ['00000000000000000000000000100001'], 'erreur'],
+  ['CLI-I14', 'un indice trop grand pour un entier natif est une erreur, pas une panique', ['99999999999999999999'], 'erreur'],
+  ['CLI-I15', 'deux indices sont refusés', ['5', '6'], 'erreur'],
+];
+
+const A: Case[] = [
+  ['CLI-A01', '--algo iterative écrit F(2000)', ['--algo', 'iterative', '2000'], { out: term(2000) }],
+  ['CLI-A02', '--algo matrix écrit F(2000)', ['--algo', 'matrix', '2000'], { out: term(2000) }],
+  ['CLI-A03', '--algo fast écrit F(2000)', ['--algo', 'fast', '2000'], { out: term(2000) }],
+  ['CLI-A04', '--algo all écrit F(2000) une seule fois', ['--algo', 'all', '2000'], { out: term(2000) }],
+  ['CLI-A05', '--algo all 0 écrit F(0)', ['--algo', 'all', '0'], { out: term(0) }],
+  ['CLI-A06', '--algo=matrix équivaut à --algo matrix', ['--algo=matrix', '2000'], { out: term(2000) }],
+  ['CLI-A07', 'l’option peut suivre l’indice', ['2000', '--algo', 'matrix'], { out: term(2000) }],
+  ['CLI-A08', 'répéter --algo est accepté', ['--algo', 'fast', '--algo', 'matrix', '2000'], { out: term(2000) }],
+  ['CLI-A09', '--algo sans valeur est refusé', ['--algo'], 'erreur'],
+  ['CLI-A10', '--algo= avec une valeur vide est refusé', ['--algo=', '5'], 'erreur'],
+  ['CLI-A11', 'un algorithme inconnu est refusé', ['--algo', 'bogus', '5'], 'erreur'],
+  ['CLI-A12', 'le nom de l’algorithme est sensible à la casse', ['--algo', 'FAST', '5'], 'erreur'],
+  ['CLI-A13', '--algo 5 prend 5 pour valeur, et l’indice manque', ['--algo', '5'], 'erreur'],
+  ['CLI-A14', 'le nom de l’option est sensible à la casse', ['--Algo', 'fast', '5'], 'erreur'],
+  ['CLI-A15', '--algo --list 5 prend --list pour valeur', ['--algo', '--list', '5'], 'erreur'],
+];
+
+const L: Case[] = [
+  ['CLI-L01', '--list 0 écrit seulement F(0)', ['--list', '0'], { out: list(0) }],
+  ['CLI-L02', '--list 1 écrit F(0) et F(1)', ['--list', '1'], { out: list(1) }],
+  ['CLI-L03', '--list 2 écrit trois lignes', ['--list', '2'], { out: list(2) }],
+  ['CLI-L04', '--list 20 écrit les 21 premiers termes', ['--list', '20'], { out: list(20) }],
+  ['CLI-L05', '--list 2000 écrit les 2 001 termes de l’oracle', ['--list', '2000'], { out: list(2000) }],
+  ['CLI-L06', '--list 10000 écrit 10 001 lignes cohérentes avec l’oracle et la récurrence', ['--list', '10000'], {
+    check: (out) => {
+      assert.ok(out.endsWith('\n'), 'la dernière ligne se termine par \\n');
+      const rows = out.split('\n');
+      rows.pop();
+      assert.equal(rows.length, 10001);
+      assert.deepEqual(rows.slice(0, 2001), terms());
+      for (let i = 2; i < rows.length; i++) assert.equal(BigInt(rows[i]), BigInt(rows[i - 1]) + BigInt(rows[i - 2]), `ligne ${i}`);
+      assert.equal(rows[10000].length, 2090);
+    },
+  }],
+  ['CLI-L07', 'le drapeau peut suivre l’indice', ['5', '--list'], { out: list(5) }],
+  ['CLI-L08', 'répéter --list ne change rien', ['--list', '--list', '3'], { out: list(3) }],
+  ['CLI-L09', '10001 dépasse la borne d’une liste', ['--list', '10001'], 'erreur'],
+  ['CLI-L10', '--list et --algo s’excluent', ['--list', '--algo', 'fast', '5'], 'erreur'],
+  ['CLI-L11', '--algo et --list s’excluent dans l’autre ordre', ['--algo', 'fast', '--list', '5'], 'erreur'],
+  ['CLI-L12', '--list et --algo all s’excluent', ['--list', '--algo', 'all', '5'], 'erreur'],
+  ['CLI-L13', '--list sans indice est refusé', ['--list'], 'erreur'],
+  ['CLI-L14', '--list=5 est refusé : un drapeau ne prend pas de valeur', ['--list=5'], 'erreur'],
+];
+
+const F50 = '12586269025\n'; // F(50) : littéral du catalogue (§ 5.5)
+const SIX = '0\n1\n1\n2\n3\n5\n'; // F(0) … F(5) : « les 6 premiers termes » du catalogue
+
+const D: Case[] = [
+  ['CLI-D01', '--time écrit la durée de fast sur stderr', ['--time', '50'], { out: F50, times: ['fast'] }],
+  ['CLI-D02', '--time avec --algo all chronomètre fast, iterative puis matrix', ['--time', '--algo', 'all', '50'], { out: F50, times: ['fast', 'iterative', 'matrix'] }],
+  ['CLI-D03', '--time avec --algo matrix chronomètre matrix', ['--time', '--algo', 'matrix', '50'], { out: F50, times: ['matrix'] }],
+  ['CLI-D04', 'la dernière occurrence de --algo gagne', ['--time', '--algo', 'fast', '--algo', 'matrix', '50'], { out: F50, times: ['matrix'] }],
+  ['CLI-D05', 'une occurrence de --algo gagne aussi sur all', ['--algo', 'all', '--algo', 'iterative', '--time', '50'], { out: F50, times: ['iterative'] }],
+  ['CLI-D06', '--time avec --list chronomètre iterative', ['--time', '--list', '5'], { out: SIX, times: ['iterative'] }],
+  ['CLI-D07', '--time peut suivre l’indice', ['50', '--time'], { out: F50, times: ['fast'] }],
+  ['CLI-D08', 'répéter --time ne donne qu’une ligne', ['--time', '--time', '50'], { out: F50, times: ['fast'] }],
+  ['CLI-D09', '--time sans indice est refusé', ['--time'], 'erreur'],
+  ['CLI-D10', '--time=1 est refusé : un drapeau ne prend pas de valeur', ['--time=1', '5'], 'erreur'],
+  ['CLI-D11', 'un indice invalide ne laisse aucune ligne de durée', ['--time', 'abc'], 'erreur'],
+];
+
+const H: Case[] = [
+  ['CLI-H01', '--help écrit l’usage sur stdout, code 0', ['--help'], { out: USAGE }],
+  ['CLI-H02', '-h écrit l’usage', ['-h'], { out: USAGE }],
+  ['CLI-H03', 'l’aide l’emporte sur une option inconnue', ['--help', '--bogus'], { out: USAGE }],
+  ['CLI-H04', 'l’aide l’emporte où qu’elle soit', ['5', '-h'], { out: USAGE }],
+  ['CLI-H05', 'l’aide l’emporte à la place de la valeur de --algo', ['--algo', '--help'], { out: USAGE }],
+  ['CLI-H06', 'l’aide l’emporte sur une borne dépassée', ['--list', '10001', '--help'], { out: USAGE }],
+  ['CLI-H07', 'répéter --help écrit l’usage une fois', ['--help', '--help'], { out: USAGE }],
+  ['CLI-H08', '-help est une option inconnue', ['-help'], 'erreur'],
+  ['CLI-H09', '--HELP est sensible à la casse', ['--HELP'], 'erreur'],
+  ['CLI-H10', '--algo=--help n’est pas l’aide', ['--algo=--help', '5'], 'erreur'],
+];
+
+const U: Case[] = [
+  ['CLI-U01', 'une option longue inconnue est refusée', ['--bogus', '5'], 'erreur'],
+  ['CLI-U02', 'un tiret seul est une option inconnue', ['-', '5'], 'erreur'],
+  ['CLI-U03', 'un double tiret est une option inconnue, pas une fin des options', ['--', '5'], 'erreur'],
+];
+
+const V: Case[] = [
+  ['CLI-V01', 'la locale ne change pas le point décimal des durées', ['--time', '50'], { out: F50, times: ['fast'] },
+    { LANG: 'fr_CA.UTF-8', LC_ALL: 'fr_CA.UTF-8', LC_NUMERIC: 'fr_CA.UTF-8' }],
+];
+
+// CLI-V02 joue trois exécutions (U01, H01 puis T01) : l'oracle ne sert qu'à la dernière, pour que l'ESC soit cherché partout.
+const V02 = (impl: string) => {
+  const env = { FORCE_COLOR: '1', CLICOLOR_FORCE: '1', PYTHON_COLORS: '1' };
+  verify(run(impl, ['--bogus', '5'], env), 'erreur');
+  verify(run(impl, ['--help'], env), { out: USAGE });
+  verify(run(impl, ['10'], env), { out: term(10) });
+};
+
+const CASES: Case[] = [...T, ...I, ...A, ...L, ...D, ...H, ...U, ...V];
+
+describe('oracle', () => {
+  for (const [id, title, check] of CHECKS) test(`${id} : ${title}`, () => check(lines()));
+});
+
+const requested = process.argv.slice(2);
+const ids = requested.length ? requested : Object.keys(IMPLS).filter((id) => existsSync(join(root, IMPLS[id].dir)));
+
+for (const id of ids) {
+  describe(id, () => {
+    if (!Object.hasOwn(IMPLS, id) || !existsSync(join(root, IMPLS[id].dir))) {
+      test(`${id} : l’implémentation existe`, () => assert.fail(`implémentation absente : ${id}`));
+      return;
+    }
+    if (id === 'go') {
+      before(() => {
+        const r = spawnSync('go', ['-C', 'go', 'build', '-o', `../.build/fib${exe}`, './cmd/fib'], { cwd: root, encoding: 'utf8' });
+        assert.equal(r.status, 0, `go build a échoué : ${r.stderr || r.error}`);
+      });
+    }
+    for (const [cid, title, args, want, env] of CASES) test(`${cid} : ${title}`, () => verify(run(id, args, env), want));
+    test('CLI-V02 : forcer la couleur ne produit aucun octet ESC', () => V02(id));
+  });
+}
