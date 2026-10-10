@@ -1,6 +1,6 @@
 # PRD — Fib : calculateur Fibonacci académique en quatre langages
 
-Version 1.4 · 2026-10-10 · André-Guy Bruneau. Révisée par `/grill-with-docs`, par un audit, par le catalogue de cas de test, puis par l'implémentation du ticket #2 : le vocabulaire est dans `CONTEXT.md`, les décisions durables dans `docs/adr/`.
+Version 1.5 · 2026-10-10 · André-Guy Bruneau. Révisée par `/grill-with-docs`, par un audit, par le catalogue de cas de test, puis par l'implémentation des tickets #2 à #5 : le vocabulaire est dans `CONTEXT.md`, les décisions durables dans `docs/adr/`.
 
 ## 1. Contexte et objectifs
 
@@ -122,8 +122,9 @@ Fib/
 ├── README.md, PRD.md, CLAUDE.md, CONTEXT.md, .gitignore
 ├── docs/adr/, docs/agents/, docs/cas-de-test.md, docs/exploration.md
 ├── contracts/
-│   ├── b000045.txt      oracle : copie du b-file OEIS A000045
-│   ├── README.md        source, date de téléchargement, licence
+│   ├── b000045.txt      oracle : F(0) … F(2000), au format du b-file OEIS A000045
+│   ├── generer_oracle.py  génère l'oracle par la formule de Binet
+│   ├── README.md        provenance de l'oracle
 │   ├── oracle.ts        lecture et vérification de l'oracle (ORA), en TypeScript
 │   └── cli.test.ts      test de contrat
 ├── go/  rust/  ts/  python/
@@ -150,8 +151,9 @@ Les quatre implémentations sont indépendantes (ADR-0001) : la seule frontière
 
 **Oracle**
 
-- `contracts/b000045.txt` est une copie du b-file de N. J. A. Sloane, « The first 2000 Fibonacci numbers » (<https://oeis.org/A000045/b000045.txt>). Chaque ligne a la forme `n F(n)`, avec une espace, pour n = 0..2000, sans en-tête (lu sur la page OEIS le 2026-10-10; les octets bruts, fins de ligne comprises, n'ont pas été inspectés). `.gitattributes` normalise les fins de ligne en LF. Les lecteurs ignorent les lignes vides.
-- `contracts/README.md` en donne l'attribution exigée par la licence CC BY-SA 4.0 : « The On-Line Encyclopedia of Integer Sequences », avec le lien.
+- `contracts/b000045.txt` est la table F(0) … F(2000) au format du b-file OEIS A000045 : une ligne `n F(n)`, avec une espace, fins de ligne LF, sans en-tête. Les lecteurs ignorent les lignes vides.
+- Le téléchargement du b-file ayant été bloqué par les permissions de la session, la table est générée par `contracts/generer_oracle.py`. Ce script applique la formule de Binet en arithmétique décimale à 600 chiffres, une méthode indépendante des trois algorithmes testés (amendement de l'ADR-0001).
+- Son exactitude ne dépend pas du générateur : ORA-04 et ORA-05 la vérifient par la définition seule, et toute table qui les passe est la suite de Fibonacci. Elle coïncide avec la page OEIS pour F(2000).
 - Les termes attendus viennent de l'oracle ou de faits mathématiques indépendants du code. Ils ne sont jamais recalculés comme le fait le code (anti-pattern « tautologique » de `tdd`).
 
 **Cas de test** : `docs/cas-de-test.md` est la source unique des cas. Il donne, pour chacun, l'attendu et sa source, ainsi que l'ordre des cycles TDD.
@@ -175,7 +177,7 @@ FFT, GMP, Strassen, parallélisme, TUI, mode serveur, calibration et seuils, lim
 
 ## 9. Démarche d'exploration des skills
 
-L'orchestrateur est la session principale (Opus 5.5 en `ultracode`); le code revient au sous-agent `fib-dev` (Sonnet 5.5). Voir `CLAUDE.md`. Les étapes 0, 1, 4, 5 et 6 sont faites, et le catalogue de cas de test existe. La vérification finale de l'étape 6 attend l'oracle.
+L'orchestrateur est la session principale (Opus 5.5 en `ultracode`); le code revient au sous-agent `fib-dev` (Sonnet 5.5). Voir `CLAUDE.md`. Les étapes 0, 1, 4, 5 et 6 sont faites : les quatre implémentations passent `npm run check`.
 
 | # | Étape | Skill | Livrable |
 |---|---|---|---|

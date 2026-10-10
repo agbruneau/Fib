@@ -18,7 +18,7 @@ Ce catalogue est la source unique des cas qui valident les quatre implémentatio
 
 | Code | Source | Exemples |
 |---|---|---|
-| **O** | l'oracle, soit le b-file OEIS A000045, F(0) à F(2000) | tout terme d'indice ≤ 2000 |
+| **O** | l'oracle : la table F(0) à F(2000) au format du b-file OEIS A000045, générée par la formule de Binet et vérifiée par la définition (ORA) | tout terme d'indice ≤ 2000 |
 | **M** | un fait mathématique indépendant des algorithmes | nombre de chiffres, périodes de Pisano, identité de Cassini, récurrence vérifiée sur une sortie |
 | **C** | le texte du contrat | texte d'usage, préfixe `fib: `, codes de sortie, format des durées |
 

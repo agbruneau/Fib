@@ -57,7 +57,7 @@ _Avoid_ : divergence, bug
 ## Vérification
 
 **Oracle** :
-La table de référence des termes F(0) à F(2000), tirée de l'OEIS et donc indépendante de toute implémentation.
+La table de référence des termes F(0) à F(2000), produite hors de toute implémentation et vérifiée par la définition de la suite. Elle coïncide avec la séquence OEIS A000045.
 _Avoid_ : golden, fixture, valeurs attendues
 
 **Contrat** :

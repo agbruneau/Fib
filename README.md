@@ -11,10 +11,10 @@ Fib est un banc d'essai académique. Il sert à explorer, avec Claude Code, les 
 | PRD, glossaire, décisions (ADR) | fait |
 | Spec ([agbruneau/Fib#1](https://github.com/agbruneau/Fib/issues/1)) et tickets | fait |
 | Catalogue de cas de test | fait |
-| Contrat commun et implémentation TypeScript ([agbruneau/Fib#2](https://github.com/agbruneau/Fib/issues/2)) | implémenté, en attente de l'oracle |
-| Go ([agbruneau/Fib#3](https://github.com/agbruneau/Fib/issues/3)), Rust ([agbruneau/Fib#4](https://github.com/agbruneau/Fib/issues/4)), Python ([agbruneau/Fib#5](https://github.com/agbruneau/Fib/issues/5)) | implémentés, en attente de l'oracle |
+| Contrat commun et implémentation TypeScript ([agbruneau/Fib#2](https://github.com/agbruneau/Fib/issues/2)) | fait |
+| Go ([agbruneau/Fib#3](https://github.com/agbruneau/Fib/issues/3)), Rust ([agbruneau/Fib#4](https://github.com/agbruneau/Fib/issues/4)), Python ([agbruneau/Fib#5](https://github.com/agbruneau/Fib/issues/5)) | fait |
 
-Les quatre implémentations sont livrées. Leur vérification complète attend l'oracle OEIS (`contracts/b000045.txt`), dont le téléchargement a été bloqué. Sans lui, dans chaque langage, les cas qui lisent un terme de l'oracle échouent avec « oracle absent »; tous les autres passent.
+Les quatre implémentations sont livrées et passent `npm run check` sous Windows 11.
 
 ## Utilisation
 
@@ -116,7 +116,7 @@ Fib/
 │   ├── agents/          configuration des skills de Matt Pocock
 │   ├── cas-de-test.md   catalogue des cas de test (TDD)
 │   └── exploration.md   journal des skills utilisées
-├── contracts/           oracle OEIS et test de contrat commun
+├── contracts/           oracle et test de contrat commun
 ├── go/  rust/  ts/  python/
 └── package.json         point d'entrée des vérifications
 ```
@@ -146,4 +146,4 @@ La répartition des rôles est décrite dans [CLAUDE.md](CLAUDE.md).
 
 Aucune licence n'est encore déclarée pour le code de ce dépôt.
 
-L'oracle des tests reprend la table « The first 2000 Fibonacci numbers » de N. J. A. Sloane. Elle provient de [The On-Line Encyclopedia of Integer Sequences](https://oeis.org/A000045), sous licence CC BY-SA 4.0.
+L'oracle des tests (`contracts/b000045.txt`) est généré par la formule de Binet et vérifié par la définition de la suite. Il coïncide avec la séquence [A000045 de l'OEIS](https://oeis.org/A000045), qui reste la référence publique.

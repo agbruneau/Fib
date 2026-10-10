@@ -10,3 +10,7 @@ Fib réalise le même calcul en Go, Rust, TypeScript et Python sans aucun code p
 ## Consequences
 
 Un écart entre langages ne se voit qu'à l'exécution du test de contrat. Celui-ci est donc le critère de fin de chaque ticket de langage.
+
+## Amendement du 2026-10-10 : oracle généré
+
+Le téléchargement du b-file OEIS a été bloqué par les permissions de la session. L'oracle est donc généré par la formule de Binet (`contracts/generer_oracle.py`), une méthode qui ne partage rien avec les trois algorithmes testés. L'indépendance tient à la vérification : ORA-04 et ORA-05 contrôlent la table par la définition seule, et toute table qui les passe est nécessairement la suite de Fibonacci. La table coïncide avec la page OEIS pour F(2000).
