@@ -44,8 +44,8 @@ test('BIB-08 : fib(100000, A) rend le même terme de 20 899 chiffres pour les tr
 
 for (const algo of ALGOS) {
   test(`BIB-09 : ${algo} respecte l’identité de Cassini à n = 100 000`, () => {
-    const [p, q, r] = [99999, 100000, 100001].map((n) => fib(n, algo));
-    assert.equal(p * r - q * q, 1n);
+    const [before, at, after] = [99999, 100000, 100001].map((n) => fib(n, algo));
+    assert.equal(before * after - at * at, 1n);
   });
 }
 
@@ -61,18 +61,22 @@ test('BIB-12 : fibList(2000) rend les 2 001 termes de l’oracle, dans l’ordre
   assert.deepEqual(fibList(2000), terms().map(BigInt));
 });
 
-for (const bogus of ['all', 'bogus', '', 'FAST']) {
+for (const bogus of ['all', 'bogus', '', 'FAST', 'toString']) {
   test(`BIB-13 : fib(5, ${JSON.stringify(bogus)}) est refusé`, () => {
-    assert.throws(() => fib(5, bogus as Algo));
+    assert.throws(() => fib(5, bogus as Algo), { name: 'TypeError', message: /algorithme inconnu/ });
   });
 }
 
 for (const algo of ALGOS) {
   test(`BIB-14 : fib refuse -1, 1.5 et NaN pour ${algo}`, () => {
-    for (const n of [-1, 1.5, NaN]) assert.throws(() => fib(n, algo), `n = ${n}`);
+    for (const n of [-1, 1.5, NaN]) {
+      assert.throws(() => fib(n, algo), { name: 'RangeError', message: /indice invalide/ }, `n = ${n}`);
+    }
   });
 }
 
-test('BIB-14 : fibList(-1) est refusé', () => {
-  assert.throws(() => fibList(-1));
+test('BIB-14 : fibList refuse -1, 1.5 et NaN', () => {
+  for (const n of [-1, 1.5, NaN]) {
+    assert.throws(() => fibList(n), { name: 'RangeError', message: /indice invalide/ }, `n = ${n}`);
+  }
 });
