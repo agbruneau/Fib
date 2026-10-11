@@ -1,4 +1,5 @@
-// Commande fib : adaptateur mince autour de la bibliothèque fib (contrat du PRD § 4, analyse manuelle selon l'ADR-0002).
+// Commande fib : adaptateur mince autour de la bibliothèque fib
+// (contrat du PRD § 4, analyse manuelle selon l'ADR-0002).
 package main
 
 import (
@@ -49,7 +50,8 @@ func parse(args []string) (options, error) {
 		a := args[i]
 		switch {
 		case a == "--algo" || strings.HasPrefix(a, "--algo="):
-			// --algo X : X est l'argument suivant, quel qu'il soit; chaque occurrence doit être valide, la dernière gagne.
+			// --algo X : X est l'argument suivant, quel qu'il soit; chaque occurrence doit être valide,
+			// la dernière gagne.
 			value, ok := strings.CutPrefix(a, "--algo=")
 			if !ok {
 				i++
@@ -101,13 +103,14 @@ func parse(args []string) (options, error) {
 	return o, nil
 }
 
-// lap rend une ligne « <algo> <durée> ms » par calcul : le chronomètre ne couvre que le calcul, et le format ignore la locale.
+// lap rend la ligne « <algo> <durée> ms » d'un calcul : le chronomètre ne couvre que le calcul,
+// et le format ignore la locale.
 func lap(algo string, start time.Time) string {
 	return fmt.Sprintf("%s %.3f ms\n", algo, float64(time.Since(start))/float64(time.Millisecond))
 }
 
-// compute rend les termes à écrire et les lignes de durée; pour all, fast, iterative puis matrix doivent concorder.
-// Rien n'est écrit avant la fin : une discordance laisse stdout vide, sans durée (F3).
+// compute rend les termes à écrire et les lignes de durée; avec all, les trois algorithmes doivent concorder.
+// Rien n'est écrit ici : une discordance (F3) laisse stdout vide et sans durée.
 func compute(o options) ([]*big.Int, []string, error) {
 	if o.list {
 		start := time.Now()

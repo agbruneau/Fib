@@ -46,7 +46,6 @@ func iterative(n int) *big.Int {
 	return a
 }
 
-// mat est une matrice 2x2.
 type mat [2][2]*big.Int
 
 func newMat(a, b, c, d int64) mat {
@@ -76,16 +75,16 @@ func matrix(n int) *big.Int {
 	return result[0][1]
 }
 
-// fast est le doublement rapide : les bits de n, lus du poids fort au poids faible, font passer de (F(k), F(k+1))
-// à (F(2k), F(2k+1)); un bit à 1 avance encore d'un cran.
+// fast est le doublement rapide : (F(k), F(k+1)) devient (F(2k), F(2k+1)) à chaque bit de n, du poids fort
+// au poids faible; un bit à 1 avance encore d'un cran.
 func fast(n int) *big.Int {
 	a, b := big.NewInt(0), big.NewInt(1) // F(k), F(k+1) pour k = 0
 	for _, bit := range strconv.FormatInt(int64(n), 2) {
-		// F(2k) = F(k) * (2F(k+1) - F(k))
+		// F(2k) = F(k)·(2F(k+1) − F(k))
 		even := new(big.Int).Lsh(b, 1)
 		even.Sub(even, a)
 		even.Mul(even, a)
-		// F(2k+1) = F(k)^2 + F(k+1)^2
+		// F(2k+1) = F(k)² + F(k+1)²
 		odd := new(big.Int).Mul(a, a)
 		odd.Add(odd, new(big.Int).Mul(b, b))
 		if bit == '1' {
