@@ -1,6 +1,11 @@
-//! Commande fib : adaptateur mince autour de la bibliothèque fib (contrat du PRD § 4, analyse manuelle selon l'ADR-0002).
+//! Commande fib : adaptateur mince autour de la bibliothèque fib (PRD § 4, analyse manuelle selon l'ADR-0002).
 use fib::{Algo, fib, fib_list};
-use std::{env, io::BufWriter, io::Write, process::ExitCode, time::Instant};
+use std::{
+    env,
+    io::{BufWriter, Write},
+    process::ExitCode,
+    time::Instant,
+};
 
 const USAGE: &str = "usage: fib [--algo iterative|matrix|fast|all] [--time] N
        fib --list [--time] N
@@ -100,6 +105,7 @@ fn compute(o: &Options) -> Result<(Vec<String>, String), CliError> {
 fn run(args: &[String]) -> Result<(Vec<String>, String), CliError> {
     // L'aide l'emporte sur tout le reste, y compris à la place de la valeur de --algo.
     if args.iter().any(|a| a == "--help" || a == "-h") {
+        // La sortie ajoute '\n' à chaque ligne : sans trim_end, l'aide finirait par une ligne vide.
         return Ok((vec![USAGE.trim_end().into()], String::new()));
     }
     let options = parse(args)?;

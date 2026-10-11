@@ -108,23 +108,31 @@ fn bib_13_un_nom_d_algorithme_inconnu_est_refuse() {
 
 // BIB-14 ne s'applique pas : l'indice est un u64 (docs/cas-de-test.md § 4).
 
-// PERF-01, hors catalogue : garde de l'optimisation « liste en limbes décimaux ». L'oracle s'arrête à 2000; au-delà,
-// la liste (addition décimale à la main) est comparée à fast puis converti en décimal (autre algorithme, autre voie).
+// PERF-RS-1, hors catalogue : garde de l'optimisation « liste en limbes décimaux » (au-delà de l'oracle, contre fast).
 #[test]
-fn perf_01_fib_list_5000_egale_fast_en_decimal_terme_par_terme() {
+fn perf_rs_1_fib_list_5000_egale_fast_en_decimal_terme_par_terme() {
     for (k, got) in fib_list(5000).iter().enumerate() {
         assert_eq!(*got, fib(k as u64, Algo::Fast).to_string(), "k = {k}");
     }
 }
 
-// PERF-02, hors catalogue : garde des optimisations de matrix et de fast (dernière étape réduite à F(n), parité de k
-// pour le terme ±2). Les trois algorithmes concordent sur les puissances de 2 et leurs voisins, tous bits à 1 compris.
-#[test]
-fn perf_02_les_trois_algorithmes_concordent_autour_des_puissances_de_2_jusqu_a_2_puissance_14() {
+/// algo rend les termes d'iterative aux puissances de 2 jusqu'à 2^14 et à leurs voisins, tous bits à 1 compris.
+fn assert_agrees_around_powers_of_2(algo: Algo) {
     for j in 1..=14u32 {
         for n in [(1u64 << j) - 1, 1 << j, (1 << j) + 1] {
-            let [first, others @ ..] = Algo::ALL.map(|a| fib(n, a));
-            assert!(others.iter().all(|t| *t == first), "n = {n}");
+            assert_eq!(fib(n, algo), fib(n, Algo::Iterative), "n = {n}");
         }
     }
+}
+
+// PERF-RS-2, hors catalogue : garde de l'optimisation de matrix (dernière étape réduite à F(n)).
+#[test]
+fn perf_rs_2_matrix_egale_iterative_autour_des_puissances_de_2_jusqu_a_2_puissance_14() {
+    assert_agrees_around_powers_of_2(Algo::Matrix);
+}
+
+// PERF-RS-3, hors catalogue : garde de l'optimisation de fast (dernière étape réduite à F(n), parité de k).
+#[test]
+fn perf_rs_3_fast_egale_iterative_autour_des_puissances_de_2_jusqu_a_2_puissance_14() {
+    assert_agrees_around_powers_of_2(Algo::Fast);
 }
