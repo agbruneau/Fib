@@ -19,7 +19,8 @@ def _iterative(n):
 def _matrix(n, kind=int):
     """[[1,1],[1,0]]^n = [[F(n+1), F(n)], [F(n), F(n-1)]], par carrés successifs, du poids fort au poids faible de n.
     La puissance est symétrique, donc trois coefficients (a, b, c) suffisent : [[a, b], [b, c]]."""
-    a, b, c = kind(1), kind(0), kind(1)  # kind : le type des nombres, int ou Decimal
+    # kind : le même algorithme tourne sur int ou sur Decimal (voir _fib_decimal)
+    a, b, c = kind(1), kind(0), kind(1)
     bits = format(n, "b")
     for bit in bits[:-1]:
         # Trois carrés, aucun produit (un carré coûte moins) : le nouveau b = a² − c² = (a − c)(a + c) = b(a + c).
@@ -73,15 +74,33 @@ def fib(n, algo):
     return _ALGOS[algo](n)
 
 
+def _exact_decimal():
+    """Rend (Decimal, contexte) : le contexte exact et local que les chemins en Decimal ouvrent par with."""
+    # Importé ici : environ 5 ms que le calcul d'un terme en int n'a pas à payer. Contexte exact : la précision par
+    # défaut arrondirait. Local : celui de l'appelant reste intact.
+    from decimal import MAX_EMAX, MAX_PREC, Context, Decimal, localcontext
+
+    return Decimal, localcontext(Context(prec=MAX_PREC, Emax=MAX_EMAX))
+
+
+def _fib_decimal(n, algo):
+    """F(n) en Decimal par fast ou matrix, les seuls algorithmes qui acceptent kind; mêmes refus que fib() pour n."""
+    # Decimal : son str() est linéaire, et évite la conversion décimale, quadratique, d'un grand int (0,5 ms contre 54).
+    if algo not in ("fast", "matrix"):
+        raise ValueError(f"pas de chemin Decimal pour l'algorithme {algo!r}")
+    _check_index(n)
+    Decimal, exact = _exact_decimal()
+    with exact:
+        return _ALGOS[algo](n, Decimal)
+
+
 def fib_list(n):
     """F(0) … F(n) en texte décimal, toujours par l'algorithme iterative."""
     _check_index(n)
-    # Importé ici : environ 5 ms que le calcul d'un terme seul n'a pas à payer.
-    from decimal import MAX_EMAX, MAX_PREC, Context, Decimal, localcontext
-
+    Decimal, exact = _exact_decimal()
     # Calculé en décimal : le texte sort sans conversion binaire → décimal, bien plus lente (int : 180 ms, ici 25 ms
-    # pour n = 10 000). Contexte exact : la précision par défaut arrondirait. Local : celui de l'appelant reste intact.
-    with localcontext(Context(prec=MAX_PREC, Emax=MAX_EMAX)):
+    # pour n = 10 000).
+    with exact:
         terms = []
         a, b = Decimal(0), Decimal(1)
         for _ in range(n):
@@ -99,9 +118,6 @@ USAGE = """usage: fib [--algo iterative|matrix|fast|all] [--time] N
 """
 
 MAX_TERM, MAX_LIST = 1_000_000, 10_000
-
-# Mesuré : à cet indice, l'import de decimal (5 ms) coûte autant que l'écriture par tranches, quadratique au-delà.
-DECIMAL_FROM = 170_000
 
 COMPARISON = ("fast", "iterative", "matrix")
 
@@ -168,10 +184,8 @@ STR_FROM_BITS = 200_000
 
 
 def _text(x):
-    """Texte décimal d'un entier. Au-delà d'environ 9 000 chiffres, str() importe _pylong (re, decimal : 10 ms), et
-    même en deçà il est plus lent : on coupe par tranches de CHUNK_DIGITS chiffres."""
-    # Un Decimal ou un texte passe par str(), linéaire; un int de plus de STR_FROM_BITS bits aussi, car _pylong y bat
-    # les tranches.
+    """Texte décimal d'un int ou d'un Decimal. Un Decimal, ou un int de plus de STR_FROM_BITS bits, passe par str(); en
+    deçà, des tranches de CHUNK_DIGITS chiffres : dès 9 000 chiffres str() importe _pylong (re, decimal : 10 ms)."""
     if type(x) is not int or x.bit_length() > STR_FROM_BITS:
         return str(x)
     base = 10**CHUNK_DIGITS
@@ -183,15 +197,9 @@ def _text(x):
     return "".join(reversed(parts))
 
 
-def _decimal_term(n, algo):
-    """F(n) en Decimal, par fast ou matrix : le calcul y vaut celui des int (13 ms contre 17 à n = 1 000 000), et
-    str() est linéaire, non quadratique (0,5 ms contre 54, même par _pylong)."""
-    # Importé ici : environ 5 ms que le calcul en int n'a pas à payer.
-    from decimal import MAX_EMAX, MAX_PREC, Context, Decimal, localcontext
-
-    # Contexte exact : la précision par défaut arrondirait. Local : celui de l'appelant reste intact.
-    with localcontext(Context(prec=MAX_PREC, Emax=MAX_EMAX)):
-        return _ALGOS[algo](n, Decimal)
+# Mesuré : à cet indice, l'import de decimal (5 ms) coûte autant que l'écriture par tranches, quadratique au-delà.
+# Couplage : F(169 999) compte environ 118 000 bits, donc STR_FROM_BITS ne joue qu'avec iterative et all, dès F(288 000)
+DECIMAL_FROM = 170_000
 
 
 def compute(algos, as_list, n):
@@ -207,18 +215,16 @@ def compute(algos, as_list, n):
         durations.append(f"{name} {(time.perf_counter() - start) * 1000:.3f} ms\n")
         return result
 
-    if as_list:
-        # Import pour son effet : hors du chronomètre (5 ms qui ne sont pas du calcul), fib_list le trouve déjà chargé.
-        import decimal
-
-        return timed("iterative", lambda: fib_list(n)), durations
     # Dès DECIMAL_FROM, fast et matrix seuls calculent en Decimal, sans conversion à l'écriture. Avec iterative (int),
     # == Decimal/int convertit l'int, quadratique (420 ms à 1 000 000), et le temps est déjà celui d'iterative.
     use_decimal = n >= DECIMAL_FROM and "iterative" not in algos
-    if use_decimal:
-        import decimal  # pour son effet : hors du chronomètre (5 ms qui ne sont pas du calcul), comme pour la liste
-
-    terms = [timed(a, lambda: _decimal_term(n, a) if use_decimal else fib(n, a)) for a in algos]
+    if as_list or use_decimal:
+        # Import pour son effet : hors du chronomètre (5 ms qui ne sont pas du calcul), fib_list et _fib_decimal le
+        # trouvent déjà chargé.
+        import decimal
+    if as_list:
+        return timed("iterative", lambda: fib_list(n)), durations
+    terms = [timed(a, lambda: _fib_decimal(n, a) if use_decimal else fib(n, a)) for a in algos]
     if any(t != terms[0] for t in terms):
         raise CliError(f"discordance entre les algorithmes pour l'indice {n}", 3)
     return [_text(terms[0])], durations
