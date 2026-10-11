@@ -11,9 +11,8 @@ import { CHECKS, lines, terms } from './oracle.ts';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const exe = process.platform === 'win32' ? '.exe' : '';
 
-// Commande de lancement depuis la racine (PRD § 5). Go, Rust et TypeScript passent par un build compilé une fois (BUILDS),
-// pour que chaque cas mesure le programme et non son démarrage (`go run` falsifie en outre code et stderr).
-// Python : `-I -S` saute `site` et l'environnement (PYTHON*), sans rien changer à ce que la CLI écrit.
+// Lancement depuis la racine (PRD § 5). Go, Rust et TS passent par un build fait une fois (BUILDS), pour mesurer le
+// programme et non son démarrage. Python : `-I -S` saute `site` et PYTHON*, sans changer la sortie de la CLI.
 const IMPLS: Record<string, { dir: string; cmd: string[] }> = {
   go: { dir: 'go', cmd: [join(root, '.build', `fib${exe}`)] },
   rust: { dir: 'rust', cmd: [join(root, 'rust', 'target', 'release', `fib${exe}`)] },
@@ -21,7 +20,8 @@ const IMPLS: Record<string, { dir: string; cmd: string[] }> = {
   py: { dir: 'python', cmd: ['python', '-I', '-S', 'python/fib.py'] },
 };
 
-// Compilation préalable, jouée une fois par groupe. tsc 7 est lancé par le point d'entrée JS du paquet : `.bin/tsc` n'est pas exécutable sans shell sous Windows.
+// Compilation préalable, jouée une fois par groupe. tsc 7 est lancé par le point d'entrée JS du paquet :
+// `.bin/tsc` n'est pas exécutable sans shell sous Windows.
 const BUILDS: Record<string, string[]> = {
   go: ['go', '-C', 'go', 'build', '-o', `../.build/fib${exe}`, './cmd/fib'],
   rust: ['cargo', 'build', '-q', '--release', '--manifest-path', 'rust/Cargo.toml'],
@@ -235,7 +235,8 @@ for (const id of ids) {
       before(() => {
         const [cmd, ...args] = BUILDS[id];
         const r = spawnSync(cmd, args, { cwd: root, encoding: 'utf8' });
-        assert.equal(r.status, 0, `${BUILDS[id].join(' ')} a échoué (code ${r.status}) : ${r.stdout}${r.stderr}${r.error ?? ''}`);
+        const out = `${r.stdout}${r.stderr}${r.error ?? ''}`;
+        assert.equal(r.status, 0, `${BUILDS[id].join(' ')} a échoué (code ${r.status}) : ${out}`);
       });
     }
     for (const [cid, title, args, want, env] of CASES) test(`${cid} : ${title}`, () => verify(run(id, args, env), want));

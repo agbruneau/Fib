@@ -62,22 +62,31 @@ test('BIB-12 : fibList(2000) rend les 2 001 termes de l’oracle, dans l’ordre
   assert.deepEqual(fibList(2000), terms());
 });
 
-// hors catalogue : garde de l'optimisation de la liste (additionneur décimal en limbes de 4 chiffres, tampon de taille
-// calculée d'après n). Les termes viennent de la définition et d'un fait connu, non d'un second calcul : au-delà de
-// l'oracle, chaque terme est la somme des deux précédents, sans zéro de tête, et F(10000) compte 2 090 chiffres.
-test('PERF-1 : fibList(10000) respecte la définition et la forme décimale au-delà de l’oracle', () => {
+// hors catalogue : garde de l'optimisation de la liste (additionneur décimal en limbes de 4 chiffres)
+test('PERF-TS-1 : fibList(10000) rend 10 001 termes', () => {
+  assert.equal(fibList(10000).length, 10001);
+});
+
+// hors catalogue : garde de l'optimisation de la liste (additionneur décimal en limbes de 4 chiffres)
+test('PERF-TS-2 : le dernier terme de fibList(10000) compte 2 090 chiffres', () => {
+  assert.equal(fibList(10000)[10000].length, 2090);
+});
+
+// hors catalogue : garde de l'optimisation de la liste (écriture ASCII des limbes, zéros de tête retirés)
+test('PERF-TS-3 : chaque terme de fibList(10000) s’écrit sans zéro de tête', () => {
+  fibList(10000).forEach((term, i) => assert.match(term, /^(0|[1-9][0-9]*)$/, `n = ${i}`));
+});
+
+// hors catalogue : garde de l'optimisation de la liste (retenue propagée entre limbes de 4 chiffres)
+test('PERF-TS-4 : chaque terme de fibList(10000) dès F(2) est la somme des deux précédents', () => {
   const list = fibList(10000);
-  assert.equal(list.length, 10001);
-  assert.equal(list[10000].length, 2090);
-  list.forEach((term, i) => assert.match(term, /^(0|[1-9][0-9]*)$/, `n = ${i}`));
   for (let i = 2; i < list.length; i++) {
     assert.equal(BigInt(list[i]), BigInt(list[i - 1]) + BigInt(list[i - 2]), `n = ${i}`);
   }
 });
 
-// hors catalogue : garde de l'optimisation de la liste. La taille du tampon dépend de n : la liste doit rester juste
-// pour chaque n, surtout les petits, où la marge est la plus mince.
-test('PERF-2 : fibList(n) est le préfixe de l’oracle pour chaque n de 0 à 300', () => {
+// hors catalogue : garde de l'optimisation de la liste (tampon de taille calculée d'après n, marge mince aux petits n)
+test('PERF-TS-5 : fibList(n) rend les n + 1 premiers termes de l’oracle pour chaque n de 0 à 300', () => {
   const expected = terms();
   for (let n = 0; n <= 300; n++) assert.deepEqual(fibList(n), expected.slice(0, n + 1), `n = ${n}`);
 });
