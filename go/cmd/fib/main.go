@@ -23,7 +23,7 @@ const usage = `usage: fib [--algo iterative|matrix|fast|all] [--time] N
 `
 
 const (
-	maxTerm = 100_000
+	maxTerm = 1_000_000
 	maxList = 10_000
 )
 
