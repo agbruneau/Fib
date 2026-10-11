@@ -1,20 +1,27 @@
-"""Seam 1 : la bibliothèque. Un test par cas BIB de docs/cas-de-test.md; les attendus viennent de l'oracle OEIS ou de faits mathématiques."""
+"""Seam 1 : la bibliothèque. Les attendus viennent de l'oracle (contracts/b000045.txt) ou de faits mathématiques."""
 import unittest
+from functools import cache
 from pathlib import Path
 
 from fib import fib, fib_list
 
 ALGOS = ("iterative", "matrix", "fast")
 ORACLE = Path(__file__).resolve().parent.parent / "contracts" / "b000045.txt"
+REFUSED = ((-1, ValueError), (1.5, TypeError), (float("nan"), TypeError), (0.0, TypeError))
 
 
+@cache
 def oracle():
-    """F(0) … F(2000), lus à l'exécution dans l'oracle. Absent, le test échoue au lieu de passer."""
-    if not ORACLE.exists():
-        raise AssertionError("oracle absent : contracts/b000045.txt")
-    terms = [int(line.split()[1]) for line in ORACLE.read_text(encoding="ascii").splitlines() if line.strip()]
+    """F(0) … F(2000), lus à l'exécution dans l'oracle. Toute anomalie lève une exception : le test échoue au lieu de passer."""
+    terms = []
+    for line in ORACLE.read_text(encoding="ascii").splitlines():
+        if line.strip():
+            index, term = line.split()
+            if int(index) != len(terms):
+                raise AssertionError(f"oracle invalide : indice {index} à la place de {len(terms)}")
+            terms.append(int(term))
     if len(terms) != 2001:
-        raise AssertionError(f"oracle invalide : 2 001 lignes attendues, {len(terms)} lues")
+        raise AssertionError(f"oracle invalide : 2 001 termes attendus, {len(terms)} lus")
     return terms
 
 
@@ -32,30 +39,26 @@ class TestFib(unittest.TestCase):
         self.assertEqual(fib(10, "iterative"), oracle()[10])
 
     def test_BIB_05_iterative_suit_l_oracle_de_0_a_2000(self):
-        for n, attendu in enumerate(oracle()):
-            with self.subTest(n=n):
-                self.assertEqual(fib(n, "iterative"), attendu)
+        self.assertEqual([fib(n, "iterative") for n in range(2001)], oracle())
 
     def test_BIB_06_fast_suit_l_oracle_de_0_a_2000(self):
-        for n, attendu in enumerate(oracle()):
-            with self.subTest(n=n):
-                self.assertEqual(fib(n, "fast"), attendu)
+        self.assertEqual([fib(n, "fast") for n in range(2001)], oracle())
 
     def test_BIB_07_matrix_suit_l_oracle_de_0_a_2000(self):
-        for n, attendu in enumerate(oracle()):
-            with self.subTest(n=n):
-                self.assertEqual(fib(n, "matrix"), attendu)
+        self.assertEqual([fib(n, "matrix") for n in range(2001)], oracle())
 
     def test_BIB_08_les_trois_algorithmes_concordent_a_100000(self):
-        termes = {algo: fib(100000, algo) for algo in ALGOS}
-        self.assertEqual(len(set(termes.values())), 1)
-        self.assertEqual(len(str(termes["fast"])), 20899)
+        want = fib(100000, "fast")
+        for algo in ("iterative", "matrix"):
+            with self.subTest(algo=algo):
+                self.assertEqual(fib(100000, algo), want)
+        self.assertEqual(len(str(want)), 20899)
 
     def test_BIB_09_cassini_a_100000(self):
         for algo in ALGOS:
             with self.subTest(algo=algo):
-                avant, milieu, apres = (fib(n, algo) for n in (99999, 100000, 100001))
-                self.assertEqual(avant * apres - milieu**2, 1)
+                before, at, after = (fib(n, algo) for n in (99999, 100000, 100001))
+                self.assertEqual(before * after - at**2, 1)
 
     def test_BIB_10_fib_list_0_ne_contient_que_f0(self):
         self.assertEqual(fib_list(0), oracle()[:1])
@@ -72,11 +75,11 @@ class TestFib(unittest.TestCase):
                 fib(5, algo)
 
     def test_BIB_14_un_indice_negatif_ou_non_entier_est_refuse(self):
-        for n in (-1, 1.5, float("nan")):
+        for n, error in REFUSED:
             for algo in ALGOS:
-                with self.subTest(n=n, algo=algo), self.assertRaises((TypeError, ValueError)):
+                with self.subTest(n=n, algo=algo), self.assertRaises(error):
                     fib(n, algo)
-            with self.subTest(n=n, algo="fib_list"), self.assertRaises((TypeError, ValueError)):
+            with self.subTest(n=n, algo="fib_list"), self.assertRaises(error):
                 fib_list(n)
 
 

@@ -196,6 +196,7 @@ const U: Case[] = [
 const V: Case[] = [
   ['CLI-V01', 'la locale ne change pas le point décimal des durées', ['--time', '50'], { out: term(50), times: ['fast'] },
     { LANG: 'fr_CA.UTF-8', LC_ALL: 'fr_CA.UTF-8', LC_NUMERIC: 'fr_CA.UTF-8' }],
+  ['CLI-V03', 'PYTHONIOENCODING ne change pas les octets écrits', ['--time', '50'], { out: term(50), times: ['fast'] }, { PYTHONIOENCODING: 'utf-16' }],
 ];
 
 // CLI-V02 joue trois exécutions (U01, H01 puis T01) : l'oracle ne sert qu'à la dernière, pour que l'ESC soit cherché partout.
