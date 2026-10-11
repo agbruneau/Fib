@@ -4,6 +4,7 @@
 - `generer_oracle.py` : génère l'oracle par la formule de Binet (`python contracts/generer_oracle.py`).
 - `oracle.ts` : lecture et vérification de l'oracle (ORA-01 à ORA-06), partagée par les tests.
 - `cli.test.ts` : le test de contrat. `node contracts/cli.test.ts [go|rust|ts|py …]` joue les cas CLI de `docs/cas-de-test.md` sur les implémentations nommées, ou sur celles dont le dossier existe. Il compile d'abord Go, Rust et TypeScript, puis lance les binaires et le JavaScript émis (PRD § 5).
+- `bench.ts` : le banc d'essai (ADR-0004). `node contracts/bench.ts [go|rust|ts|py …] [--runs N]`, ou `npm run bench`, compile comme le test de contrat, puis donne pour sept scénarios la médiane du temps total du processus et de la durée rapportée par `--time` (11 exécutions par défaut).
 
 ## Provenance de l'oracle
 

@@ -67,3 +67,11 @@ _Avoid_ : spec CLI, interface
 **Implémentation** :
 L'une des quatre réalisations de Fib, une par langage.
 _Avoid_ : port, version, variante
+
+**Test de garde** :
+Un test propre à une implémentation, hors du catalogue de cas, qui protège une optimisation que les cas du catalogue ne visent pas directement.
+_Avoid_ : test de performance
+
+**Banc d'essai** :
+La mesure du temps de réponse de chaque implémentation sur des scénarios fixes : temps total du processus et durée de calcul rapportée par `--time`, en médianes.
+_Avoid_ : benchmark

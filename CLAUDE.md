@@ -1,6 +1,6 @@
 # Fib
 
-Une même CLI Fibonacci académique en Go, Rust, TypeScript et Python, qui sert de banc d'essai aux skills de Matt Pocock (plugin `mattpocock-skills`). Exigences, contrat de la CLI et démarche : `PRD.md`. La lisibilité prime sur la performance.
+Une même CLI Fibonacci académique en Go, Rust, TypeScript et Python, qui sert de terrain d'essai aux skills de Matt Pocock (plugin `mattpocock-skills`). Exigences, contrat de la CLI et démarche : `PRD.md`. Le temps de réponse prime, et chaque optimisation porte son pourquoi en commentaire d'une ligne (ADR-0004).
 
 ## Rôles
 
@@ -12,10 +12,10 @@ Ce dépôt demande la délégation : la règle globale « ne lance un sous-agent
 ## Boucle de livraison
 
 1. Prendre la frontière : les tickets `ready-for-agent` marqués `waiting`, dont tous les bloqueurs sont fusionnés dans `main` et qui n'attendent aucun prérequis externe.
-2. Passer le ticket de `waiting` à `in-progress` (`docs/agents/issue-tracker.md`), puis lancer un `fib-dev` par ticket, en parallèle quand les langages diffèrent. Dans un workflow : `agent(prompt, { agentType: 'fib-dev', isolation: 'worktree' })`. Le prompt donne le numéro du ticket et le langage. Les worktrees partent du `HEAD` local (`worktree.baseRef: "head"` dans `.claude/settings.json`), donc le travail fusionné sur `main` y est visible sans push.
-3. Au retour, fusionner la branche dans `main` (conflit : skill `resolving-merge-conflicts`), puis lancer `npm run check:<id>` et `npm run contract`.
+2. Passer le ticket de `waiting` à `in-progress` (`docs/agents/issue-tracker.md`), puis lancer un `fib-dev` par ticket, en parallèle quand les langages diffèrent. Dans un workflow : `agent(prompt, { agentType: 'fib-dev', isolation: 'worktree' })`. Le prompt donne le numéro du ticket et le langage. Les worktrees partent du `HEAD` local (`worktree.baseRef: "head"` dans `.claude/settings.json`), donc le travail fusionné sur `main` y est visible sans push. Pour un travail de performance, mesurer d'abord `main` avec `npm run bench`, et fixer dans le prompt le nom des tests de garde `PERF-<ID>-<n>` (`docs/cas-de-test.md` § 6).
+3. Au retour, fusionner la branche dans `main` (conflit : skill `resolving-merge-conflicts`), puis lancer `npm run check:<id>` et `npm run contract`, et `npm run bench` pour un travail de performance.
 4. `/code-review` depuis le commit d'avant la fusion. Un constat à corriger repart chez un `fib-dev` avec le rapport.
-5. Quand ces deux commandes sont vertes sur `main`, retirer l'étiquette de statut et fermer le ticket. S'il manque un prérequis externe, repasser le ticket à `waiting`, avec un commentaire qui le nomme.
+5. Quand `npm run check:<id>` et `npm run contract` sont verts sur `main`, retirer l'étiquette de statut et fermer le ticket. S'il manque un prérequis externe, repasser le ticket à `waiting`, avec un commentaire qui le nomme.
 6. Ajouter à `docs/exploration.md` le constat sur chaque skill utilisée (format : PRD § 9).
 
 ## Vérification
@@ -23,8 +23,9 @@ Ce dépôt demande la délégation : la règle globale « ne lance un sous-agent
 - `npm run check:<go|rust|ts|py>` : un langage, avec son contrat.
 - `npm run contract` : le contrat des implémentations présentes.
 - `npm run check` : les quatre langages, vert depuis le 2026-10-10.
+- `npm run bench [-- go|rust|ts|py …]` : le banc d'essai, médianes du temps de réponse (ADR-0004). Toute mesure de performance passe par lui.
 
-Les scripts vivent dans `package.json`, créé par le ticket « contrat » (PRD § 6). Sous Windows, Rust passe par une override rustup GNU propre à ce dossier (PRD § 5). L'oracle se régénère avec `python contracts/generer_oracle.py` (`contracts/README.md`).
+Les scripts vivent dans `package.json`, créé par le ticket #2 (PRD § 9). Sous Windows, Rust passe par une override rustup GNU propre à ce dossier (PRD § 5). L'oracle se régénère avec `python contracts/generer_oracle.py` (`contracts/README.md`).
 
 ## Agent skills
 

@@ -50,7 +50,7 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
 ## 2026-10-10 — `tdd` (catalogue de cas de test)
 
 - **A aidé** :
-  - L'anti-pattern « tautologique » a imposé une source à chaque attendu : l'oracle, un fait mathématique ou le texte du contrat. D'où l'identité de Cassini et les périodes de Pisano au lieu de valeurs recalculées.
+  - L'anti-pattern « tautologique » a imposé une source à chaque attendu : l'oracle, un fait mathématique ou le texte du contrat. D'où l'identité de Cassini et les périodes de Pisano au lieu de termes recalculés.
   - Les seams déjà convenues ont gardé tous les cas sur la bibliothèque ou la CLI.
   - Rédiger le catalogue a fait surgir des cas encore non couverts : la casse de `--algo FAST`, `-help` avec un seul tiret, `--list=5`, `--algo 5`, `--time abc`, la répétition de `--algo` (visible seulement avec `--time`), la locale et le forçage des couleurs. Il a aussi révélé une ambiguïté de la grammaire (`--algo --list 5`), tranchée dans le PRD 1.3.
 - **Friction** : la demande d'un catalogue exhaustif écrit d'avance heurte l'anti-pattern du découpage horizontal. Je l'ai résolu en traitant le catalogue comme un carnet de cycles ordonnés, chaque test n'étant écrit qu'à son cycle. Pour Go, Rust et Python, en revanche, le test de contrat existe d'avance : c'est une boucle externe d'acceptation, choisie en connaissance de cause.
@@ -84,8 +84,8 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
 ## 2026-10-11 — Audit en workflow, refactorisation, puis `/code-review` (étape 8)
 
 - **A aidé** :
-  - L'audit a mis huit auditeurs en lecture seule : un par langage, le contrat, la cohérence entre langages, un test différentiel et la documentation. Un vérificateur sceptique suivait chacun d'eux. Sur 233 constats, 36 ont été réfutés. L'audit n'a trouvé aucun bogue fonctionnel et un seul écart au contrat : Python laissait `PYTHONIOENCODING` changer l'encodage (F10). Il est corrigé, avec le cas CLI-V03.
-  - Le test différentiel a joué plus de 120 vecteurs hors catalogue sur les quatre CLI, sans un seul écart de stdout ni de code de sortie.
+  - L'audit a mis huit auditeurs en lecture seule : un par langage, le contrat, la cohérence entre langages, un test différentiel et la documentation. Un vérificateur sceptique suivait chacun d'eux. Sur 233 constats, 36 ont été réfutés. L'audit n'a trouvé aucune erreur de calcul et un seul écart au contrat : Python laissait `PYTHONIOENCODING` changer l'encodage (F10). Il est corrigé, avec le cas CLI-V03.
+  - Le test différentiel a joué 121 vecteurs hors catalogue sur les quatre CLI, sans un seul écart de stdout ni de code de sortie.
   - Durcir le contrat avant de refactoriser a protégé la réécriture des messages d'erreur (CLI-A17, A18, H11, U04).
   - `/code-review`, sur ses deux axes, a trouvé ce que l'audit et les `fib-dev` avaient laissé passer :
     - le lecteur d'oracle Rust n'ignorait plus les lignes vides (PRD § 7);
@@ -106,7 +106,6 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
 - **A aidé** :
   - Le banc d'essai commun, mesuré avant tout changement, a montré où partait le temps : le démarrage (TypeScript, Python) et la conversion décimale de la liste. Le calcul ne dominait que pour `iterative`. Sans lui, on aurait optimisé `fast`, qui prenait moins d'une milliseconde.
   - Deux décisions sont revenues au propriétaire, chiffres à l'appui : la liste calculée en décimal, et les commandes de lancement.
-  - Une session antérieure avait laissé des pistes Python mesurées (branche `perf/py`); elles ont été reprises.
   - `/code-review` a trouvé que `matrix` en TypeScript refaisait pas à pas l'ancien `fast` : l'algorithme avait perdu son identité.
   - Gains, en temps total : liste 10 000 de ×2,9 à ×4,3, terme seul de −34 % à −45 % en TypeScript et en Python, iterative ×3,8 en Go.
 - **Friction** :
@@ -122,7 +121,7 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
 
 - **A aidé** :
   - Les faits attendus (208 988 chiffres, et les congruences mod 2048 et mod 1000 tirées des périodes de Pisano) ont été vérifiés avant d'écrire le cas CLI-T13. Le contrat est passé au rouge, puis les quatre langages au vert.
-  - Le banc d'essai a dit où optimiser, et où ne pas le faire. Go, Rust et TypeScript convertissent déjà en temps sous-quadratique, et aucune piste maison n'y a passé le seuil des 3 %. En Python, deux seuils mesurés font passer F(1 000 000) de 288 à 42 ms.
+  - Le banc d'essai a dit où optimiser, et où ne pas le faire. Go, Rust et TypeScript convertissent déjà en temps sous-quadratique, et aucune piste maison n'y a passé le seuil des 3 %. En Python, deux seuils mesurés font passer F(1 000 000) de 288 à 38 ms.
   - `/code-review` : l'axe Spec a joué 152 sondes, sans un seul écart, jusqu'à F(1 000 000) par `iterative`. L'axe Standards a vu que le chemin `Decimal` contournait la seam, et que deux gardes avaient un attendu tautologique ou pris d'un autre algorithme.
 - **Friction** :
   - Un brief a supposé que `num-bigint` convertissait en temps quadratique, ce qui était faux. L'agent l'a vérifié dans la source avant d'écrire du code.
@@ -139,13 +138,17 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
 | `/to-tickets` | utilisée : tickets #2 à #5, avec dépendances natives |
 | `tdd` | utilisée : catalogue de cas, puis cycles des quatre `fib-dev` |
 | `/implement` | remplacée par l'agent `fib-dev`, qui applique `tdd` directement |
-| `resolving-merge-conflicts` | non nécessaire : aucune fusion n'a conflicté |
+| `resolving-merge-conflicts` | non nécessaire : aucune des 28 fusions n'a conflicté |
 | `research`, `prototype` | non utilisées; un `prototype` aurait détecté plus tôt le piège de `go run` |
-| `/code-review` | utilisée : revue Standards et Spec de la refactorisation du 2026-10-11 |
+| `/code-review` | utilisée trois fois le 2026-10-11, axes Standards et Spec : après la refactorisation, après l'optimisation, après la borne à 1 000 000 |
 | `diagnosing-bugs`, `/improve-codebase-architecture`, `/handoff` | à venir (étapes 9 à 11 du PRD) |
 
-Trois leçons :
+Hors skill : l'audit du PRD (2026-10-10), l'audit en workflow du 2026-10-11 (auditeurs en lecture seule), puis l'optimisation des performances et la borne à 1 000 000, confiées à des sous-agents `fib-dev`.
+
+Cinq leçons :
 
 1. **Un catalogue de cas avant le code** a fait converger quatre implémentations indépendantes. Elles sont passées au vert d'un seul coup quand l'oracle est arrivé.
 2. **Les sondes par sous-agents valent le coût quand elles exécutent**, plus que quand elles lisent de la doc. Le piège de `go run`, la toolchain MSVC et les fins de ligne CRLF ne sont apparus qu'à l'exécution.
 3. **Les données externes sont un prérequis à traiter avant les agents.** L'oracle bloqué a immobilisé les quatre tickets.
+4. **Mesurer avant d'optimiser.** Le banc d'essai a montré que le temps partait au démarrage et dans la conversion décimale, pas dans `fast`, qui calculait F(100 000) en moins d'une milliseconde. À 1 000 000, il a aussi dit où ne rien changer : Go, Rust et TypeScript convertissaient déjà en temps sous-quadratique.
+5. **La revue trouve ce que les agents laissent passer.** À chacun de ses trois passages, `/code-review` a trouvé un défaut que les `fib-dev` n'avaient pas vu : le lecteur d'oracle Rust qui n'ignorait plus les lignes vides (PRD § 7), `matrix` en TypeScript qui refaisait l'ancien `fast`, le chemin `Decimal` de Python qui contournait la seam.

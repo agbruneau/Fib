@@ -11,7 +11,7 @@ Ce catalogue est la source unique des cas qui valident les quatre implémentatio
 - **L'ordre des sections est l'ordre conseillé des cycles.** Chaque cas est un tracer bullet qui s'appuie sur le précédent.
 - **Un cas manquant se signale.** Si un cycle révèle un cas absent, on l'ajoute au catalogue dans le même commit, avec un nouvel identifiant. On ne renumérote jamais.
 - **Le refactoring sort de la boucle** : il revient à la revue (`/code-review`).
-- **Nommage** : chaque test porte l'identifiant de son cas et décrit un comportement, par exemple `CLI-I06 : un indice avec un soulignement est refusé`.
+- **Nommage** : chaque test porte l'identifiant de son cas et décrit un comportement, par exemple `CLI-I06 : un indice avec un soulignement est refusé`. Un test de garde porte un identifiant `PERF` (§ 6).
 - **Une assertion logique par test.** Un cas qui porte sur plusieurs entrées du même comportement, comme BIB-05 sur n = 0..2000, se paramètre.
 
 ## 2. D'où viennent les attendus
@@ -31,7 +31,7 @@ Faits mathématiques utilisés :
 
 **Interdit** : recalculer un attendu avec l'algorithme testé, ou avec une copie de cet algorithme (anti-pattern « tautologique »).
 
-Valeurs de référence, vérifiées le 2026-10-10. En cas de doute, l'oracle et les formules font foi.
+Valeurs de référence, vérifiées le 2026-10-11. En cas de doute, l'oracle et les formules font foi.
 
 | Terme | Valeur |
 |---|---|
@@ -240,7 +240,7 @@ Chacun de ces cas attend une erreur.
 
 ## 6. Hors catalogue
 
-- **Tests de garde des optimisations** (ADR-0004) : `PERF-GO-<n>`, `PERF-RS-<n>`, `PERF-TS-<n>` et `PERF-PY-<n>`, propres à chaque langage et hors seams. Ils protègent ce que les cas BIB et CLI ne visent pas directement : la retenue de l'additionneur décimal, la dernière étape de `fast`, l'écriture par tranches, le chemin `Decimal` de Python au-delà de 170 000, l'absence d'allocation ou d'import. Leur liste est dans les fichiers de test.
+- **Tests de garde des optimisations** (ADR-0004) : `PERF-GO-<n>`, `PERF-RS-<n>`, `PERF-TS-<n>` et `PERF-PY-<n>`, propres à chaque langage et hors seams, numérotés à la suite dans chaque langage. Ils protègent ce que les cas BIB et CLI ne visent pas directement : la retenue de l'additionneur décimal, la dernière étape de `matrix` et de `fast`, l'écriture par tranches, les seuils de Python (`Decimal` dès 170 000, `str()` au-delà de 200 000 bits), l'absence d'allocation ou d'import. Leur liste est dans les fichiers de test.
 - **Hors contrat, donc non testé** : un stdout fermé avant la fin (`fib --list 10000 | head`) et un argument qui n'est pas de l'Unicode valide.
 - **Lacune connue** : aucun cas CLI ne peut provoquer une discordance, donc le chemin du code 3 dans la CLI n'a pas de test automatique, et pas davantage la règle qui le restreint à une seule ligne `fib:` sans durée, même avec `--time`. BIB-08 vérifie que les algorithmes concordent; la revue de code vérifie ce chemin.
 - **Lacune connue** : le contrat vérifie le nom et le format des lignes de durée, mais ni que l'algorithme nommé s'exécute vraiment, ni que la durée est mesurée (`0.000 ms` passe). La revue de code couvre ce point.
