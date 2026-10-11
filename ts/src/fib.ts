@@ -9,21 +9,24 @@ function iterative(n: number): bigint {
   return a;
 }
 
-// [[1,1],[1,0]]^k = [[F(k+1), F(k)], [F(k), F(k-1)]] est symétrique, et F(k-1) = F(k+1) - F(k) : on garde (a, b) seul.
+// [[1,1],[1,0]]^k = [[F(k+1), F(k)], [F(k), F(k-1)]] est symétrique : trois coefficients (a, b, c) suffisent.
+// Du poids fort au poids faible : un carré par bit, puis un bit à 1 multiplie par Q, ce qui ne coûte que des additions.
 function matrix(n: number): bigint {
-  let a = 1n; // k = 0 : la matrice identité
-  let b = 0n;
-  // De gauche à droite : un carré par bit, puis un bit à 1 multiplie par Q, ce qui ne coûte que des additions.
-  for (const bit of n.toString(2)) {
-    [a, b] = [a * a + b * b, b * (2n * a - b)]; // carré de [[a, b], [b, a-b]]
-    if (bit === '1') [a, b] = [a + b, a]; // fois [[1,1],[1,0]]
+  let [a, b, c] = [1n, 0n, 1n]; // k = 0 : la matrice identité
+  const bits = n.toString(2);
+  for (const bit of bits.slice(0, -1)) {
+    // Trois carrés, aucun produit : le nouveau b = a' − c' = a² − c² = b(a + c), avec les anciens a, b, c et a − c = b.
+    const [aa, bb, cc] = [a * a, b * b, c * c];
+    [a, c] = [aa + bb, bb + cc];
+    b = a - c;
+    if (bit === '1') [a, b, c] = [a + b, a, b]; // fois [[1,1],[1,0]]
   }
-  return b;
+  // Dernier bit : seul F(n) est utile. À 0, c'est b du carré, b(a + c); à 1, c'est a du carré, a² + b².
+  return bits.endsWith('0') ? b * (a + c) : a * a + b * b;
 }
 
-// Doublement rapide par les nombres de Lucas (L(0) = 2, L(1) = 1) : F(2k) = F(k)·L(k) et L(2k) = L(k)² − 2(−1)^k,
-// soit un produit et un carré par bit, du poids fort au poids faible. Un bit à 1 avance d'un cran :
-// F(m+1) = (F(m) + L(m)) / 2 et L(m+1) = (5F(m) + L(m)) / 2, des divisions exactes que >> 1n fait à bas prix.
+// Doublement rapide par la suite de Lucas L : F(2k) = F(k)·L(k) et L(2k) = L(k)² − 2(−1)^k, du poids fort au faible.
+// Un bit à 1 avance d'un cran : F(m+1) = (F(m) + L(m)) / 2 et L(m+1) = (5F(m) + L(m)) / 2, des divisions exactes.
 function fast(n: number): bigint {
   const bits = n.toString(2);
   let f = 0n; // F(k)
@@ -75,8 +78,9 @@ export function fibList(n: number): string[] {
   const words = new Uint32Array(size); // le dernier terme calculé en ASCII, aligné à droite
   const bytes = Buffer.from(words.buffer);
   let len = 1; // limbes du plus grand des deux termes, donc du dernier calculé
-  // x += y en place, puis rend x en texte. Les deux termes ont len limbes au plus; le reste est à zéro.
-  const add = (x: Int32Array, y: Int32Array): string => {
+  // x += y en place, limbe par limbe. Les deux termes ont len limbes au plus; le reste est à zéro.
+  // Écrit aussi la somme en ASCII dans words (même boucle) et fait passer len à len + 1 si la retenue sort.
+  const addInPlaceAndEncode = (x: Int32Array, y: Int32Array): void => {
     let m = -1; // -1 sans retenue, 0 avec : sans branche, car la retenue est imprévisible (une fois sur deux)
     for (let k = 0; k < len; k++) {
       const u = x[k] + y[k] - (BASE - 1) + m; // somme + retenue - BASE
@@ -89,14 +93,21 @@ export function fibList(n: number): string[] {
       words[size - 1 - len] = ascii[1];
       len++;
     }
+  };
+  // Le dernier terme encodé, en texte, sans les zéros de tête de son limbe de poids fort.
+  const lastTermText = (): string => {
     let start = (size - len) * 4;
-    while (bytes[start] === 0x30) start++; // zéros de tête du limbe de poids fort
+    while (bytes[start] === 0x30) start++;
     return bytes.toString('latin1', start, size * 4);
   };
   const terms = ['0', '1'].slice(0, n + 1);
   for (let i = 2; i <= n; i += 2) {
-    terms.push(add(a, b)); // F(i)
-    if (i < n) terms.push(add(b, a)); // F(i+1)
+    addInPlaceAndEncode(a, b); // F(i)
+    terms.push(lastTermText());
+    if (i < n) {
+      addInPlaceAndEncode(b, a); // F(i+1)
+      terms.push(lastTermText());
+    }
   }
   return terms;
 }
