@@ -16,10 +16,10 @@ def _iterative(n):
     return a
 
 
-def _matrix(n):
+def _matrix(n, kind=int):
     """[[1,1],[1,0]]^n = [[F(n+1), F(n)], [F(n), F(n-1)]], par carrés successifs, du poids fort au poids faible de n.
     La puissance est symétrique, donc trois coefficients (a, b, c) suffisent : [[a, b], [b, c]]."""
-    a, b, c = 1, 0, 1
+    a, b, c = kind(1), kind(0), kind(1)  # kind : le type des nombres, int ou Decimal
     bits = format(n, "b")
     for bit in bits[:-1]:
         # Trois carrés, aucun produit (un carré coûte moins) : le nouveau b = a² − c² = (a − c)(a + c) = b(a + c).
@@ -33,12 +33,12 @@ def _matrix(n):
     return a * a + b * b if bits[-1] == "1" else b * (a + c)
 
 
-def _fast(n):
+def _fast(n, kind=int):
     """Doublement rapide : (F(k), F(k−1)) devient celui de 2k, ou de 2k+1 si le bit vaut 1, en suivant les bits de n.
     Formules de GMP, deux carrés par bit; le dernier bit ne calcule que F(n), en un seul produit."""
     if n < 2:
-        return n
-    f, g = 1, 0
+        return kind(n)
+    f, g = kind(1), kind(0)
     # le bit de tête est déjà lu : k = 1
     *middle, last = format(n, "b")[1:]
     sign = -2  # 2·(−1)^k
@@ -98,7 +98,10 @@ USAGE = """usage: fib [--algo iterative|matrix|fast|all] [--time] N
        fib --help
 """
 
-MAX_TERM, MAX_LIST = 100_000, 10_000
+MAX_TERM, MAX_LIST = 1_000_000, 10_000
+
+# Mesuré : à cet indice, l'import de decimal (5 ms) coûte autant que l'écriture par tranches, quadratique au-delà.
+DECIMAL_FROM = 170_000
 
 COMPARISON = ("fast", "iterative", "matrix")
 
@@ -160,10 +163,17 @@ def parse(args):
 # Chiffres par tranche de _text : le divmod d'une tranche reste sous le seuil de _pylong.
 CHUNK_DIGITS = 1000
 
+# Mesuré : au-delà (environ 60 000 chiffres), str() avec _pylong (import de 10 ms) bat les tranches, quadratiques.
+STR_FROM_BITS = 200_000
+
 
 def _text(x):
     """Texte décimal d'un entier. Au-delà d'environ 9 000 chiffres, str() importe _pylong (re, decimal : 10 ms), et
     même en deçà il est plus lent : on coupe par tranches de CHUNK_DIGITS chiffres."""
+    # Un Decimal ou un texte passe par str(), linéaire; un int de plus de STR_FROM_BITS bits aussi, car _pylong y bat
+    # les tranches.
+    if type(x) is not int or x.bit_length() > STR_FROM_BITS:
+        return str(x)
     base = 10**CHUNK_DIGITS
     parts = []
     while x >= base:
@@ -171,6 +181,17 @@ def _text(x):
         parts.append(str(rest).zfill(CHUNK_DIGITS))
     parts.append(str(x))
     return "".join(reversed(parts))
+
+
+def _decimal_term(n, algo):
+    """F(n) en Decimal, par fast ou matrix : le calcul y vaut celui des int (13 ms contre 17 à n = 1 000 000), et
+    str() est linéaire, non quadratique (0,5 ms contre 54, même par _pylong)."""
+    # Importé ici : environ 5 ms que le calcul en int n'a pas à payer.
+    from decimal import MAX_EMAX, MAX_PREC, Context, Decimal, localcontext
+
+    # Contexte exact : la précision par défaut arrondirait. Local : celui de l'appelant reste intact.
+    with localcontext(Context(prec=MAX_PREC, Emax=MAX_EMAX)):
+        return _ALGOS[algo](n, Decimal)
 
 
 def compute(algos, as_list, n):
@@ -191,7 +212,13 @@ def compute(algos, as_list, n):
         import decimal
 
         return timed("iterative", lambda: fib_list(n)), durations
-    terms = [timed(a, lambda: fib(n, a)) for a in algos]
+    # Dès DECIMAL_FROM, fast et matrix seuls calculent en Decimal, sans conversion à l'écriture. Avec iterative (int),
+    # == Decimal/int convertit l'int, quadratique (420 ms à 1 000 000), et le temps est déjà celui d'iterative.
+    use_decimal = n >= DECIMAL_FROM and "iterative" not in algos
+    if use_decimal:
+        import decimal  # pour son effet : hors du chronomètre (5 ms qui ne sont pas du calcul), comme pour la liste
+
+    terms = [timed(a, lambda: _decimal_term(n, a) if use_decimal else fib(n, a)) for a in algos]
     if any(t != terms[0] for t in terms):
         raise CliError(f"discordance entre les algorithmes pour l'indice {n}", 3)
     return [_text(terms[0])], durations
