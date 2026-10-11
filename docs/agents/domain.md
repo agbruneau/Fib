@@ -17,8 +17,6 @@ Dépôt single-context : un seul domaine, partagé par les quatre implémentatio
 /
 ├── CONTEXT.md
 ├── docs/adr/
-│   ├── 0001-implementations-independantes.md
-│   └── 0002-analyse-manuelle-des-arguments.md
 ├── go/  rust/  ts/  python/
 ```
 

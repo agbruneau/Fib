@@ -1,6 +1,6 @@
 # PRD — Fib : calculateur Fibonacci académique en quatre langages
 
-Version 1.6 · 2026-10-10 · André-Guy Bruneau. Révisée par `/grill-with-docs`, par un audit, par le catalogue de cas de test, puis par l'implémentation des tickets #2 à #5 : le vocabulaire est dans `CONTEXT.md`, les décisions durables dans `docs/adr/`.
+Version 1.7 · 2026-10-11 · André-Guy Bruneau. Révisée par `/grill-with-docs`, par un audit, par le catalogue de cas de test, par l'implémentation des tickets #2 à #5, puis par l'audit et la refactorisation du 2026-10-11 : le vocabulaire est dans `CONTEXT.md`, les décisions durables dans `docs/adr/`.
 
 ## 1. Contexte et objectifs
 
@@ -25,7 +25,7 @@ La performance n'est pas un objectif. `--time` sert à comparer les langages et 
 | code 4 sur erreur de configuration | code 2 | convention Unix des erreurs d'usage |
 | usage sur stderr | `--help` sur stdout | l'aide demandée est une sortie normale |
 | `-details` : durée du calcul seul | `--time` : même périmètre | mesures comparables |
-| golden généré par le code | oracle OEIS | ADR-0001 |
+| golden généré par le code | oracle indépendant du code (Binet, vérifié par la définition) | ADR-0001 |
 | `fft`, `gmp`, TUI, calibration, seuils, `-memory-limit`, `-gc-control`, `-timeout`, `-last-digits`, `-output`, variables `FIBCALC_*`, profilage, complétion, Docker, CI | exclus | voir § 8 |
 
 Fib ajoute `--list`, qui produit la liste F(0) … F(N).
@@ -101,12 +101,12 @@ La CLI est un adaptateur mince : grammaire, bornes, comparaison, durées, format
 
 Dépendances autorisées : `num-bigint`, avec ses dépendances transitives `num-integer`, `num-traits` et `autocfg`, pour Rust; `typescript` et `@types/node` en `devDependencies` pour TypeScript. Aucune autre.
 
-Durée indicative du calcul itératif de F(100 000) sur la machine de développement : Go 17 ms, Rust 26 ms, Node 43 ms, Python 53 ms.
+Durée indicative du calcul itératif de F(100 000) sur la machine de développement, mesurée le 2026-10-11 : Go 62 ms, Rust 35 ms, Node 42 ms, Python 53 ms. Go et Rust allouent un terme neuf à chaque pas, comme le veut la forme (a, b) ← (b, a + b) de la définition (O3).
 
 ### Pièges vérifiés le 2026-10-10
 
 - **Tous les langages** : valider `N` par l'expression régulière avant de le convertir. `int()` de Python accepte `+5`, `1_000`, ` 5 ` et des chiffres non ASCII; `Number` et `BigInt` acceptent `+5`, ` 5` et `0x10`, et valent 0 pour la chaîne vide; `parse::<u64>()` de Rust accepte `+5`, tout comme `strconv.Atoi` de Go (mais pas `ParseUint`). Vérifié le 2026-10-10. En Python, valider avec `re.fullmatch` : le `$` de `^[0-9]+$` accepte un saut de ligne final (cas CLI-I16).
-- **Python** : sous Windows, stdout et stderr écrivent `\r\n`. Appeler `sys.stdout.reconfigure(newline="\n")`, et de même pour stderr. `str()` d'un terme de plus de 4 300 chiffres lève `ValueError` : appeler `sys.set_int_max_str_digits(0)` au chargement du module.
+- **Python** : sous Windows, stdout et stderr écrivent `\r\n`, et `PYTHONIOENCODING` change leur encodage (cas CLI-V03). Au point d'entrée, appeler `reconfigure(encoding="ascii", newline="\n")` sur stdout et sur stderr. `str()` d'un terme de plus de 4 300 chiffres lève `ValueError` : appeler `sys.set_int_max_str_digits(0)` au chargement du module.
 - **TypeScript** :
   - Le `package.json` racine doit déclarer `"type": "module"`, sans quoi tsc 7 refuse les imports ES.
   - N'utiliser que de la syntaxe effaçable (`erasableSyntaxOnly` : ni `enum` ni `namespace`) et des imports relatifs avec l'extension `.ts` (`allowImportingTsExtensions`).
@@ -119,7 +119,7 @@ Durée indicative du calcul itératif de F(100 000) sur la machine de développe
 
 ```
 Fib/
-├── README.md, PRD.md, CLAUDE.md, CONTEXT.md, .gitignore
+├── README.md, PRD.md, CLAUDE.md, CONTEXT.md, .gitignore, .gitattributes
 ├── docs/adr/ (0001 à 0003), docs/agents/, docs/cas-de-test.md, docs/exploration.md
 ├── contracts/
 │   ├── b000045.txt      oracle : F(0) … F(2000), au format du b-file OEIS A000045
@@ -128,7 +128,7 @@ Fib/
 │   ├── oracle.ts        lecture et vérification de l'oracle (ORA), en TypeScript
 │   └── cli.test.ts      test de contrat
 ├── go/  rust/  ts/  python/
-├── package.json         "type": "module", point d'entrée unique
+├── package.json         "type": "module", point d'entrée unique (avec package-lock.json)
 └── tsconfig.json        couvre ts/ et contracts/
 ```
 
@@ -168,7 +168,7 @@ Le chemin de la discordance (code 3) dans la CLI n'a pas de test automatique, pu
 
 - **A1** — Chaque ticket de langage : les cas ORA, les cas BIB de son langage et tous les cas CLI de son identifiant passent, donc `npm run check:<id>` et `npm run contract` sont verts sur `main`. Le projet : `npm run check` passe sous Windows 11 une fois les quatre implémentations livrées.
 - **A2** — Aucune dépendance hors de celles du § 5.
-- **A3** — Environ 200 lignes de code par langage, tests exclus. Un dépassement se justifie dans un ADR. Mesuré : TypeScript 151, Python 158, Rust 205, Go 255 (ADR-0003).
+- **A3** — Environ 200 lignes physiques par langage, tests exclus (`wc -l` des fichiers sources, au formatage du dépôt). Un dépassement se justifie dans un ADR. Mesuré le 2026-10-11 : TypeScript 169, Python 191, Rust 229, Go 270 (ADR-0003).
 - **A4** — `docs/exploration.md` contient une entrée pour chaque skill du § 9 réellement utilisée.
 
 ## 8. Hors périmètre
@@ -177,7 +177,7 @@ FFT, GMP, Strassen, parallélisme, TUI, mode serveur, calibration et seuils, lim
 
 ## 9. Démarche d'exploration des skills
 
-L'orchestrateur est la session principale (Opus 5.5 en `ultracode`); le code revient au sous-agent `fib-dev` (Sonnet 5.5). Voir `CLAUDE.md`. Les étapes 0, 1 et 4 à 7 sont faites : les quatre implémentations passent `npm run check`. Les étapes 2 et 3 n'ont pas servi. Les étapes 8 à 11 restent à faire.
+L'orchestrateur est la session principale (Opus 5.5 en `ultracode`); le code revient au sous-agent `fib-dev` (Sonnet 5.5). Voir `CLAUDE.md`. Les étapes 0, 1 et 4 à 8 sont faites : les quatre implémentations passent `npm run check`. L'étape 8 a pris la forme d'un audit, d'une refactorisation puis de `/code-review` (2026-10-11, `docs/exploration.md`). Les étapes 2 et 3 n'ont pas servi. Les étapes 9 à 11 restent à faire.
 
 | # | Étape | Skill | Livrable |
 |---|---|---|---|
@@ -205,7 +205,7 @@ Chaque entrée de `docs/exploration.md` donne : la skill, l'étape ou le ticket,
 
 | Risque | Parade |
 |---|---|
-| Fins de ligne CRLF sous Windows (Python, checkout Git) | F10, `reconfigure`, `.gitattributes` en `eol=lf`, contrat comparé à l'octet |
+| Fins de ligne CRLF et encodage imposé par l'environnement (Python, checkout Git) | F10, `reconfigure(encoding="ascii", newline="\n")`, `.gitattributes` en `eol=lf`, contrat comparé à l'octet |
 | Conversions trop permissives de `N` | validation par l'expression régulière avant conversion; cas `+5`, `1_000`, `0x10`, `٣`, `""` |
 | Limite de conversion entier → texte de Python | `set_int_max_str_digits(0)`, cas `100000` |
 | Débordement à l'analyse de `N` | cas `99999999999999999999` |

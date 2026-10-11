@@ -1,6 +1,6 @@
 # Quatre implémentations indépendantes, reliées seulement par le contrat
 
-Fib réalise le même calcul en Go, Rust, TypeScript et Python sans aucun code partagé : pas de noyau commun appelé par FFI, WASM ou cgo, pas de génération de code. Les implémentations ne se rejoignent que par le contrat de la CLI, que vérifie un test commun, et par l'oracle tiré de l'OEIS. Le but est d'exercer les skills d'agent une fois par langage. Un noyau partagé réduirait trois implémentations à des adaptateurs et cacherait justement ce qu'on veut observer.
+Fib réalise le même calcul en Go, Rust, TypeScript et Python sans aucun code partagé : pas de noyau commun appelé par FFI, WASM ou cgo, pas de génération de code. Les implémentations ne se rejoignent que par le contrat de la CLI, que vérifie un test commun, et par l'oracle tiré de l'OEIS (voir l'amendement du 2026-10-10). Le but est d'exercer les skills d'agent une fois par langage. Un noyau partagé réduirait trois implémentations à des adaptateurs et cacherait justement ce qu'on veut observer.
 
 ## Considered Options
 

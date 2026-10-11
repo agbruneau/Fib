@@ -2,8 +2,6 @@
 
 Ce catalogue est la source unique des cas qui valident les quatre implémentations. Il découle du contrat (PRD § 4) et des deux seams convenues (PRD § 7). Pour chaque cas, il donne un identifiant, l'entrée, l'attendu et la source de l'attendu. Le PRD, la spec (#1) et les tickets (#2 à #5) y renvoient.
 
-**État au 2026-10-10** : tous les cas passent dans les quatre implémentations (`npm run check`).
-
 ## 1. Mode d'emploi TDD
 
 - **Un catalogue n'est pas une suite de tests écrite d'avance.** Chaque cas devient un test au moment de son cycle : le test d'abord (rouge), puis juste assez de code pour le faire passer (vert), puis le cas suivant. Écrire tous les tests puis tout le code, c'est l'anti-pattern du découpage horizontal de la skill `tdd`.

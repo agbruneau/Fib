@@ -81,7 +81,27 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
 - **Friction** : exiger une copie conforme de l'OEIS était plus fort que nécessaire. Quand le téléchargement a été refusé, cette contrainte a bloqué les quatre tickets.
 - **À changer** : exiger de l'oracle une propriété vérifiable (la définition de la suite) plutôt qu'une provenance.
 
-## Bilan au 2026-10-10
+## 2026-10-11 — Audit en workflow, refactorisation, puis `/code-review` (étape 8)
+
+- **A aidé** :
+  - L'audit a mis huit auditeurs en lecture seule : un par langage, le contrat, la cohérence entre langages, un test différentiel et la documentation. Un vérificateur sceptique suivait chacun d'eux. Sur 233 constats, 36 ont été réfutés. L'audit n'a trouvé aucun bogue fonctionnel et un seul écart au contrat : Python laissait `PYTHONIOENCODING` changer l'encodage (F10). Il est corrigé, avec le cas CLI-V03.
+  - Le test différentiel a joué plus de 120 vecteurs hors catalogue sur les quatre CLI, sans un seul écart de stdout ni de code de sortie.
+  - Durcir le contrat avant de refactoriser a protégé la réécriture des messages d'erreur (CLI-A17, A18, H11, U04).
+  - `/code-review`, sur ses deux axes, a trouvé ce que l'audit et les `fib-dev` avaient laissé passer :
+    - le lecteur d'oracle Rust n'ignorait plus les lignes vides (PRD § 7);
+    - un commentaire Python était faux;
+    - des commentaires dépassaient 200 caractères.
+- **Friction** :
+  - L'audit a proposé 38 changements, et la synthèse mêlait l'essentiel et le cosmétique. Le tri s'est fait à la main; trois items et une partie des docs sont reportés.
+  - Les briefs imposaient des phrases mot pour mot, ce qui a fait grossir le code de 15 à 33 lignes par langage, surtout en commentaires. Go et Rust dépassent la cible d'A3 (ADR-0003 amendé).
+  - Les tickets #2 à #5 avaient été fermés sans `/code-review`, que prévoit pourtant l'étape 4 de la boucle de `CLAUDE.md`. Ce travail-ci n'avait pas de ticket : les briefs en tenaient lieu.
+  - Coût : environ 2,5 millions de jetons pour l'audit, et 1,25 million pour la refactorisation, la revue et les corrections.
+- **À changer** :
+  - Demander à la synthèse un plan court, classé par gain de lecture.
+  - Fixer un plafond de lignes dans les briefs de refactorisation.
+  - Lancer `/code-review` à chaque ticket.
+
+## Bilan au 2026-10-11
 
 | Skill | Usage |
 |---|---|
@@ -93,7 +113,8 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
 | `/implement` | remplacée par l'agent `fib-dev`, qui applique `tdd` directement |
 | `resolving-merge-conflicts` | non nécessaire : aucune fusion n'a conflicté |
 | `research`, `prototype` | non utilisées; un `prototype` aurait détecté plus tôt le piège de `go run` |
-| `/code-review`, `diagnosing-bugs`, `/improve-codebase-architecture`, `/handoff` | à venir (étapes 8 à 11 du PRD) |
+| `/code-review` | utilisée : revue Standards et Spec de la refactorisation du 2026-10-11 |
+| `diagnosing-bugs`, `/improve-codebase-architecture`, `/handoff` | à venir (étapes 9 à 11 du PRD) |
 
 Trois leçons :
 

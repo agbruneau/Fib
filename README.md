@@ -13,16 +13,19 @@ Fib est un banc d'essai académique. Il sert à explorer, avec Claude Code, les 
 | Catalogue de cas de test | fait |
 | Contrat commun et implémentation TypeScript ([agbruneau/Fib#2](https://github.com/agbruneau/Fib/issues/2)) | fait |
 | Go ([agbruneau/Fib#3](https://github.com/agbruneau/Fib/issues/3)), Rust ([agbruneau/Fib#4](https://github.com/agbruneau/Fib/issues/4)), Python ([agbruneau/Fib#5](https://github.com/agbruneau/Fib/issues/5)) | fait |
-| Revue de code (`/code-review`) | à faire |
+| Audit, refactorisation et revue de code (`/code-review`) | fait (2026-10-11) |
+| Étapes 9 à 11 du PRD § 9 | à faire |
 
 Les quatre implémentations sont livrées et passent `npm run check` sous Windows 11 : chaque cas du catalogue passe dans chaque langage.
 
-| Implémentation | Grand entier | Lignes hors tests |
-|---|---|---|
-| TypeScript | `bigint` natif | 151 |
-| Python | `int` natif | 158 |
-| Rust | `num-bigint` 0.5 | 205 |
-| Go | `math/big` | 255 ([ADR-0003](docs/adr/0003-taille-de-l-implementation-go.md)) |
+| Implémentation | Grand entier |
+|---|---|
+| TypeScript | `bigint` natif |
+| Python | `int` natif |
+| Rust | `num-bigint` 0.5 |
+| Go | `math/big` |
+
+Les tailles sont mesurées au PRD (A3); [ADR-0003](docs/adr/0003-taille-de-l-implementation-go.md) justifie le dépassement de Go et de Rust.
 
 ## Utilisation
 

@@ -16,3 +16,7 @@ Plier chacune au contrat (une seule ligne `fib: `, aide sur stdout) coûterait p
 ## Consequences
 
 Comme aucune bibliothèque ne garantit la grammaire, le test de contrat doit la couvrir en entier : ordre libre, `--algo=X`, répétition, `-h`, arguments inconnus.
+
+## Amendement du 2026-10-11 : l'exemple de `parseArgs`
+
+Refuser `-1` n'est pas un écart : le contrat le refuse aussi (règle 4). L'écart réel, vérifié ce jour, est que `parseArgs` traite `--` comme la fin des options : `-- 5` y donne l'indice 5, alors que le contrat exige une erreur (cas CLI-U03).
