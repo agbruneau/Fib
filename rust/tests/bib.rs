@@ -2,19 +2,21 @@
 use fib::{Algo, fib, fib_list};
 use num_bigint::BigUint;
 
-/// F(0) … F(2000), lus à l'exécution. Un oracle absent fait échouer le test : il ne sert jamais d'attendu par défaut.
+/// F(0) … F(2000), lus à l'exécution. Un oracle absent ou invalide fait échouer le test : il ne sert jamais d'attendu.
 fn oracle() -> Vec<BigUint> {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../contracts/b000045.txt");
-    let text = std::fs::read_to_string(path).unwrap_or_else(|_| panic!("oracle absent : contracts/b000045.txt"));
-    text.lines()
-        .filter(|l| !l.is_empty())
+    let text = std::fs::read_to_string(path).expect("oracle illisible : contracts/b000045.txt");
+    let terms: Vec<BigUint> = text
+        .lines()
         .enumerate()
         .map(|(i, l)| {
             let (n, term) = l.split_once(' ').expect("oracle invalide : ligne sans espace");
             assert_eq!(n, i.to_string(), "oracle invalide : indice hors séquence");
             term.parse().expect("oracle invalide : terme non décimal")
         })
-        .collect()
+        .collect();
+    assert_eq!(terms.len(), 2001, "oracle invalide : 2 001 termes attendus");
+    terms
 }
 
 /// fib(n, algo) égale l'oracle pour n = 0..2000.
@@ -71,8 +73,9 @@ fn bib_08_fib_100000_rend_le_meme_terme_de_20899_chiffres_pour_les_trois_algorit
 #[test]
 fn bib_09_cassini_a_n_100000_pour_chaque_algorithme() {
     for algo in ALGOS {
-        let [p, q, r] = [99_999, 100_000, 100_001].map(|n| fib(n, algo));
-        assert_eq!(p * r, q.pow(2) + 1u8, "{algo:?}");
+        let [before, at, after] = [99_999, 100_000, 100_001].map(|n| fib(n, algo));
+        // BigUint est non signé : on compare before·after à at² + 1 plutôt que de soustraire.
+        assert_eq!(before * after, at.pow(2) + 1u8, "{algo:?}");
     }
 }
 
@@ -97,3 +100,5 @@ fn bib_13_un_nom_d_algorithme_inconnu_est_refuse() {
         assert!(name.parse::<Algo>().is_err(), "{name:?} devrait être refusé");
     }
 }
+
+// BIB-14 ne s'applique pas : l'indice est un u64 (docs/cas-de-test.md § 4).
