@@ -6,7 +6,7 @@ const USAGE = `usage: fib [--algo iterative|matrix|fast|all] [--time] N
        fib --help
 `;
 
-const MAX_TERM = 100_000;
+const MAX_TERM = 1_000_000;
 const MAX_LIST = 10_000;
 
 const COMPARISON: readonly Algo[] = ['fast', 'iterative', 'matrix'];
