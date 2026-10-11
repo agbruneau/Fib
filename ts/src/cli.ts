@@ -72,16 +72,17 @@ function timed<T>(durations: string[], name: Algo, calc: () => T): T {
   return result;
 }
 
-// Rend les termes à écrire et les lignes de durée; avec all, les trois algorithmes doivent concorder.
+// Rend les lignes à écrire et les lignes de durée; avec all, les trois algorithmes doivent concorder.
 // Rien n'est écrit ici : une discordance (F3) laisse stdout vide et sans durée.
-function compute({ algos, list, n }: Options): { terms: bigint[]; durations: string[] } {
+function compute({ algos, list, n }: Options): { lines: string[]; durations: string[] } {
   const durations: string[] = [];
-  if (list) return { terms: timed(durations, 'iterative', () => fibList(n)), durations };
+  // fibList rend déjà le texte décimal : la durée mesurée le comprend.
+  if (list) return { lines: timed(durations, 'iterative', () => fibList(n)), durations };
   const terms = algos.map((algo) => timed(durations, algo, () => fib(n, algo)));
   if (terms.some((term) => term !== terms[0])) {
     throw new CliError(`discordance entre les algorithmes pour l'indice ${n}`, 3);
   }
-  return { terms: [terms[0]], durations };
+  return { lines: [String(terms[0])], durations };
 }
 
 function main(args: string[]): void {
@@ -92,8 +93,11 @@ function main(args: string[]): void {
   }
   try {
     const options = parse(args);
-    const { terms, durations } = compute(options);
-    process.stdout.write(terms.map((term) => `${term}\n`).join(''));
+    const { lines, durations } = compute(options);
+    // Un seul appel; la dernière ligne vide du join donne le \n final. latin1 : la sortie est ASCII, et ce codage
+    // s'écrit un peu plus vite que l'UTF-8 pour 10 Mo (environ 2 % du temps total, mesuré).
+    lines.push('');
+    process.stdout.write(lines.join('\n'), 'latin1');
     if (options.time) process.stderr.write(durations.join(''));
   } catch (e) {
     // Toute autre erreur est une défaillance : Node l'écrit avec sa pile et sort avec le code 1.
