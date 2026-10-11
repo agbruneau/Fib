@@ -10,7 +10,6 @@ pub enum Algo {
 }
 
 impl Algo {
-    /// Les trois algorithmes.
     pub const ALL: [Algo; 3] = [Algo::Iterative, Algo::Matrix, Algo::Fast];
 
     pub fn name(self) -> &'static str {
@@ -34,8 +33,7 @@ impl FromStr for Algo {
     }
 }
 
-/// Rend F(n) par l'algorithme algo.
-/// L'enum et le u64 excluent un algorithme inconnu et n < 0 : le refus d'un nom se fait dans FromStr.
+/// Rend F(n) par l'algorithme algo; l'enum et le u64 excluent un nom inconnu et n < 0 (refus dans FromStr).
 pub fn fib(n: u64, algo: Algo) -> BigUint {
     match algo {
         Algo::Iterative => iterative(n),
@@ -89,8 +87,8 @@ fn matrix(mut n: u64) -> BigUint {
     f
 }
 
-/// Doublement rapide : les bits de n, lus du poids fort au poids faible, font passer de (F(k), F(k+1))
-/// à (F(2k), F(2k+1)); un bit à 1 avance encore d'un cran.
+/// Doublement rapide : (F(k), F(k+1)) devient (F(2k), F(2k+1)) à chaque bit de n, du poids fort au poids faible;
+/// un bit à 1 avance encore d'un cran.
 fn fast(n: u64) -> BigUint {
     let (mut a, mut b) = (BigUint::from(0u8), BigUint::from(1u8));
     for bit in format!("{n:b}").chars() {
