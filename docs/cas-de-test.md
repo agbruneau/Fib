@@ -235,6 +235,7 @@ Chacun de ces cas attend une erreur.
 |---|---|---|
 | CLI-V01 | `--time 50`, avec `LANG`, `LC_ALL` et `LC_NUMERIC` à `fr_CA.UTF-8` | comme D01 : la durée garde un point décimal. Sous Windows, les variables de locale sont sans effet : V01 n'y éprouve que la locale de la session. |
 | CLI-V02 | `--bogus 5`, puis `--help`, puis `10`, avec `FORCE_COLOR=1`, `CLICOLOR_FORCE=1` et `PYTHON_COLORS=1` | les mêmes sorties que U01, H01 et T01, sans aucun octet ESC. L'exécution qui lit l'oracle vient en dernier, pour chercher l'ESC même sans oracle. |
+| CLI-V03 | `--time 50`, avec `PYTHONIOENCODING=utf-16` | comme D01 : stdout et stderr restent en ASCII, sans BOM. Seul Python lit cette variable. |
 
 ## 6. Hors catalogue
 
@@ -255,7 +256,7 @@ Chacun de ces cas attend une erreur.
 | F7 — aide | H01–H07, H11 |
 | F8 — bornes | T12, I12–I14, L06, L09 |
 | F9 — erreurs d'usage | I01–I16, A09–A18, L09–L14, D09–D11, H08–H10, U01–U04 |
-| F10 — format des sorties | X-4 sur chaque cas, A18, U04, V02 |
+| F10 — format des sorties | X-4 sur chaque cas, A18, U04, V02, V03 |
 | Règle 1 — aide d'abord | H01–H11 |
 | Règle 2 — `--algo` | A06–A18, D04, D05 |
 | Règle 3 — drapeaux | L08, L14, D08, D10 |
