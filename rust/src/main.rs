@@ -1,4 +1,6 @@
+//! Commande fib : adaptateur mince autour de la bibliothèque fib (contrat du PRD § 4, analyse manuelle selon l'ADR-0002).
 use fib::{Algo, fib, fib_list};
+use num_bigint::BigUint;
 use std::{env, io::Write, process::ExitCode, time::Instant};
 
 const USAGE: &str = "usage: fib [--algo iterative|matrix|fast|all] [--time] N
@@ -7,12 +9,13 @@ const USAGE: &str = "usage: fib [--algo iterative|matrix|fast|all] [--time] N
 ";
 const MAX_TERM: u64 = 100_000;
 const MAX_LIST: u64 = 10_000;
+const COMPARISON: [Algo; 3] = [Algo::Fast, Algo::Iterative, Algo::Matrix];
 
 /// Code de sortie (2 : erreur d'usage, 3 : discordance) et message, sans le préfixe `fib: `.
-/// Les messages citent l'argument fautif par `escape_default`, qui reste en ASCII.
+/// L'argument fautif est cité, en ASCII.
 struct CliError(u8, String);
 
-fn usage(msg: impl Into<String>) -> CliError {
+fn usage_error(msg: impl Into<String>) -> CliError {
     CliError(2, msg.into())
 }
 
@@ -23,48 +26,76 @@ struct Options {
     n: u64,
 }
 
+/// Applique la grammaire du PRD § 4.
 fn parse(args: &[String]) -> Result<Options, CliError> {
-    let (mut algos, mut list, mut time, mut indices) = (None, false, false, Vec::new());
+    let mut algos: Option<Vec<Algo>> = None;
+    let mut list = false;
+    let mut time = false;
+    let mut positional = Vec::new();
     let mut it = args.iter();
     while let Some(a) = it.next() {
         if a == "--algo" || a.starts_with("--algo=") {
-            let value = if a == "--algo" { it.next().map(String::as_str) } else { a.strip_prefix("--algo=") };
-            let value = value.ok_or_else(|| usage("--algo demande une valeur"))?;
-            let unknown = |_| usage(format!("algorithme inconnu : {}", value.escape_default()));
-            algos = Some(if value == "all" { Algo::ALL.to_vec() } else { vec![value.parse().map_err(unknown)?] });
+            // --algo X : X est l'argument suivant, quel qu'il soit;
+            // chaque occurrence doit être valide, la dernière gagne.
+            let value = match a.strip_prefix("--algo=") {
+                Some(v) => v,
+                None => it.next().map(String::as_str).ok_or_else(|| usage_error("--algo demande une valeur"))?,
+            };
+            algos = Some(if value == "all" {
+                COMPARISON.to_vec()
+            } else {
+                let algo = value
+                    .parse()
+                    .map_err(|_| usage_error(format!("algorithme inconnu : \"{}\"", value.escape_default())))?;
+                vec![algo]
+            });
         } else if a == "--list" {
             list = true;
         } else if a == "--time" {
             time = true;
         } else if a.starts_with('-') {
-            return Err(usage(format!("option inconnue : {}", a.escape_default())));
+            return Err(usage_error(format!("option inconnue : \"{}\"", a.escape_default())));
         } else {
-            indices.push(a);
+            positional.push(a);
         }
     }
     if list && algos.is_some() {
-        return Err(usage("--list et --algo s'excluent"));
+        return Err(usage_error("--list et --algo s'excluent"));
     }
-    let [index] = indices[..] else { return Err(usage("un seul indice attendu")) };
+    let [index] = positional[..] else { return Err(usage_error("exactement un indice attendu")) };
     // Chiffres ASCII seulement, avant toute conversion : `parse` accepte `+5`.
     if index.is_empty() || !index.bytes().all(|b| b.is_ascii_digit()) {
-        return Err(usage("indice invalide : chiffres ASCII seulement"));
+        return Err(usage_error("indice invalide : chiffres ASCII seulement"));
     }
     let n = index.parse().unwrap_or(u64::MAX); // un débordement de u64 dépasse toute borne
-    let max = if list { MAX_LIST } else { MAX_TERM };
-    if n > max {
-        return Err(usage(format!("indice hors borne ({max} au plus)")));
+    let bound = if list { MAX_LIST } else { MAX_TERM };
+    if n > bound {
+        return Err(usage_error(format!("indice hors borne ({bound} au plus)")));
     }
     Ok(Options { algos: algos.unwrap_or(vec![Algo::Fast]), list, time, n })
 }
 
-// Une ligne « <algo> <durée> ms » par calcul exécuté : le chronomètre ne couvre que le calcul.
-fn timed<T>(name: &str, times: &mut String, calc: impl FnOnce() -> T) -> T {
+/// Une ligne « <algo> <durée> ms » par calcul : le chronomètre ne couvre que le calcul, et le format ignore la locale.
+fn timed<T>(name: &str, calc: impl FnOnce() -> T) -> (T, String) {
     let start = Instant::now();
     let result = calc();
     let ms = start.elapsed().as_secs_f64() * 1000.0;
-    times.push_str(&format!("{name} {ms:.3} ms\n"));
-    result
+    (result, format!("{name} {ms:.3} ms\n"))
+}
+
+/// Rend les termes à écrire et les lignes de durée; pour all, fast, iterative puis matrix doivent concorder.
+/// Rien n'est écrit avant la fin : une discordance laisse stdout vide, sans durée (F3).
+fn compute(o: &Options) -> Result<(Vec<BigUint>, String), CliError> {
+    if o.list {
+        return Ok(timed("iterative", || fib_list(o.n)));
+    }
+    let (mut terms, durations): (Vec<_>, Vec<String>) =
+        o.algos.iter().map(|&algo| timed(algo.name(), || fib(o.n, algo))).unzip();
+    if terms.iter().any(|t| *t != terms[0]) {
+        return Err(CliError(3, format!("discordance entre les algorithmes pour l'indice {}", o.n)));
+    }
+    terms.truncate(1); // ils concordent : un seul terme à écrire
+    Ok((terms, durations.concat()))
 }
 
 /// Rend le texte de stdout et celui de stderr.
@@ -73,19 +104,10 @@ fn run(args: &[String]) -> Result<(String, String), CliError> {
     if args.iter().any(|a| a == "--help" || a == "-h") {
         return Ok((USAGE.into(), String::new()));
     }
-    let Options { algos, list, time, n } = parse(args)?;
-    let mut times = String::new();
-    let terms = if list {
-        timed("iterative", &mut times, || fib_list(n))
-    } else {
-        let mut terms: Vec<_> = algos.iter().map(|&a| timed(a.name(), &mut times, || fib(n, a))).collect();
-        if terms.iter().any(|t| *t != terms[0]) {
-            return Err(CliError(3, format!("discordance entre les algorithmes (indice {n})")));
-        }
-        terms.truncate(1); // ils concordent : un seul terme à écrire
-        terms
-    };
-    Ok((terms.iter().map(|t| format!("{t}\n")).collect(), if time { times } else { String::new() }))
+    let options = parse(args)?;
+    let (terms, durations) = compute(&options)?;
+    let out = terms.iter().map(|t| format!("{t}\n")).collect();
+    Ok((out, if options.time { durations } else { String::new() }))
 }
 
 fn main() -> ExitCode {
@@ -93,6 +115,7 @@ fn main() -> ExitCode {
     let args: Vec<String> = env::args_os().skip(1).map(|a| a.to_string_lossy().into_owned()).collect();
     match run(&args) {
         Ok((out, err)) => {
+            // write_all plutôt que print! : un stdout fermé (hors contrat) ne doit pas faire paniquer.
             let _ = std::io::stdout().write_all(out.as_bytes());
             let _ = std::io::stderr().write_all(err.as_bytes());
             ExitCode::SUCCESS

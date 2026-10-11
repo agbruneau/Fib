@@ -10,8 +10,8 @@ pub enum Algo {
 }
 
 impl Algo {
-    /// Dans l'ordre de la comparaison (alphabétique).
-    pub const ALL: [Algo; 3] = [Algo::Fast, Algo::Iterative, Algo::Matrix];
+    /// Les trois algorithmes.
+    pub const ALL: [Algo; 3] = [Algo::Iterative, Algo::Matrix, Algo::Fast];
 
     pub fn name(self) -> &'static str {
         match self {
@@ -34,6 +34,8 @@ impl FromStr for Algo {
     }
 }
 
+/// Rend F(n) par l'algorithme algo.
+/// L'enum et le u64 excluent un algorithme inconnu et n < 0 : le refus d'un nom se fait dans FromStr.
 pub fn fib(n: u64, algo: Algo) -> BigUint {
     match algo {
         Algo::Iterative => iterative(n),
@@ -42,18 +44,36 @@ pub fn fib(n: u64, algo: Algo) -> BigUint {
     }
 }
 
-/// [[1,1],[1,0]]^n = [[F(n+1), F(n)], [F(n), F(n-1)]], par carrés successifs. Matrice 2x2 à plat : [a, b, c, d].
+/// F(0) … F(n), toujours par l'algorithme iterative.
+pub fn fib_list(n: u64) -> Vec<BigUint> {
+    let (mut a, mut b) = (BigUint::from(0u8), BigUint::from(1u8));
+    let mut terms = vec![a.clone()];
+    for _ in 0..n {
+        (a, b) = (b.clone(), a + &b);
+        terms.push(a.clone());
+    }
+    terms
+}
+
+/// Applique la définition indice par indice, avec deux termes consécutifs en mémoire.
+fn iterative(n: u64) -> BigUint {
+    let (mut a, mut b) = (BigUint::from(0u8), BigUint::from(1u8));
+    for _ in 0..n {
+        (a, b) = (b.clone(), a + &b);
+    }
+    a
+}
+
+/// Matrice 2x2 à plat : [a, b, c, d].
 type Mat = [BigUint; 4];
 
 fn mul(x: &Mat, y: &Mat) -> Mat {
-    [
-        &x[0] * &y[0] + &x[1] * &y[2],
-        &x[0] * &y[1] + &x[1] * &y[3],
-        &x[2] * &y[0] + &x[3] * &y[2],
-        &x[2] * &y[1] + &x[3] * &y[3],
-    ]
+    let [a, b, c, d] = x;
+    let [e, f, g, h] = y;
+    [a * e + b * g, a * f + b * h, c * e + d * g, c * f + d * h]
 }
 
+/// [[1,1],[1,0]]^n = [[F(n+1), F(n)], [F(n), F(n-1)]], par carrés successifs.
 fn matrix(mut n: u64) -> BigUint {
     let mut result = [1u8, 0, 0, 1].map(BigUint::from);
     let mut base = [1u8, 1, 1, 0].map(BigUint::from);
@@ -64,37 +84,20 @@ fn matrix(mut n: u64) -> BigUint {
         base = mul(&base, &base);
         n >>= 1;
     }
+    // F(n) est le coin b
     let [_, f, _, _] = result;
     f
 }
 
-/// Doublement rapide : à chaque bit de n, (F(k), F(k+1)) devient (F(2k), F(2k+1)); un bit à 1 avance encore d'un cran.
+/// Doublement rapide : les bits de n, lus du poids fort au poids faible, font passer de (F(k), F(k+1))
+/// à (F(2k), F(2k+1)); un bit à 1 avance encore d'un cran.
 fn fast(n: u64) -> BigUint {
     let (mut a, mut b) = (BigUint::from(0u8), BigUint::from(1u8));
-    for i in (0..u64::BITS - n.leading_zeros()).rev() {
-        let c = &a * (&b * 2u8 - &a);
-        let d = &a * &a + &b * &b;
-        (a, b) = if n >> i & 1 == 1 { (d.clone(), c + d) } else { (c, d) };
-    }
-    a
-}
-
-/// F(0) … F(n), toujours par l'algorithme iterative.
-pub fn fib_list(n: u64) -> Vec<BigUint> {
-    let n = n as usize;
-    let mut terms = vec![BigUint::from(0u8), BigUint::from(1u8)];
-    for i in 2..=n {
-        terms.push(&terms[i - 1] + &terms[i - 2]);
-    }
-    terms.truncate(n + 1);
-    terms
-}
-
-fn iterative(n: u64) -> BigUint {
-    let (mut a, mut b) = (BigUint::from(0u8), BigUint::from(1u8));
-    for _ in 0..n {
-        std::mem::swap(&mut a, &mut b);
-        b += &a;
+    for bit in format!("{n:b}").chars() {
+        // F(2k) = F(k)·(2F(k+1) − F(k)) et F(2k+1) = F(k)² + F(k+1)²
+        let even = &a * (&b * 2u8 - &a);
+        let odd = &a * &a + &b * &b;
+        (a, b) = if bit == '1' { (odd.clone(), even + odd) } else { (even, odd) };
     }
     a
 }
