@@ -3,7 +3,8 @@ import re
 import sys
 import time
 
-# Sans cela, int() d'un indice de plus de 4 300 chiffres (zéros de tête) et str() d'un terme de plus de 4 300 chiffres lèvent ValueError.
+# Sans cela, int() d'un indice de plus de 4 300 chiffres (zéros de tête) et str() d'un terme de plus de 4 300 chiffres
+# lèvent ValueError.
 sys.set_int_max_str_digits(0)
 
 
@@ -16,7 +17,7 @@ def _iterative(n):
 
 
 def _mul(x, y):
-    """Matrice 2x2 à plat : [a, b, c, d]."""
+    """Matrice 2x2 à plat : (a, b, c, d)."""
     a, b, c, d = x
     e, f, g, h = y
     return (a * e + b * g, a * f + b * h,
@@ -35,7 +36,8 @@ def _matrix(n):
 
 
 def _fast(n):
-    """Doublement rapide : les bits de n, lus du poids fort au poids faible, font passer de (F(k), F(k+1)) à (F(2k), F(2k+1)); un bit à 1 avance encore d'un cran."""
+    """Doublement rapide : (F(k), F(k+1)) devient (F(2k), F(2k+1)) à chaque bit de n, du poids fort au poids faible;
+    un bit à 1 avance encore d'un cran."""
     a, b = 0, 1
     for bit in format(n, "b"):
         # F(2k) = F(k)·(2F(k+1) − F(k)) et F(2k+1) = F(k)² + F(k+1)²
@@ -52,13 +54,14 @@ def _check_index(n):
     # ni float ni bool : sans lui, matrix rendrait 0 pour 0.0
     if type(n) is not int:
         raise TypeError(f"indice invalide : {n!r}")
-    # Avant tout calcul : sur n < 0, fast et iterative rendraient un faux terme, et matrix 0.
+    # Avant tout calcul : sur n < 0, les algorithmes rendraient un terme faux au lieu d'une erreur.
     if n < 0:
         raise ValueError(f"indice invalide : {n}")
 
 
 def fib(n, algo):
-    """Rend F(n) par l'algorithme algo. Lève ValueError pour un algorithme inconnu ou un indice négatif, TypeError pour un indice qui n'est pas un int."""
+    """Rend F(n) par l'algorithme algo.
+    Lève ValueError pour un algorithme inconnu ou un indice négatif, TypeError pour un indice qui n'est pas un int."""
     if algo not in _ALGOS:
         raise ValueError(f"algorithme inconnu : {algo!r}")
     _check_index(n)
@@ -142,11 +145,13 @@ def parse(args):
 
 
 def compute(algos, as_list, n):
-    """Rend les termes à écrire et les lignes de durée; pour all, fast, iterative puis matrix doivent concorder. Rien n'est écrit avant la fin : une discordance laisse stdout vide, sans durée (F3)."""
+    """Rend les termes à écrire et les lignes de durée; avec all, les trois algorithmes doivent concorder.
+    Rien n'est écrit ici : une discordance (F3) laisse stdout vide et sans durée."""
     durations = []
 
     def timed(name, calc):
-        """Une ligne « <algo> <durée> ms » par calcul : le chronomètre ne couvre que le calcul, et le format ignore la locale."""
+        """Une ligne « <algo> <durée> ms » par calcul : le chronomètre ne couvre que le calcul,
+        et le format ignore la locale."""
         start = time.perf_counter()
         result = calc()
         durations.append(f"{name} {(time.perf_counter() - start) * 1000:.3f} ms\n")
@@ -172,6 +177,7 @@ def main(args):
         sys.stderr.write(f"fib: {e}\n")
         return e.code
     sys.stdout.write("".join(f"{t}\n" for t in terms))
+    # Les termes avant les durées, même sur un pipe qui fusionne stdout et stderr.
     sys.stdout.flush()
     if show_time:
         sys.stderr.write("".join(durations))
