@@ -11,7 +11,7 @@ const USAGE: &str = "usage: fib [--algo iterative|matrix|fast|all] [--time] N
        fib --list [--time] N
        fib --help
 ";
-const MAX_TERM: u64 = 100_000;
+const MAX_TERM: u64 = 1_000_000;
 const MAX_LIST: u64 = 10_000;
 const COMPARISON: [Algo; 3] = [Algo::Fast, Algo::Iterative, Algo::Matrix];
 
