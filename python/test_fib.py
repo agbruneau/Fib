@@ -1,18 +1,22 @@
 """Seam 1 : la bibliothèque. Les attendus viennent de l'oracle (contracts/b000045.txt) ou de faits mathématiques."""
+import decimal
+import subprocess
+import sys
 import unittest
 from functools import cache
 from pathlib import Path
 
-from fib import fib, fib_list
+from fib import _text, fib, fib_list
 
 ALGOS = ("iterative", "matrix", "fast")
-ORACLE = Path(__file__).resolve().parent.parent / "contracts" / "b000045.txt"
+HERE = Path(__file__).resolve().parent
+ORACLE = HERE.parent / "contracts" / "b000045.txt"
 REFUSED = ((-1, ValueError), (1.5, TypeError), (float("nan"), TypeError), (0.0, TypeError))
 
 
 @cache
-def oracle():
-    """F(0) … F(2000), lus à l'exécution dans l'oracle.
+def oracle_text():
+    """F(0) … F(2000) en texte, lus à l'exécution dans l'oracle.
     Toute anomalie lève une exception : le test échoue au lieu de passer."""
     terms = []
     for line in ORACLE.read_text(encoding="ascii").splitlines():
@@ -20,10 +24,16 @@ def oracle():
             index, term = line.split()
             if int(index) != len(terms):
                 raise AssertionError(f"oracle invalide : indice {index} à la place de {len(terms)}")
-            terms.append(int(term))
+            terms.append(term)
     if len(terms) != 2001:
         raise AssertionError(f"oracle invalide : 2 001 termes attendus, {len(terms)} lus")
     return terms
+
+
+@cache
+def oracle():
+    """Les mêmes termes, en entiers."""
+    return [int(term) for term in oracle_text()]
 
 
 class TestFib(unittest.TestCase):
@@ -62,13 +72,13 @@ class TestFib(unittest.TestCase):
                 self.assertEqual(before * after - at**2, 1)
 
     def test_BIB_10_fib_list_0_ne_contient_que_f0(self):
-        self.assertEqual(fib_list(0), oracle()[:1])
+        self.assertEqual(fib_list(0), oracle_text()[:1])
 
     def test_BIB_11_fib_list_1_contient_f0_et_f1(self):
-        self.assertEqual(fib_list(1), oracle()[:2])
+        self.assertEqual(fib_list(1), oracle_text()[:2])
 
     def test_BIB_12_fib_list_2000_suit_l_oracle(self):
-        self.assertEqual(fib_list(2000), oracle())
+        self.assertEqual(fib_list(2000), oracle_text())
 
     def test_BIB_13_un_algorithme_inconnu_est_refuse(self):
         for algo in ("all", "bogus", "", "FAST"):
@@ -82,6 +92,41 @@ class TestFib(unittest.TestCase):
                     fib(n, algo)
             with self.subTest(n=n, algo="fib_list"), self.assertRaises(error):
                 fib_list(n)
+
+    # Hors catalogue : gardes des optimisations de performance.
+
+    def test_PERF_1_le_texte_par_tranches_garde_les_zeros_et_les_frontieres(self):
+        # hors catalogue : garde de l'optimisation du texte décimal par tranches de 1 000 chiffres
+        # (les attendus s'écrivent sans conversion : 10**k est un 1 suivi de k zéros)
+        for k in (1, 999, 1000, 1001, 2000, 2500):
+            with self.subTest(k=k):
+                self.assertEqual(_text(10**k), "1" + "0" * k)
+                self.assertEqual(_text(10**k - 1), "9" * k)
+        self.assertEqual(_text(10**2000 + 1), "1" + "0" * 1999 + "1")
+        self.assertEqual(_text(10**2000 + 10**1000), "1" + "0" * 999 + "1" + "0" * 1000)
+
+    def test_PERF_2_le_texte_par_tranches_egale_str_a_100000(self):
+        # hors catalogue : garde de l'optimisation du texte décimal par tranches, face à la conversion native
+        term = fib(100000, "fast")
+        self.assertEqual(_text(term), str(term))
+
+    def test_PERF_3_fib_list_laisse_le_contexte_decimal_de_l_appelant(self):
+        # hors catalogue : garde de l'optimisation de fib_list en decimal (contexte exact local)
+        before = decimal.getcontext()
+        prec = before.prec
+        fib_list(50)
+        self.assertIs(decimal.getcontext(), before)
+        self.assertEqual(before.prec, prec)
+
+    def test_PERF_4_un_terme_n_importe_ni_re_ni_decimal_ni_pylong(self):
+        # hors catalogue : garde de l'optimisation du démarrage (CLI lancée comme le contrat : python -I -S)
+        code = (
+            "import sys; sys.path.insert(0, sys.argv[1]); import fib\n"
+            "assert fib.main(['--algo', 'all', '100000']) == 0\n"
+            "assert not {'re', 'decimal', '_pylong'} & set(sys.modules), sorted(sys.modules)"
+        )
+        run = subprocess.run([sys.executable, "-I", "-S", "-c", code, str(HERE)], capture_output=True, text=True)
+        self.assertEqual(run.returncode, 0, run.stderr)
 
 
 if __name__ == "__main__":

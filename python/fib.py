@@ -1,5 +1,4 @@
 """Fibonacci académique : bibliothèque (fib, fib_list), puis CLI."""
-import re
 import sys
 import time
 
@@ -16,35 +15,40 @@ def _iterative(n):
     return a
 
 
-def _mul(x, y):
-    """Matrice 2x2 à plat : (a, b, c, d)."""
-    a, b, c, d = x
-    e, f, g, h = y
-    return (a * e + b * g, a * f + b * h,
-            c * e + d * g, c * f + d * h)
-
-
 def _matrix(n):
-    """[[1,1],[1,0]]^n = [[F(n+1), F(n)], [F(n), F(n-1)]], par carrés successifs."""
-    result, base = (1, 0, 0, 1), (1, 1, 1, 0)
-    while n > 0:
-        if n & 1:
-            result = _mul(result, base)
-        base = _mul(base, base)
-        n >>= 1
-    return result[1]
+    """[[1,1],[1,0]]^n = [[F(n+1), F(n)], [F(n), F(n-1)]], par carrés successifs, du poids fort au poids faible de n.
+    La puissance est symétrique, donc trois coefficients (a, b, c) suffisent : [[a, b], [b, c]]."""
+    a, b, c = 1, 0, 1
+    bits = format(n, "b")
+    for bit in bits[:-1]:
+        # Trois carrés, aucun produit (un carré coûte moins) : le nouveau b = a² − c² = (a − c)(a + c) = b(a + c).
+        square_a, square_b, square_c = a * a, b * b, c * c
+        a, c = square_a + square_b, square_b + square_c
+        b = a - c
+        if bit == "1":
+            # fois [[1,1],[1,0]] : que des additions
+            a, b, c = a + b, a, b
+    # Dernier carré : seule l'entrée F(n) sert, donc un produit au plus (le bit à 1 décale (0,0) en (0,1)).
+    return a * a + b * b if bits[-1] == "1" else b * (a + c)
 
 
 def _fast(n):
-    """Doublement rapide : (F(k), F(k+1)) devient (F(2k), F(2k+1)) à chaque bit de n, du poids fort au poids faible;
-    un bit à 1 avance encore d'un cran."""
-    a, b = 0, 1
-    for bit in format(n, "b"):
-        # F(2k) = F(k)·(2F(k+1) − F(k)) et F(2k+1) = F(k)² + F(k+1)²
-        even = a * (2 * b - a)
-        odd = a * a + b * b
-        a, b = (odd, even + odd) if bit == "1" else (even, odd)
-    return a
+    """Doublement rapide : (F(k), F(k−1)) devient celui de 2k, ou de 2k+1 si le bit vaut 1, en suivant les bits de n.
+    Formules de GMP, deux carrés par bit; le dernier bit ne calcule que F(n), en un seul produit."""
+    if n < 2:
+        return n
+    f, g = 1, 0
+    # le bit de tête est déjà lu : k = 1
+    *middle, last = format(n, "b")[1:]
+    sign = -2  # 2·(−1)^k
+    for bit in middle:
+        square_f, square_g = f * f, g * g
+        before = square_f + square_g  # F(2k−1)
+        odd = 4 * square_f - square_g + sign  # F(2k+1)
+        f, g = (odd, odd - before) if bit == "1" else (odd - before, before)  # F(2k) = F(2k+1) − F(2k−1)
+        sign = -2 if bit == "1" else 2
+    # La différence de deux carrés vaut un produit : F(2k+1) = (2f − g)(2f + g) + sign, et F(2k) = f(f + 2g).
+    return (2 * f - g) * (2 * f + g) + sign if last == "1" else f * (f + 2 * g)
 
 
 _ALGOS = {"iterative": _iterative, "matrix": _matrix, "fast": _fast}
@@ -69,13 +73,20 @@ def fib(n, algo):
 
 
 def fib_list(n):
-    """F(0) … F(n), toujours par l'algorithme iterative."""
+    """F(0) … F(n) en texte décimal, toujours par l'algorithme iterative."""
     _check_index(n)
-    terms = [0]
-    a, b = 0, 1
-    for _ in range(n):
-        a, b = b, a + b
-        terms.append(a)
+    # Importé ici : environ 5 ms que le calcul d'un terme seul n'a pas à payer.
+    from decimal import MAX_EMAX, MAX_PREC, Context, Decimal, localcontext
+
+    # Calculé en décimal : le texte sort sans conversion binaire → décimal, bien plus lente (int : 180 ms, ici 25 ms
+    # pour n = 10 000). Contexte exact : la précision par défaut arrondirait. Local : celui de l'appelant reste intact.
+    with localcontext(Context(prec=MAX_PREC, Emax=MAX_EMAX)):
+        terms = []
+        a, b = Decimal(0), Decimal(1)
+        for _ in range(n):
+            terms.append(str(a))
+            a, b = b, a + b
+        terms.append(str(a))
     return terms
 
 
@@ -89,6 +100,8 @@ USAGE = """usage: fib [--algo iterative|matrix|fast|all] [--time] N
 MAX_TERM, MAX_LIST = 100_000, 10_000
 
 COMPARISON = ("fast", "iterative", "matrix")
+
+TRANCHE = 1000
 
 
 class CliError(Exception):
@@ -134,8 +147,9 @@ def parse(args):
         raise CliError("--list et --algo s'excluent")
     if len(positional) != 1:
         raise CliError("exactement un indice attendu")
-    # avant int() : il accepte +5, 1_000, ' 5 ' et des chiffres non ASCII
-    if not re.fullmatch("[0-9]+", positional[0]):
+    # avant int() : il accepte +5, 1_000, ' 5 ' et des chiffres non ASCII.
+    # isascii() et isdigit() valent [0-9]+, sans payer l'import de re (8 ms).
+    if not (positional[0].isascii() and positional[0].isdigit()):
         raise CliError("indice invalide : chiffres ASCII seulement")
     n = int(positional[0])
     bound = MAX_LIST if as_list else MAX_TERM
@@ -144,8 +158,20 @@ def parse(args):
     return algos or ["fast"], as_list, show_time, n
 
 
+def _text(x):
+    """Texte décimal d'un entier. Au-delà d'environ 9 000 chiffres, str() importe _pylong (re, decimal : 10 ms), et
+    même en deçà il est plus lent : on coupe par tranches de 1 000 chiffres, dont le divmod reste sous son seuil."""
+    base = 10**TRANCHE
+    parts = []
+    while x >= base:
+        x, rest = divmod(x, base)
+        parts.append(str(rest).zfill(TRANCHE))
+    parts.append(str(x))
+    return "".join(reversed(parts))
+
+
 def compute(algos, as_list, n):
-    """Rend les termes à écrire et les lignes de durée; avec all, les trois algorithmes doivent concorder.
+    """Rend les lignes à écrire et les lignes de durée; avec all, les trois algorithmes doivent concorder.
     Rien n'est écrit ici : une discordance (F3) laisse stdout vide et sans durée."""
     durations = []
 
@@ -158,11 +184,13 @@ def compute(algos, as_list, n):
         return result
 
     if as_list:
+        import decimal  # avant le chronomètre : l'import (5 ms) n'est pas du calcul, et fib_list le trouve déjà chargé
+
         return timed("iterative", lambda: fib_list(n)), durations
     terms = [timed(a, lambda: fib(n, a)) for a in algos]
     if any(t != terms[0] for t in terms):
         raise CliError(f"discordance entre les algorithmes pour l'indice {n}", 3)
-    return [terms[0]], durations
+    return [_text(terms[0])], durations
 
 
 def main(args):
@@ -172,11 +200,13 @@ def main(args):
         return 0
     try:
         algos, as_list, show_time, n = parse(args)
-        terms, durations = compute(algos, as_list, n)
+        lines, durations = compute(algos, as_list, n)
     except CliError as e:
         sys.stderr.write(f"fib: {e}\n")
         return e.code
-    sys.stdout.write("".join(f"{t}\n" for t in terms))
+    # Par blocs de 50 lignes : un seul bloc de 10 Mo coûte des fautes de page et vide les caches (7 ms de plus mesurés).
+    for i in range(0, len(lines), 50):
+        sys.stdout.write("\n".join(lines[i : i + 50]) + "\n")
     # Les termes avant les durées, même sur un pipe qui fusionne stdout et stderr.
     sys.stdout.flush()
     if show_time:
