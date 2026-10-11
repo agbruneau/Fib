@@ -12,7 +12,6 @@ const MAX_LIST: u64 = 10_000;
 const COMPARISON: [Algo; 3] = [Algo::Fast, Algo::Iterative, Algo::Matrix];
 
 /// Code de sortie (2 : erreur d'usage, 3 : discordance) et message, sans le préfixe `fib: `.
-/// L'argument fautif est cité, en ASCII.
 struct CliError(u8, String);
 
 fn usage_error(msg: impl Into<String>) -> CliError {
@@ -44,6 +43,7 @@ fn parse(args: &[String]) -> Result<Options, CliError> {
             algos = Some(if value == "all" {
                 COMPARISON.to_vec()
             } else {
+                // L'argument fautif est cité, en ASCII.
                 let algo = value
                     .parse()
                     .map_err(|_| usage_error(format!("algorithme inconnu : \"{}\"", value.escape_default())))?;
@@ -83,8 +83,8 @@ fn timed<T>(name: &str, calc: impl FnOnce() -> T) -> (T, String) {
     (result, format!("{name} {ms:.3} ms\n"))
 }
 
-/// Rend les termes à écrire et les lignes de durée; pour all, fast, iterative puis matrix doivent concorder.
-/// Rien n'est écrit avant la fin : une discordance laisse stdout vide, sans durée (F3).
+/// Rend les termes à écrire et les lignes de durée; avec all, les trois algorithmes doivent concorder.
+/// Rien n'est écrit ici : une discordance (F3) laisse stdout vide et sans durée.
 fn compute(o: &Options) -> Result<(Vec<BigUint>, String), CliError> {
     if o.list {
         return Ok(timed("iterative", || fib_list(o.n)));

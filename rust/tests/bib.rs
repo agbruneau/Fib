@@ -2,12 +2,14 @@
 use fib::{Algo, fib, fib_list};
 use num_bigint::BigUint;
 
-/// F(0) … F(2000), lus à l'exécution. Un oracle absent ou invalide fait échouer le test : il ne sert jamais d'attendu.
+/// F(0) … F(2000), lus à l'exécution. Un oracle absent ou invalide fait échouer le test;
+/// il ne sert jamais d'attendu par défaut.
 fn oracle() -> Vec<BigUint> {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../contracts/b000045.txt");
     let text = std::fs::read_to_string(path).expect("oracle illisible : contracts/b000045.txt");
     let terms: Vec<BigUint> = text
         .lines()
+        .filter(|l| !l.is_empty())
         .enumerate()
         .map(|(i, l)| {
             let (n, term) = l.split_once(' ').expect("oracle invalide : ligne sans espace");
@@ -61,18 +63,16 @@ fn bib_07_matrix_egale_l_oracle_de_0_a_2000() {
     sweep(Algo::Matrix);
 }
 
-const ALGOS: [Algo; 3] = [Algo::Iterative, Algo::Matrix, Algo::Fast];
-
 #[test]
 fn bib_08_fib_100000_rend_le_meme_terme_de_20899_chiffres_pour_les_trois_algorithmes() {
-    let [first, others @ ..] = ALGOS.map(|a| fib(100_000, a));
+    let [first, others @ ..] = Algo::ALL.map(|a| fib(100_000, a));
     assert!(others.iter().all(|t| *t == first));
     assert_eq!(first.to_string().len(), 20_899);
 }
 
 #[test]
 fn bib_09_cassini_a_n_100000_pour_chaque_algorithme() {
-    for algo in ALGOS {
+    for algo in Algo::ALL {
         let [before, at, after] = [99_999, 100_000, 100_001].map(|n| fib(n, algo));
         // BigUint est non signé : on compare before·after à at² + 1 plutôt que de soustraire.
         assert_eq!(before * after, at.pow(2) + 1u8, "{algo:?}");
