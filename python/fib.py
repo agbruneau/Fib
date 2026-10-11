@@ -10,6 +10,7 @@ sys.set_int_max_str_digits(0)
 def _iterative(n):
     """Applique la définition indice par indice, avec deux termes consécutifs en mémoire."""
     a, b = 0, 1
+    # Une addition par tour : deux (a += b; b += a) ne gagnent rien (mesuré : 50 ms dans les deux cas à n = 100 000).
     for _ in range(n):
         a, b = b, a + b
     return a
@@ -101,8 +102,6 @@ MAX_TERM, MAX_LIST = 100_000, 10_000
 
 COMPARISON = ("fast", "iterative", "matrix")
 
-TRANCHE = 1000
-
 
 class CliError(Exception):
     """Code 2 : erreur d'usage. Code 3 : discordance entre algorithmes."""
@@ -158,14 +157,18 @@ def parse(args):
     return algos or ["fast"], as_list, show_time, n
 
 
+# Chiffres par tranche de _text : le divmod d'une tranche reste sous le seuil de _pylong.
+CHUNK_DIGITS = 1000
+
+
 def _text(x):
     """Texte décimal d'un entier. Au-delà d'environ 9 000 chiffres, str() importe _pylong (re, decimal : 10 ms), et
-    même en deçà il est plus lent : on coupe par tranches de 1 000 chiffres, dont le divmod reste sous son seuil."""
-    base = 10**TRANCHE
+    même en deçà il est plus lent : on coupe par tranches de CHUNK_DIGITS chiffres."""
+    base = 10**CHUNK_DIGITS
     parts = []
     while x >= base:
         x, rest = divmod(x, base)
-        parts.append(str(rest).zfill(TRANCHE))
+        parts.append(str(rest).zfill(CHUNK_DIGITS))
     parts.append(str(x))
     return "".join(reversed(parts))
 
@@ -184,13 +187,18 @@ def compute(algos, as_list, n):
         return result
 
     if as_list:
-        import decimal  # avant le chronomètre : l'import (5 ms) n'est pas du calcul, et fib_list le trouve déjà chargé
+        # Import pour son effet : hors du chronomètre (5 ms qui ne sont pas du calcul), fib_list le trouve déjà chargé.
+        import decimal
 
         return timed("iterative", lambda: fib_list(n)), durations
     terms = [timed(a, lambda: fib(n, a)) for a in algos]
     if any(t != terms[0] for t in terms):
         raise CliError(f"discordance entre les algorithmes pour l'indice {n}", 3)
     return [_text(terms[0])], durations
+
+
+# Un seul bloc de 10 Mo (--list 10000) coûte des fautes de page et vide les caches : 7 ms de plus que par 50 lignes.
+LINES_PER_WRITE = 50
 
 
 def main(args):
@@ -204,9 +212,8 @@ def main(args):
     except CliError as e:
         sys.stderr.write(f"fib: {e}\n")
         return e.code
-    # Par blocs de 50 lignes : un seul bloc de 10 Mo coûte des fautes de page et vide les caches (7 ms de plus mesurés).
-    for i in range(0, len(lines), 50):
-        sys.stdout.write("\n".join(lines[i : i + 50]) + "\n")
+    for i in range(0, len(lines), LINES_PER_WRITE):
+        sys.stdout.write("\n".join(lines[i : i + LINES_PER_WRITE]) + "\n")
     # Les termes avant les durées, même sur un pipe qui fusionne stdout et stderr.
     sys.stdout.flush()
     if show_time:
