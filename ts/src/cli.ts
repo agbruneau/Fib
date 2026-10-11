@@ -1,74 +1,86 @@
+// CLI de Fib : analyse les arguments, calcule par la bibliothèque, écrit les termes sur stdout et les durées sur stderr.
 import { fib, fibList, type Algo } from './fib.ts';
-
-// Code 2 : erreur d'usage. Code 3 : discordance entre algorithmes.
-class CliError extends Error {
-  code: number;
-  constructor(message: string, code = 2) {
-    super(message);
-    this.code = code;
-  }
-}
 
 const USAGE = `usage: fib [--algo iterative|matrix|fast|all] [--time] N
        fib --list [--time] N
        fib --help
 `;
 
-const ALGOS = ['iterative', 'matrix', 'fast', 'all'];
 const MAX_TERM = 100_000;
 const MAX_LIST = 10_000;
 
-// Les messages restent en ASCII : l'argument fautif est assaini avant d'être cité.
-const ascii = (s: string) => s.replace(/[^\x20-\x7e]/g, '?');
+const COMPARISON: readonly Algo[] = ['fast', 'iterative', 'matrix'];
 
-function parse(args: string[]) {
-  let algo: string | undefined;
+// Code 2 : erreur d'usage. Code 3 : discordance entre algorithmes.
+class CliError extends Error {
+  readonly code: number;
+  constructor(message: string, code = 2) {
+    super(message);
+    this.code = code;
+  }
+}
+
+// L'argument fautif est cité, en ASCII.
+const ascii = (s: string) => s.replace(/[^\x20-\x7e]/gu, '?');
+
+type Options = { algos: Algo[]; list: boolean; time: boolean; n: number };
+
+// Applique la grammaire du PRD § 4.
+function parse(args: string[]): Options {
+  let algos: Algo[] = [];
   let list = false;
   let time = false;
   const positional: string[] = [];
   for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    if (a === '--algo' || a.startsWith('--algo=')) {
-      const value = a === '--algo' ? args[++i] : a.slice('--algo='.length);
-      if (!ALGOS.includes(value)) {
-        throw new CliError(value === undefined ? '--algo demande une valeur' : `algorithme inconnu : ${ascii(value)}`);
+    const arg = args[i];
+    if (arg === '--algo' || arg.startsWith('--algo=')) {
+      // --algo X : X est l'argument suivant, quel qu'il soit; chaque occurrence doit être valide, la dernière gagne.
+      const value: string | undefined = arg === '--algo' ? args[++i] : arg.slice('--algo='.length);
+      if (value === undefined) throw new CliError('--algo demande une valeur');
+      if (value === 'all') {
+        algos = [...COMPARISON];
+      } else {
+        const algo = COMPARISON.find((a) => a === value);
+        if (algo === undefined) throw new CliError(`algorithme inconnu : "${ascii(value)}"`);
+        algos = [algo];
       }
-      algo = value;
-    } else if (a === '--list') {
+    } else if (arg === '--list') {
       list = true;
-    } else if (a === '--time') {
+    } else if (arg === '--time') {
       time = true;
-    } else if (a.startsWith('-')) {
-      throw new CliError(`option inconnue : ${ascii(a)}`);
+    } else if (arg.startsWith('-')) {
+      throw new CliError(`option inconnue : "${ascii(arg)}"`);
     } else {
-      positional.push(a);
+      positional.push(arg);
     }
   }
-  if (list && algo !== undefined) throw new CliError("--list et --algo s'excluent");
-  if (positional.length !== 1) throw new CliError(positional.length ? 'un seul indice attendu' : 'indice manquant');
+  if (list && algos.length > 0) throw new CliError("--list et --algo s'excluent");
+  if (positional.length !== 1) throw new CliError('exactement un indice attendu');
+  // Avant Number(), qui accepte « +5 », « 0x10 » et rend 0 pour « »; un indice géant donne Infinity, donc hors borne.
   if (!/^[0-9]+$/.test(positional[0])) throw new CliError('indice invalide : chiffres ASCII seulement');
   const n = Number(positional[0]);
-  const max = list ? MAX_LIST : MAX_TERM;
-  if (n > max) throw new CliError(`indice hors borne (${max} au plus)`);
-  return { algo: algo ?? 'fast', list, time, n };
+  const bound = list ? MAX_LIST : MAX_TERM;
+  if (n > bound) throw new CliError(`indice hors borne (${bound} au plus)`);
+  return { algos: algos.length > 0 ? algos : ['fast'], list, time, n };
 }
 
-// Une ligne « <algo> <durée> ms » par calcul exécuté : le chronomètre ne couvre que le calcul.
-const durations: string[] = [];
-function timed<T>(name: string, calc: () => T): T {
+// Une ligne « <algo> <durée> ms » par calcul : le chronomètre ne couvre que le calcul, et le format ignore la locale.
+function timed<T>(durations: string[], name: Algo, calc: () => T): T {
   const start = performance.now();
   const result = calc();
   durations.push(`${name} ${(performance.now() - start).toFixed(3)} ms\n`);
   return result;
 }
 
-// Les termes à écrire : la liste, un terme, ou, pour `all`, un terme sur lequel fast, iterative puis matrix concordent.
-function compute({ algo, list, n }: ReturnType<typeof parse>): bigint[] {
-  if (list) return timed('iterative', () => fibList(n));
-  if (algo !== 'all') return [timed(algo, () => fib(n, algo as Algo))];
-  const [first, ...others] = (['fast', 'iterative', 'matrix'] as const).map((a) => timed(a, () => fib(n, a)));
-  if (others.some((t) => t !== first)) throw new CliError(`discordance entre les algorithmes pour l'indice ${n}`, 3);
-  return [first];
+// Rend les termes à écrire et les lignes de durée; pour all, fast, iterative puis matrix doivent concorder. Rien n'est écrit avant la fin : une discordance laisse stdout vide, sans durée (F3).
+function compute({ algos, list, n }: Options): { terms: bigint[]; durations: string[] } {
+  const durations: string[] = [];
+  if (list) return { terms: timed(durations, 'iterative', () => fibList(n)), durations };
+  const results = algos.map((algo) => timed(durations, algo, () => fib(n, algo)));
+  if (results.some((term) => term !== results[0])) {
+    throw new CliError(`discordance entre les algorithmes pour l'indice ${n}`, 3);
+  }
+  return { terms: [results[0]], durations };
 }
 
 function main(args: string[]): void {
@@ -79,10 +91,11 @@ function main(args: string[]): void {
   }
   try {
     const options = parse(args);
-    const terms = compute(options);
-    process.stdout.write(terms.map((t) => `${t}\n`).join(''));
+    const { terms, durations } = compute(options);
+    process.stdout.write(terms.map((term) => `${term}\n`).join(''));
     if (options.time) process.stderr.write(durations.join(''));
   } catch (e) {
+    // Toute autre erreur est une défaillance : Node l'écrit avec sa pile et sort avec le code 1.
     if (!(e instanceof CliError)) throw e;
     process.stderr.write(`fib: ${e.message}\n`);
     process.exitCode = e.code;
