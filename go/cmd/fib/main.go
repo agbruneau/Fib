@@ -17,28 +17,31 @@ import (
 	"fib"
 )
 
-const (
-	maxTerm = 100_000
-	maxList = 10_000
-)
-
 const usage = `usage: fib [--algo iterative|matrix|fast|all] [--time] N
        fib --list [--time] N
        fib --help
 `
 
-type options struct {
-	algo string // vide tant que --algo n'est pas donné (une valeur vide est refusée)
-	list bool
-	time bool
-	n    int
-}
+const (
+	maxTerm = 100_000
+	maxList = 10_000
+)
 
-var errMismatch = errors.New("discordance entre les algorithmes")
+var comparison = []string{"fast", "iterative", "matrix"}
+
+var errDiscordance = errors.New("discordance entre les algorithmes")
 
 var indexPattern = regexp.MustCompile(`^[0-9]+$`)
 
-// parse applique la grammaire du PRD § 4. %+q cite un argument en ASCII pur, sur une seule ligne.
+type options struct {
+	algos []string
+	list  bool
+	time  bool
+	n     int
+}
+
+// parse applique la grammaire du PRD § 4.
+// L'argument fautif est cité, en ASCII (%+q).
 func parse(args []string) (options, error) {
 	var o options
 	var positional []string
@@ -46,17 +49,23 @@ func parse(args []string) (options, error) {
 		a := args[i]
 		switch {
 		case a == "--algo" || strings.HasPrefix(a, "--algo="):
+			// --algo X : X est l'argument suivant, quel qu'il soit; chaque occurrence doit être valide, la dernière gagne.
 			value, ok := strings.CutPrefix(a, "--algo=")
-			if !ok { // « --algo X » : X est l'argument suivant, quel qu'il soit
-				if i++; i == len(args) {
-					return o, fmt.Errorf("--algo demande une valeur")
+			if !ok {
+				i++
+				if i == len(args) {
+					return o, errors.New("--algo demande une valeur")
 				}
 				value = args[i]
 			}
-			if !slices.Contains([]string{"iterative", "matrix", "fast", "all"}, value) {
+			switch {
+			case value == "all":
+				o.algos = comparison
+			case slices.Contains(comparison, value):
+				o.algos = []string{value}
+			default:
 				return o, fmt.Errorf("algorithme inconnu : %+q", value)
 			}
-			o.algo = value
 		case a == "--list":
 			o.list = true
 		case a == "--time":
@@ -67,65 +76,64 @@ func parse(args []string) (options, error) {
 			positional = append(positional, a)
 		}
 	}
-	if o.list && o.algo != "" {
-		return o, fmt.Errorf("--list et --algo s'excluent")
+	if o.list && o.algos != nil {
+		return o, errors.New("--list et --algo s'excluent")
+	}
+	if o.algos == nil {
+		o.algos = []string{"fast"}
 	}
 	if len(positional) != 1 {
-		return o, fmt.Errorf("un seul indice attendu")
+		return o, errors.New("exactement un indice attendu")
 	}
 	// La regex passe avant toute conversion : Atoi accepte « +5 », et un indice trop grand pour un int est hors borne.
 	if !indexPattern.MatchString(positional[0]) {
-		return o, fmt.Errorf("indice invalide : chiffres ASCII seulement")
+		return o, errors.New("indice invalide : chiffres ASCII seulement")
 	}
-	limit := maxTerm
+	bound := maxTerm
 	if o.list {
-		limit = maxList
+		bound = maxList
 	}
 	n, err := strconv.Atoi(positional[0])
-	if err != nil || n > limit {
-		return o, fmt.Errorf("indice hors borne (%d au plus)", limit)
+	if err != nil || n > bound {
+		return o, fmt.Errorf("indice hors borne (%d au plus)", bound)
 	}
 	o.n = n
 	return o, nil
 }
 
-// lap rend « <algo> <durée> ms » : le chronomètre ne couvre que le calcul, et %f ignore la locale.
+// lap rend une ligne « <algo> <durée> ms » par calcul : le chronomètre ne couvre que le calcul, et le format ignore la locale.
 func lap(algo string, start time.Time) string {
-	return fmt.Sprintf("%s %.3f ms\n", algo, float64(time.Since(start).Nanoseconds())/1e6)
+	return fmt.Sprintf("%s %.3f ms\n", algo, float64(time.Since(start))/float64(time.Millisecond))
 }
 
-// compute rend les termes à écrire et une ligne de durée par algorithme exécuté.
-// Pour `all`, fast, iterative puis matrix doivent concorder.
+// compute rend les termes à écrire et les lignes de durée; pour all, fast, iterative puis matrix doivent concorder.
+// Rien n'est écrit avant la fin : une discordance laisse stdout vide, sans durée (F3).
 func compute(o options) ([]*big.Int, []string, error) {
 	if o.list {
 		start := time.Now()
 		list, err := fib.FibList(o.n)
 		return list, []string{lap("iterative", start)}, err
 	}
-	algos := []string{o.algo}
-	switch o.algo {
-	case "":
-		algos = []string{"fast"}
-	case "all":
-		algos = []string{"fast", "iterative", "matrix"}
-	}
-	var first *big.Int
+	var terms []*big.Int
 	var durations []string
-	for _, algo := range algos {
+	for _, algo := range o.algos {
 		start := time.Now()
 		term, err := fib.Fib(o.n, algo)
 		durations = append(durations, lap(algo, start))
 		if err != nil {
 			return nil, nil, err
 		}
-		if first != nil && first.Cmp(term) != 0 {
-			return nil, nil, fmt.Errorf("%w pour l'indice %d", errMismatch, o.n)
-		}
-		first = term
+		terms = append(terms, term)
 	}
-	return []*big.Int{first}, durations, nil
+	for _, t := range terms[1:] {
+		if t.Cmp(terms[0]) != 0 {
+			return nil, nil, fmt.Errorf("%w pour l'indice %d", errDiscordance, o.n)
+		}
+	}
+	return terms[:1], durations, nil
 }
 
+// run rend le code de sortie : 0 succès, 2 erreur d'usage, 3 discordance.
 func run(args []string, stdout, stderr io.Writer) int {
 	// L'aide l'emporte sur tout le reste, y compris à la place de la valeur de --algo.
 	if slices.Contains(args, "--help") || slices.Contains(args, "-h") {
@@ -140,11 +148,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if err != nil {
 		fmt.Fprintf(stderr, "fib: %v\n", err)
-		if errors.Is(err, errMismatch) {
+		if errors.Is(err, errDiscordance) {
 			return 3
 		}
 		return 2
 	}
+	// Tampon : sans lui, --list 10000 ferait un appel système par terme.
 	out := bufio.NewWriter(stdout)
 	for _, t := range terms {
 		fmt.Fprintln(out, t)
