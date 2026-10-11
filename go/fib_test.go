@@ -29,7 +29,7 @@ func oracle(t *testing.T) []*big.Int {
 		t.Fatalf("oracle illisible : %v", err)
 	}
 	var terms []*big.Int
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		if line == "" {
 			continue
 		}
@@ -146,7 +146,8 @@ func TestBIB10a12_FibListEgaleLOracle(t *testing.T) {
 	}
 }
 
-// BIB-13 : Fib refuse tout nom qui n'est pas exactement iterative, matrix ou fast. `all` est la comparaison de la CLI, pas un algorithme.
+// BIB-13 : Fib refuse tout nom qui n'est pas exactement iterative, matrix ou fast.
+// `all` est la comparaison de la CLI, pas un algorithme.
 func TestBIB13_AlgorithmeInconnuEstRefuse(t *testing.T) {
 	for _, algo := range []string{"all", "bogus", "", "FAST"} {
 		t.Run(fmt.Sprintf("BIB-13 : Fib(5, %q) est refusé", algo), func(t *testing.T) {
