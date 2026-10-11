@@ -71,7 +71,7 @@ usage: fib [--algo iterative|matrix|fast|all] [--time] N
 | F5 | `--list` et `--algo` s'excluent (grammaire, règle 6). |
 | F6 | `--time` écrit sur stderr une ligne par algorithme exécuté, dans l'ordre d'exécution : `<algo> <durée> ms`, la durée à 3 décimales avec un point décimal, quelle que soit la locale. La durée ne couvre que le calcul : ni l'analyse des arguments, ni la conversion décimale d'un terme, ni l'écriture. `--list` compte comme `iterative`; sa durée couvre la production du texte décimal, puisque la liste est calculée en décimal (ADR-0004). stdout ne change pas. |
 | F7 | `--help` et `-h` écrivent le texte d'usage ci-dessus sur stdout. Code 0. |
-| F8 | Bornes : N ≤ 100 000 pour un terme; N ≤ 10 000 pour une liste, soit environ 10,5 Mo de sortie. |
+| F8 | Bornes : N ≤ 1 000 000 pour un terme (208 988 chiffres); N ≤ 10 000 pour une liste, soit environ 10,5 Mo de sortie : une liste jusqu'à 1 000 000 en écrirait environ 100 Go. `iterative` reste en O(n) additions de grands entiers, donc en O(n²) opérations sur les mots, et prend plusieurs secondes à N = 1 000 000 (de même pour `all`), ce qui est accepté. |
 | F9 | Erreur d'usage (tout écart à la grammaire, ou N hors borne, y compris trop grand pour un entier natif) : stdout vide, exactement une ligne sur stderr qui commence par `fib: `, code 2. Le texte qui suit le préfixe est libre. Pas de panique, de trace de pile ni de texte d'usage ajouté. |
 | F10 | stdout et stderr sont en ASCII, sans séquence ANSI, avec des fins de ligne `\n` sur toutes les plateformes, Windows compris. |
 
@@ -213,7 +213,7 @@ Chaque entrée de `docs/exploration.md` donne : la skill, l'étape ou le ticket,
 |---|---|
 | Fins de ligne CRLF et encodage imposé par l'environnement (Python, checkout Git) | F10, `reconfigure(encoding="ascii", newline="\n")`, `.gitattributes` en `eol=lf`, contrat comparé à l'octet |
 | Conversions trop permissives de `N` | validation par l'expression régulière avant conversion; cas `+5`, `1_000`, `0x10`, `٣`, `""` |
-| Limite de conversion entier → texte de Python | `set_int_max_str_digits(0)`, cas `100000` |
+| Limite de conversion entier → texte de Python | `set_int_max_str_digits(0)`, cas `100000` et `1000000` |
 | Débordement à l'analyse de `N` | cas `99999999999999999999` |
 | Sortie tronquée par `process.exit()` (Node, POSIX) | `process.exitCode`; à vérifier en CI Linux |
 | Rust ne lie pas sous Windows sans le composant C++ MSVC | override rustup GNU locale au dossier |

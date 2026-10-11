@@ -24,8 +24,8 @@ Ce catalogue est la source unique des cas qui valident les quatre implémentatio
 
 Faits mathématiques utilisés :
 
-- F(n) compte ⌊n·log₁₀ φ − log₁₀ √5⌋ + 1 chiffres : 418 pour n = 2 000, 2 090 pour n = 10 000, 20 899 pour n = 100 000.
-- Les périodes de Pisano valent π(2¹¹) = 3 072 et π(10³) = 1 500. Donc F(100 000) ≡ F(1696) (mod 2048) et F(100 000) ≡ F(1000) (mod 1000).
+- F(n) compte ⌊n·log₁₀ φ − log₁₀ √5⌋ + 1 chiffres : 418 pour n = 2 000, 2 090 pour n = 10 000, 20 899 pour n = 100 000, 208 988 pour n = 1 000 000.
+- Les périodes de Pisano valent π(2¹¹) = 3 072 et π(10³) = 1 500. Donc F(100 000) ≡ F(1696) (mod 2048) et F(100 000) ≡ F(1000) (mod 1000), puisque 100 000 mod 3 072 = 1 696 et 100 000 mod 1 500 = 1 000. De même F(1 000 000) ≡ F(1600) (mod 2048) et F(1 000 000) ≡ F(1000) (mod 1000), puisque 1 000 000 mod 3 072 = 1 600 et 1 000 000 mod 1 500 = 1 000.
 - Identité de Cassini : F(n−1)·F(n+1) − F(n)² = (−1)ⁿ.
 - La récurrence F(n) = F(n−1) + F(n−2) sert à vérifier une sortie produite, jamais à produire un attendu.
 
@@ -43,6 +43,8 @@ Valeurs de référence, vérifiées le 2026-10-10. En cas de doute, l'oracle et 
 | F(94) | 19740274219868223167 |
 | F(100 000) mod 2048 | 635 |
 | F(100 000) mod 1000 | 875 |
+| F(1 000 000) mod 2048 | 1211 |
+| F(1 000 000) mod 1000 | 875 |
 
 ## 3. Oracle — ORA
 
@@ -116,6 +118,7 @@ Les arguments sont passés tels quels au processus, sans shell : `""` désigne u
 | CLI-T10 | `007` | `13\n` | O |
 | CLI-T11 | `00000000000000000000000000010` | `55\n` | O |
 | CLI-T12 | `100000` | 20 899 chiffres puis `\n`; terme ≡ F(1696) (mod 2048) et ≡ F(1000) (mod 1000) | O, M |
+| CLI-T13 | `1000000` | 208 988 chiffres, le premier non nul, puis `\n`; terme ≡ F(1600) (mod 2048) et ≡ F(1000) (mod 1000). La borne d'un terme, atteinte. | O, M |
 
 ### 5.2 Indice invalide — I (F8, F9, règles 4 et 5)
 
@@ -134,8 +137,8 @@ Chacun de ces cas attend une erreur.
 | CLI-I09 | `5 ` | espace de queue |
 | CLI-I10 | `٣` | chiffre non ASCII, accepté par `int()` |
 | CLI-I11 | `-1` | option inconnue (règle 4), pas un indice négatif |
-| CLI-I12 | `100001` | borne d'un terme + 1 |
-| CLI-I13 | `00000000000000000000000000100001` | borne dépassée malgré les zéros de tête |
+| CLI-I12 | `1000001` | borne d'un terme + 1 |
+| CLI-I13 | `000000000000000000000000001000001` | borne dépassée malgré les zéros de tête |
 | CLI-I14 | `99999999999999999999` | trop grand pour un uint64 : erreur, pas une panique |
 | CLI-I15 | `5 6` | deux indices |
 | CLI-I16 | `5` suivi d'un saut de ligne, dans le même argument | le `$` d'une expression régulière Python accepte un `\n` final |
@@ -246,14 +249,14 @@ Chacun de ces cas attend une erreur.
 
 | Exigence | Cas |
 |---|---|
-| F1 — terme | T01–T12 |
+| F1 — terme | T01–T13 |
 | F2 — choix de l'algorithme | A01–A03, A06–A08, D03–D05 |
 | F3 — comparaison | A04, A05, D02; code 3 : voir § 6 |
 | F4 — liste | L01–L08 |
 | F5 — exclusion `--list` / `--algo` | L10–L12 |
 | F6 — durées | D01–D08, L06 (aucune durée sans `--time`), V01 |
 | F7 — aide | H01–H07, H11 |
-| F8 — bornes | T12, I12–I14, L06, L09 |
+| F8 — bornes | T12, T13, I12–I14, L06, L09 |
 | F9 — erreurs d'usage | I01–I16, A09–A18, L09–L14, D09–D11, H08–H10, U01–U04 |
 | F10 — format des sorties | X-4 sur chaque cas, A18, U04, V02, V03 |
 | Règle 1 — aide d'abord | H01–H11 |

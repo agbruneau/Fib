@@ -23,6 +23,7 @@ const IMPLS: Record<string, { build?: string[]; cmd: string[] }> = {
 const SCENARIOS: [name: string, args: string[]][] = [
   ['petit (10)', ['10']],
   ['terme (100000, fast)', ['100000']],
+  ['terme (1000000, fast)', ['1000000']],
   ['matrix 100000', ['--algo', 'matrix', '100000']],
   ['iterative 100000', ['--algo', 'iterative', '100000']],
   ['all 100000', ['--algo', 'all', '100000']],

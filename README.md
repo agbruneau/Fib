@@ -63,7 +63,7 @@ Les durées affichées sont illustratives. Ici, `fib` désigne l'une des quatre 
 
 `--algo all` compare les trois algorithmes et vérifie qu'ils concordent. `--time` écrit la durée du calcul sur stderr.
 
-- **Bornes** : N ≤ 100 000 pour un terme, N ≤ 10 000 pour une liste.
+- **Bornes** : N ≤ 1 000 000 pour un terme, N ≤ 10 000 pour une liste.
 - **Codes de sortie** : 0 succès, 2 erreur d'usage, 3 discordance entre algorithmes.
 
 Le contrat complet est au § 4 du [PRD](PRD.md) : grammaire, formats, erreurs.

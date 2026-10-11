@@ -98,6 +98,16 @@ const T: Case[] = [
       assert.equal(t % 1000n, BigInt(terms()[1000]) % 1000n);
     },
   }],
+  ['CLI-T13', '1000000 écrit un terme de 208 988 chiffres, congru à F(1600) mod 2048 et à F(1000) mod 1000', ['1000000'], {
+    check: (out) => {
+      assert.match(out, /^[1-9][0-9]*\n$/);
+      assert.equal(out.length - 1, 208988);
+      // Restes lus chiffre à chiffre : évite la conversion décimal → BigInt, quadratique, d'un terme de 208 988 chiffres.
+      const mod = (m: number) => [...out.slice(0, -1)].reduce((r, c) => (r * 10 + Number(c)) % m, 0);
+      assert.equal(mod(2048), Number(BigInt(terms()[1600]) % 2048n));
+      assert.equal(mod(1000), Number(BigInt(terms()[1000]) % 1000n));
+    },
+  }],
 ];
 
 const I: Case[] = [
@@ -112,8 +122,8 @@ const I: Case[] = [
   ['CLI-I09', 'une espace de queue est refusée', ['5 '], 'erreur'],
   ['CLI-I10', 'un chiffre non ASCII est refusé', ['٣'], 'erreur'],
   ['CLI-I11', '-1 est une option inconnue', ['-1'], 'erreur'],
-  ['CLI-I12', '100001 dépasse la borne d’un terme', ['100001'], 'erreur'],
-  ['CLI-I13', 'la borne s’applique malgré les zéros de tête', ['00000000000000000000000000100001'], 'erreur'],
+  ['CLI-I12', '1000001 dépasse la borne d’un terme', ['1000001'], 'erreur'],
+  ['CLI-I13', 'la borne s’applique malgré les zéros de tête', ['000000000000000000000000001000001'], 'erreur'],
   ['CLI-I14', 'un indice trop grand pour un entier natif est une erreur, pas une panique', ['99999999999999999999'], 'erreur'],
   ['CLI-I15', 'deux indices sont refusés', ['5', '6'], 'erreur'],
   ['CLI-I16', 'un saut de ligne après l’indice est refusé', ['5\n'], 'erreur'],
