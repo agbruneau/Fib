@@ -6,7 +6,7 @@ import unittest
 from functools import cache
 from pathlib import Path
 
-from fib import _text, fib, fib_list
+from fib import DECIMAL_FROM, STR_FROM_BITS, _decimal_term, _text, compute, fib, fib_list
 
 ALGOS = ("iterative", "matrix", "fast")
 HERE = Path(__file__).resolve().parent
@@ -141,6 +141,44 @@ class TestFib(unittest.TestCase):
         )
         run = subprocess.run([sys.executable, "-I", "-S", "-c", code, str(HERE)], capture_output=True, text=True)
         self.assertEqual(run.returncode, 0, run.stderr)
+
+    def test_PERF_PY_9_un_terme_en_decimal_suit_l_oracle_de_0_a_2000(self):
+        # hors catalogue : garde de l'optimisation du terme calculé en Decimal (contexte exact, str() linéaire)
+        for algo in ("fast", "matrix"):
+            with self.subTest(algo=algo):
+                self.assertEqual([str(_decimal_term(n, algo)) for n in range(2001)], oracle_text())
+
+    def test_PERF_PY_10_un_terme_en_decimal_egale_le_terme_entier_aux_grands_indices(self):
+        # hors catalogue : garde de l'optimisation du terme calculé en Decimal, face à l'autre algorithme en int
+        for n in (DECIMAL_FROM - 1, DECIMAL_FROM, DECIMAL_FROM + 1, 1_000_000):
+            for algo, other in (("fast", "matrix"), ("matrix", "fast")):
+                with self.subTest(n=n, algo=algo):
+                    self.assertEqual(str(_decimal_term(n, algo)), str(fib(n, other)))
+
+    def test_PERF_PY_11_un_terme_en_decimal_laisse_l_objet_contexte_decimal_de_l_appelant(self):
+        # hors catalogue : garde de l'optimisation du terme calculé en Decimal (contexte exact local)
+        before = decimal.getcontext()
+        _decimal_term(50, "fast")
+        self.assertIs(decimal.getcontext(), before)
+
+    def test_PERF_PY_12_un_terme_en_decimal_laisse_la_precision_decimale_de_l_appelant(self):
+        # hors catalogue : garde de l'optimisation du terme calculé en Decimal (contexte exact local)
+        prec = decimal.getcontext().prec
+        _decimal_term(50, "matrix")
+        self.assertEqual(decimal.getcontext().prec, prec)
+
+    def test_PERF_PY_13_un_terme_s_ecrit_pareil_de_part_et_d_autre_du_seuil_decimal(self):
+        # hors catalogue : garde de DECIMAL_FROM (int en deçà, Decimal au-delà), face à str() de l'autre algorithme
+        for n in (DECIMAL_FROM - 1, DECIMAL_FROM):
+            for algo, other in (("fast", "matrix"), ("matrix", "fast")):
+                with self.subTest(n=n, algo=algo):
+                    self.assertEqual(compute([algo], False, n)[0], [str(fib(n, other))])
+
+    def test_PERF_PY_14_le_texte_d_un_int_egale_str_de_part_et_d_autre_du_seuil_de_str(self):
+        # hors catalogue : garde de STR_FROM_BITS (tranches en deçà, str() au-delà), face à str() aux deux frontières
+        for x in (2**STR_FROM_BITS - 1, 2**STR_FROM_BITS, 10**60_000 + 1):
+            with self.subTest(bits=x.bit_length()):
+                self.assertEqual(_text(x), str(x))
 
 
 if __name__ == "__main__":
