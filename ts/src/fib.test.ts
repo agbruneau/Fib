@@ -49,16 +49,37 @@ for (const algo of ALGOS) {
   });
 }
 
-test('BIB-10 : fibList(0) vaut [0]', () => {
-  assert.deepEqual(fibList(0), [oracle(0)]);
+// La liste rend des chaînes décimales : l'oracle les donne telles quelles.
+test('BIB-10 : fibList(0) vaut ["0"]', () => {
+  assert.deepEqual(fibList(0), [terms()[0]]);
 });
 
-test('BIB-11 : fibList(1) vaut [0, 1]', () => {
-  assert.deepEqual(fibList(1), [oracle(0), oracle(1)]);
+test('BIB-11 : fibList(1) vaut ["0", "1"]', () => {
+  assert.deepEqual(fibList(1), [terms()[0], terms()[1]]);
 });
 
 test('BIB-12 : fibList(2000) rend les 2 001 termes de l’oracle, dans l’ordre', () => {
-  assert.deepEqual(fibList(2000), terms().map(BigInt));
+  assert.deepEqual(fibList(2000), terms());
+});
+
+// hors catalogue : garde de l'optimisation de la liste (additionneur décimal en limbes de 4 chiffres, tampon de taille
+// calculée d'après n). Les termes viennent de la définition et d'un fait connu, non d'un second calcul : au-delà de
+// l'oracle, chaque terme est la somme des deux précédents, sans zéro de tête, et F(10000) compte 2 090 chiffres.
+test('PERF-1 : fibList(10000) respecte la définition et la forme décimale au-delà de l’oracle', () => {
+  const list = fibList(10000);
+  assert.equal(list.length, 10001);
+  assert.equal(list[10000].length, 2090);
+  list.forEach((term, i) => assert.match(term, /^(0|[1-9][0-9]*)$/, `n = ${i}`));
+  for (let i = 2; i < list.length; i++) {
+    assert.equal(BigInt(list[i]), BigInt(list[i - 1]) + BigInt(list[i - 2]), `n = ${i}`);
+  }
+});
+
+// hors catalogue : garde de l'optimisation de la liste. La taille du tampon dépend de n : la liste doit rester juste
+// pour chaque n, surtout les petits, où la marge est la plus mince.
+test('PERF-2 : fibList(n) est le préfixe de l’oracle pour chaque n de 0 à 300', () => {
+  const expected = terms();
+  for (let n = 0; n <= 300; n++) assert.deepEqual(fibList(n), expected.slice(0, n + 1), `n = ${n}`);
 });
 
 for (const bogus of ['all', 'bogus', '', 'FAST', 'toString']) {
