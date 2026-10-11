@@ -3,7 +3,7 @@
 - `b000045.txt` : l'oracle, soit F(0) à F(2000), une ligne `n F(n)` par indice, au format du b-file OEIS A000045.
 - `generer_oracle.py` : génère l'oracle par la formule de Binet (`python contracts/generer_oracle.py`).
 - `oracle.ts` : lecture et vérification de l'oracle (ORA-01 à ORA-06), partagée par les tests.
-- `cli.test.ts` : le test de contrat. `node contracts/cli.test.ts [go|rust|ts|py …]` joue les cas CLI de `docs/cas-de-test.md` sur les implémentations nommées, ou sur celles dont le dossier existe.
+- `cli.test.ts` : le test de contrat. `node contracts/cli.test.ts [go|rust|ts|py …]` joue les cas CLI de `docs/cas-de-test.md` sur les implémentations nommées, ou sur celles dont le dossier existe. Il compile d'abord Go, Rust et TypeScript, puis lance les binaires et le JavaScript émis (PRD § 5).
 
 ## Provenance de l'oracle
 

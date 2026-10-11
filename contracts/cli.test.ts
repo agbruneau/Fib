@@ -11,12 +11,21 @@ import { CHECKS, lines, terms } from './oracle.ts';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const exe = process.platform === 'win32' ? '.exe' : '';
 
-// Commande de lancement depuis la racine (PRD § 5). Go passe par un binaire, car `go run` falsifie code et stderr.
+// Commande de lancement depuis la racine (PRD § 5). Go, Rust et TypeScript passent par un build compilé une fois (BUILDS),
+// pour que chaque cas mesure le programme et non son démarrage (`go run` falsifie en outre code et stderr).
+// Python : `-I -S` saute `site` et l'environnement (PYTHON*), sans rien changer à ce que la CLI écrit.
 const IMPLS: Record<string, { dir: string; cmd: string[] }> = {
   go: { dir: 'go', cmd: [join(root, '.build', `fib${exe}`)] },
-  rust: { dir: 'rust', cmd: ['cargo', 'run', '-q', '--release', '--manifest-path', 'rust/Cargo.toml', '--'] },
-  ts: { dir: 'ts', cmd: [process.execPath, 'ts/src/cli.ts'] },
-  py: { dir: 'python', cmd: ['python', 'python/fib.py'] },
+  rust: { dir: 'rust', cmd: [join(root, 'rust', 'target', 'release', `fib${exe}`)] },
+  ts: { dir: 'ts', cmd: [process.execPath, '.build/ts/cli.js'] },
+  py: { dir: 'python', cmd: ['python', '-I', '-S', 'python/fib.py'] },
+};
+
+// Compilation préalable, jouée une fois par groupe. tsc 7 est lancé par le point d'entrée JS du paquet : `.bin/tsc` n'est pas exécutable sans shell sous Windows.
+const BUILDS: Record<string, string[]> = {
+  go: ['go', '-C', 'go', 'build', '-o', `../.build/fib${exe}`, './cmd/fib'],
+  rust: ['cargo', 'build', '-q', '--release', '--manifest-path', 'rust/Cargo.toml'],
+  ts: [process.execPath, 'node_modules/typescript/bin/tsc', '-p', 'tsconfig.build.json'],
 };
 
 const USAGE = `usage: fib [--algo iterative|matrix|fast|all] [--time] N
@@ -40,7 +49,7 @@ function run(id: string, args: string[], env: Record<string, string> = {}) {
     encoding: 'latin1',
     // `--list 10000` écrit environ 10,5 Mo, au-delà du défaut.
     maxBuffer: 1 << 28,
-    // Filet contre une CLI qui boucle, large pour un `cargo run --release` à froid.
+    // Filet contre une CLI qui boucle.
     timeout: 300_000,
   });
   assert.ifError(r.error);
@@ -222,10 +231,11 @@ for (const id of ids) {
       test(`${id} : l’implémentation existe`, () => assert.fail(`implémentation absente : ${id}`));
       return;
     }
-    if (id === 'go') {
+    if (BUILDS[id]) {
       before(() => {
-        const r = spawnSync('go', ['-C', 'go', 'build', '-o', `../.build/fib${exe}`, './cmd/fib'], { cwd: root, encoding: 'utf8' });
-        assert.equal(r.status, 0, `go build a échoué : ${r.stderr || r.error}`);
+        const [cmd, ...args] = BUILDS[id];
+        const r = spawnSync(cmd, args, { cwd: root, encoding: 'utf8' });
+        assert.equal(r.status, 0, `${BUILDS[id].join(' ')} a échoué (code ${r.status}) : ${r.stdout}${r.stderr}${r.error ?? ''}`);
       });
     }
     for (const [cid, title, args, want, env] of CASES) test(`${cid} : ${title}`, () => verify(run(id, args, env), want));
