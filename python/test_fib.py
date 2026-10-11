@@ -93,33 +93,47 @@ class TestFib(unittest.TestCase):
             with self.subTest(n=n, algo="fib_list"), self.assertRaises(error):
                 fib_list(n)
 
-    # Hors catalogue : gardes des optimisations de performance.
-
-    def test_PERF_1_le_texte_par_tranches_garde_les_zeros_et_les_frontieres(self):
-        # hors catalogue : garde de l'optimisation du texte décimal par tranches de 1 000 chiffres
+    def test_PERF_PY_1_le_texte_par_tranches_de_10_puissance_k_garde_les_zeros(self):
+        # hors catalogue : garde de l'optimisation du texte décimal par tranches de CHUNK_DIGITS chiffres
         # (les attendus s'écrivent sans conversion : 10**k est un 1 suivi de k zéros)
         for k in (1, 999, 1000, 1001, 2000, 2500):
             with self.subTest(k=k):
                 self.assertEqual(_text(10**k), "1" + "0" * k)
+
+    def test_PERF_PY_2_le_texte_par_tranches_de_10_puissance_k_moins_1_garde_les_neuf(self):
+        # hors catalogue : garde de l'optimisation du texte décimal par tranches, aux frontières de tranche
+        for k in (1, 999, 1000, 1001, 2000, 2500):
+            with self.subTest(k=k):
                 self.assertEqual(_text(10**k - 1), "9" * k)
+
+    def test_PERF_PY_3_une_tranche_de_zeros_entre_deux_uns_est_conservee(self):
+        # hors catalogue : garde de l'optimisation du texte décimal par tranches (une tranche entièrement nulle)
         self.assertEqual(_text(10**2000 + 1), "1" + "0" * 1999 + "1")
+
+    def test_PERF_PY_4_des_zeros_entre_deux_tranches_sont_conserves(self):
+        # hors catalogue : garde de l'optimisation du texte décimal par tranches (une tranche aux zéros de tête)
         self.assertEqual(_text(10**2000 + 10**1000), "1" + "0" * 999 + "1" + "0" * 1000)
 
-    def test_PERF_2_le_texte_par_tranches_egale_str_a_100000(self):
+    def test_PERF_PY_5_le_texte_par_tranches_egale_str_a_100000(self):
         # hors catalogue : garde de l'optimisation du texte décimal par tranches, face à la conversion native
         term = fib(100000, "fast")
         self.assertEqual(_text(term), str(term))
 
-    def test_PERF_3_fib_list_laisse_le_contexte_decimal_de_l_appelant(self):
+    def test_PERF_PY_6_fib_list_laisse_l_objet_contexte_decimal_de_l_appelant(self):
         # hors catalogue : garde de l'optimisation de fib_list en decimal (contexte exact local)
         before = decimal.getcontext()
-        prec = before.prec
         fib_list(50)
         self.assertIs(decimal.getcontext(), before)
-        self.assertEqual(before.prec, prec)
 
-    def test_PERF_4_un_terme_n_importe_ni_re_ni_decimal_ni_pylong(self):
-        # hors catalogue : garde de l'optimisation du démarrage (CLI lancée comme le contrat : python -I -S)
+    def test_PERF_PY_7_fib_list_laisse_la_precision_decimale_de_l_appelant(self):
+        # hors catalogue : garde de l'optimisation de fib_list en decimal (contexte exact local)
+        prec = decimal.getcontext().prec
+        fib_list(50)
+        self.assertEqual(decimal.getcontext().prec, prec)
+
+    def test_PERF_PY_8_un_terme_n_importe_ni_re_ni_decimal_ni_pylong(self):
+        # hors catalogue : garde de l'optimisation du démarrage (CLI lancée comme le contrat : python -I -S);
+        # dépend des modules que charge CPython 3.12+ : une version qui en importe un de plus la fait échouer.
         code = (
             "import sys; sys.path.insert(0, sys.argv[1]); import fib\n"
             "assert fib.main(['--algo', 'all', '100000']) == 0\n"
