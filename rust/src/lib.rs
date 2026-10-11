@@ -42,60 +42,164 @@ pub fn fib(n: u64, algo: Algo) -> BigUint {
     }
 }
 
-/// F(0) … F(n), toujours par l'algorithme iterative.
-pub fn fib_list(n: u64) -> Vec<BigUint> {
-    let (mut a, mut b) = (BigUint::from(0u8), BigUint::from(1u8));
-    let mut terms = vec![a.clone()];
+/// Un limbe décimal vaut 10^18 : deux limbes et une retenue tiennent dans un u64 (10^19 y déborderait).
+const BASE: u64 = 1_000_000_000_000_000_000;
+const LIMB_DIGITS: usize = 18;
+
+/// F(0) … F(n) en décimal, par l'algorithme iterative sur des limbes décimaux (poids faible d'abord) :
+/// l'addition y est directement en base 10, sans conversion binaire → décimal des n + 1 termes.
+pub fn fib_list(n: u64) -> Vec<String> {
+    let (mut a, mut b) = (vec![0], vec![1]);
+    let mut terms = vec![decimal(&a)];
     for _ in 0..n {
-        (a, b) = (b.clone(), a + &b);
-        terms.push(a.clone());
+        add(&mut a, &b); // a ← F(k) + F(k+1), sur place : aucune allocation par pas
+        std::mem::swap(&mut a, &mut b);
+        terms.push(decimal(&a));
     }
     terms
 }
 
+/// a += b en base 10^18, avec a.len() <= b.len() (F(k) n'a pas plus de limbes que F(k+1)).
+fn add(a: &mut Vec<u64>, b: &[u64]) {
+    a.resize(b.len(), 0);
+    let mut carry = 0;
+    for (x, &y) in a.iter_mut().zip(b) {
+        let sum = *x + y + carry;
+        carry = u64::from(sum >= BASE); // sans branche : la retenue est imprévisible
+        *x = sum - carry * BASE;
+    }
+    if carry != 0 {
+        a.push(carry);
+    }
+}
+
+/// Les 10 000 groupes de 4 chiffres "0000" … "9999" : une lecture par groupe plutôt qu'une division par 10 par chiffre.
+static QUADS: [[u8; 4]; 10_000] = {
+    let mut t = [[0; 4]; 10_000];
+    let mut i = 0;
+    while i < 10_000 {
+        t[i] =
+            [b'0' + (i / 1000) as u8, b'0' + (i / 100 % 10) as u8, b'0' + (i / 10 % 10) as u8, b'0' + (i % 10) as u8];
+        i += 1;
+    }
+    t
+};
+
+/// Écrit x (< 10^18) sur 18 chiffres, zéros de tête compris : 2 chiffres de tête, puis 4 groupes de 4.
+fn put_limb(x: u64, out: &mut [u8; LIMB_DIGITS]) {
+    out[..2].copy_from_slice(&QUADS[(x / 10_000_000_000_000_000) as usize][2..]);
+    let mut rest = x % 10_000_000_000_000_000;
+    for group in out[2..].rchunks_exact_mut(4) {
+        group.copy_from_slice(&QUADS[(rest % 10_000) as usize]);
+        rest /= 10_000;
+    }
+}
+
+/// Les limbes (poids faible d'abord, jamais vide) en décimal : le limbe de tête sans zéros de tête, les autres sur 18.
+fn decimal(limbs: &[u64]) -> String {
+    let (&top, rest) = limbs.split_last().expect("au moins un limbe");
+    let top_len = top.checked_ilog10().map_or(1, |d| d as usize + 1); // F(0) s'écrit « 0 »
+    // Écriture en place dans un tampon de taille exacte : ni réallocation ni copie par limbe.
+    let mut out = vec![0; top_len + rest.len() * LIMB_DIGITS];
+    let (head, tail) = out.split_at_mut(top_len);
+    let mut buf = [0; LIMB_DIGITS];
+    put_limb(top, &mut buf);
+    head.copy_from_slice(&buf[LIMB_DIGITS - top_len..]);
+    for (chunk, &limb) in tail.chunks_exact_mut(LIMB_DIGITS).zip(rest.iter().rev()) {
+        put_limb(limb, chunk.try_into().expect("morceau de 18 chiffres"));
+    }
+    String::from_utf8(out).expect("chiffres ASCII")
+}
+
 /// Applique la définition indice par indice, avec deux termes consécutifs en mémoire.
 fn iterative(n: u64) -> BigUint {
-    let (mut a, mut b) = (BigUint::from(0u8), BigUint::from(1u8));
+    let (mut a, mut b) = (BigUint::ZERO, BigUint::ONE);
     for _ in 0..n {
-        (a, b) = (b.clone(), a + &b);
+        a += &b; // sur place, sans clone : a prend F(k) + F(k+1), puis les rôles s'échangent
+        std::mem::swap(&mut a, &mut b);
     }
     a
 }
 
-/// Matrice 2x2 à plat : [a, b, c, d].
-type Mat = [BigUint; 4];
-
-fn mul(x: &Mat, y: &Mat) -> Mat {
-    let [a, b, c, d] = x;
-    let [e, f, g, h] = y;
-    [a * e + b * g, a * f + b * h, c * e + d * g, c * f + d * h]
+/// Q^k = [[F(k+1), F(k)], [F(k), F(k−1)]] est symétrique : trois coefficients (p, q, r) suffisent.
+struct Power {
+    p: BigUint,
+    q: BigUint,
+    r: BigUint,
 }
 
-/// [[1,1],[1,0]]^n = [[F(n+1), F(n)], [F(n), F(n-1)]], par carrés successifs.
-fn matrix(mut n: u64) -> BigUint {
-    let mut result = [1u8, 0, 0, 1].map(BigUint::from);
-    let mut base = [1u8, 1, 1, 0].map(BigUint::from);
-    while n > 0 {
-        if n & 1 == 1 {
-            result = mul(&result, &base);
+/// Q^n, Q = [[1,1],[1,0]], par carrés successifs du poids fort au poids faible de n.
+/// Un bit à 1 multiplie par Q, ce qui ne coûte que des additions : Q^k·Q = [[p+q, p], [q+r, q]], et q+r = p.
+fn matrix(n: u64) -> BigUint {
+    let bits = u64::BITS - n.leading_zeros();
+    let mut m = Power { p: BigUint::ONE, q: BigUint::ZERO, r: BigUint::ONE }; // Q^0
+    for i in (1..bits).rev() {
+        // (Q^k)² : trois carrés, et q' = p' − r' puisque p² − r² = q·(p + r)
+        let (p2, q2, r2) = (&m.p * &m.p, &m.q * &m.q, &m.r * &m.r);
+        let (p, r) = (p2 + &q2, q2 + r2);
+        m = Power { q: &p - &r, p, r };
+        if (n >> i) & 1 == 1 {
+            m = Power { p: &m.p + &m.q, r: m.q, q: m.p };
         }
-        base = mul(&base, &base);
-        n >>= 1;
     }
-    // F(n) est le coin b
-    let [_, f, _, _] = result;
-    f
+    // Dernier bit : seul F(n) compte. Bit à 0, F(n) = q' = q·(p + r) (0 pour n = 0); bit à 1, F(n) = p' = p² + q².
+    if n & 1 == 0 { &m.q * (&m.p + &m.r) } else { &m.p * &m.p + &m.q * &m.q }
 }
 
-/// Doublement rapide : (F(k), F(k+1)) devient (F(2k), F(2k+1)) à chaque bit de n, du poids fort au poids faible;
-/// un bit à 1 avance encore d'un cran.
-fn fast(n: u64) -> BigUint {
-    let (mut a, mut b) = (BigUint::from(0u8), BigUint::from(1u8));
-    for bit in format!("{n:b}").chars() {
-        // F(2k) = F(k)·(2F(k+1) − F(k)) et F(2k+1) = F(k)² + F(k+1)²
-        let even = &a * (&b * 2u8 - &a);
-        let odd = &a * &a + &b * &b;
-        (a, b) = if bit == '1' { (odd.clone(), even + odd) } else { (even, odd) };
+/// x ← x + 2(−1)^k, pour k de parité donnée.
+fn add_sign_2(x: &mut BigUint, k_odd: bool) {
+    if k_odd {
+        *x -= 2u8;
+    } else {
+        *x += 2u8;
     }
-    a
+}
+
+/// Doublement rapide : (F(k), F(k−1)) devient (F(2k), F(2k−1)) ou (F(2k+1), F(2k)) à chaque bit de n, du poids fort
+/// au poids faible, avec deux carrés par bit (formules de GMP); la dernière étape ne calcule que F(n).
+fn fast(n: u64) -> BigUint {
+    let bits = u64::BITS - n.leading_zeros();
+    if bits < 2 {
+        return BigUint::from(n); // F(0) = 0 et F(1) = 1
+    }
+    let (mut a, mut b) = (BigUint::ONE, BigUint::ZERO); // k = 1 : le bit de poids fort est consommé
+    for i in (1..bits - 1).rev() {
+        let (a2, b2) = (&a * &a, &b * &b);
+        let odd_inv = &a2 + &b2; // F(2k−1) = F(k)² + F(k−1)²
+        let mut odd = (a2 << 2u32) - &b2; // F(2k+1) = 4F(k)² − F(k−1)² + 2(−1)^k : le 2 vient après, en non signé
+        add_sign_2(&mut odd, (n >> (i + 1)) & 1 == 1);
+        let even = &odd - &odd_inv; // F(2k) = F(2k+1) − F(2k−1)
+        (a, b) = if (n >> i) & 1 == 1 { (odd, even) } else { (even, odd_inv) };
+    }
+    // Dernier bit, avec une seule multiplication au lieu de deux carrés : F(2k) = F(k)·(F(k) + 2F(k−1)),
+    // F(2k+1) = (2F(k) − F(k−1))·(2F(k) + F(k−1)) + 2(−1)^k.
+    if n & 1 == 0 {
+        return &a * (&a + (b << 1u32));
+    }
+    let a2 = a << 1u32;
+    let mut odd = (&a2 - &b) * (a2 + &b);
+    add_sign_2(&mut odd, (n >> 1) & 1 == 1);
+    odd
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// PERF-03, hors catalogue : garde de l'optimisation « additionneur décimal en limbes » : la retenue franchit
+    /// plusieurs limbes pleins, et une somme de limbes qui vaut exactement 10^18 propage sa retenue.
+    #[test]
+    fn perf_03_la_retenue_de_l_additionneur_decimal_franchit_les_limbes_pleins() {
+        let cases: [(&[u64], &[u64], &[u64]); 4] = [
+            (&[BASE - 1, BASE - 1], &[1, 0], &[0, 0, 1]),
+            (&[BASE - 1], &[BASE - 1], &[BASE - 2, 1]),
+            (&[1, 0, 7], &[BASE - 1, BASE - 1, 0], &[0, 0, 8]),
+            (&[BASE / 2, 3], &[BASE / 2, 4], &[0, 8]),
+        ];
+        for (a, b, want) in cases {
+            let mut a = a.to_vec();
+            add(&mut a, b);
+            assert_eq!(a, want, "{a:?} + {b:?}");
+        }
+    }
 }

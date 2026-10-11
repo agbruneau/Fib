@@ -1,7 +1,6 @@
 //! Commande fib : adaptateur mince autour de la bibliothèque fib (contrat du PRD § 4, analyse manuelle selon l'ADR-0002).
 use fib::{Algo, fib, fib_list};
-use num_bigint::BigUint;
-use std::{env, io::Write, process::ExitCode, time::Instant};
+use std::{env, io::BufWriter, io::Write, process::ExitCode, time::Instant};
 
 const USAGE: &str = "usage: fib [--algo iterative|matrix|fast|all] [--time] N
        fib --list [--time] N
@@ -83,41 +82,49 @@ fn timed<T>(name: &str, calc: impl FnOnce() -> T) -> (T, String) {
     (result, format!("{name} {ms:.3} ms\n"))
 }
 
-/// Rend les termes à écrire et les lignes de durée; avec all, les trois algorithmes doivent concorder.
-/// Rien n'est écrit ici : une discordance (F3) laisse stdout vide et sans durée.
-fn compute(o: &Options) -> Result<(Vec<BigUint>, String), CliError> {
+/// Rend les lignes de stdout (un terme par ligne) et les lignes de durée; avec all, les trois algorithmes doivent
+/// concorder. Rien n'est écrit ici : une discordance (F3) laisse stdout vide et sans durée.
+fn compute(o: &Options) -> Result<(Vec<String>, String), CliError> {
     if o.list {
         return Ok(timed("iterative", || fib_list(o.n)));
     }
-    let (mut terms, durations): (Vec<_>, Vec<String>) =
+    let (terms, durations): (Vec<_>, Vec<String>) =
         o.algos.iter().map(|&algo| timed(algo.name(), || fib(o.n, algo))).unzip();
     if terms.iter().any(|t| *t != terms[0]) {
         return Err(CliError(3, format!("discordance entre les algorithmes pour l'indice {}", o.n)));
     }
-    terms.truncate(1); // ils concordent : un seul terme à écrire
-    Ok((terms, durations.concat()))
+    Ok((vec![terms[0].to_string()], durations.concat()))
 }
 
-/// Rend le texte de stdout et celui de stderr.
-fn run(args: &[String]) -> Result<(String, String), CliError> {
+/// Rend les lignes de stdout et le texte de stderr.
+fn run(args: &[String]) -> Result<(Vec<String>, String), CliError> {
     // L'aide l'emporte sur tout le reste, y compris à la place de la valeur de --algo.
     if args.iter().any(|a| a == "--help" || a == "-h") {
-        return Ok((USAGE.into(), String::new()));
+        return Ok((vec![USAGE.trim_end().into()], String::new()));
     }
     let options = parse(args)?;
-    let (terms, durations) = compute(&options)?;
-    let out = terms.iter().map(|t| format!("{t}\n")).collect();
-    Ok((out, if options.time { durations } else { String::new() }))
+    let (lines, durations) = compute(&options)?;
+    Ok((lines, if options.time { durations } else { String::new() }))
 }
+
+/// Tampon de stdout : les ~10 Mo de `--list 10000` passent par des écritures de 64 Kio qui réutilisent la même
+/// mémoire, plutôt que par un seul texte de 10 Mo (défauts de page et copie : mesuré 12 % plus lent).
+const STDOUT_BUFFER: usize = 1 << 16;
 
 fn main() -> ExitCode {
     // `args_os` plutôt que `args`, qui paniquerait sur un argument qui n'est pas de l'Unicode valide.
     let args: Vec<String> = env::args_os().skip(1).map(|a| a.to_string_lossy().into_owned()).collect();
     match run(&args) {
-        Ok((out, err)) => {
+        Ok((lines, err)) => {
             // write_all plutôt que print! : un stdout fermé (hors contrat) ne doit pas faire paniquer.
-            let _ = std::io::stdout().write_all(out.as_bytes());
+            let mut out = BufWriter::with_capacity(STDOUT_BUFFER, std::io::stdout().lock());
+            for line in &lines {
+                let _ = out.write_all(line.as_bytes());
+                let _ = out.write_all(b"\n");
+            }
+            let _ = out.flush();
             let _ = std::io::stderr().write_all(err.as_bytes());
+            std::mem::forget(lines); // le processus se termine : libérer 10 001 chaînes coûterait ~2 ms pour rien
             ExitCode::SUCCESS
         }
         Err(CliError(code, msg)) => {

@@ -4,21 +4,26 @@ use num_bigint::BigUint;
 
 /// F(0) … F(2000), lus à l'exécution. Un oracle absent ou invalide fait échouer le test;
 /// il ne sert jamais d'attendu par défaut.
-fn oracle() -> Vec<BigUint> {
+fn oracle_text() -> Vec<String> {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../contracts/b000045.txt");
     let text = std::fs::read_to_string(path).expect("oracle illisible : contracts/b000045.txt");
-    let terms: Vec<BigUint> = text
+    let terms: Vec<String> = text
         .lines()
         .filter(|l| !l.is_empty())
         .enumerate()
         .map(|(i, l)| {
             let (n, term) = l.split_once(' ').expect("oracle invalide : ligne sans espace");
             assert_eq!(n, i.to_string(), "oracle invalide : indice hors séquence");
-            term.parse().expect("oracle invalide : terme non décimal")
+            term.to_string()
         })
         .collect();
     assert_eq!(terms.len(), 2001, "oracle invalide : 2 001 termes attendus");
     terms
+}
+
+/// Les mêmes termes en entiers : un terme non décimal fait échouer le test.
+fn oracle() -> Vec<BigUint> {
+    oracle_text().iter().map(|t| t.parse().expect("oracle invalide : terme non décimal")).collect()
 }
 
 /// fib(n, algo) égale l'oracle pour n = 0..2000.
@@ -81,17 +86,17 @@ fn bib_09_cassini_a_n_100000_pour_chaque_algorithme() {
 
 #[test]
 fn bib_10_fib_list_0_vaut_0() {
-    assert_eq!(fib_list(0), oracle()[..1]);
+    assert_eq!(fib_list(0), oracle_text()[..1]);
 }
 
 #[test]
 fn bib_11_fib_list_1_vaut_0_1() {
-    assert_eq!(fib_list(1), oracle()[..2]);
+    assert_eq!(fib_list(1), oracle_text()[..2]);
 }
 
 #[test]
 fn bib_12_fib_list_2000_rend_les_2001_termes_de_l_oracle_dans_l_ordre() {
-    assert_eq!(fib_list(2000), oracle());
+    assert_eq!(fib_list(2000), oracle_text());
 }
 
 #[test]
@@ -102,3 +107,24 @@ fn bib_13_un_nom_d_algorithme_inconnu_est_refuse() {
 }
 
 // BIB-14 ne s'applique pas : l'indice est un u64 (docs/cas-de-test.md § 4).
+
+// PERF-01, hors catalogue : garde de l'optimisation « liste en limbes décimaux ». L'oracle s'arrête à 2000; au-delà,
+// la liste (addition décimale à la main) est comparée à fast puis converti en décimal (autre algorithme, autre voie).
+#[test]
+fn perf_01_fib_list_5000_egale_fast_en_decimal_terme_par_terme() {
+    for (k, got) in fib_list(5000).iter().enumerate() {
+        assert_eq!(*got, fib(k as u64, Algo::Fast).to_string(), "k = {k}");
+    }
+}
+
+// PERF-02, hors catalogue : garde des optimisations de matrix et de fast (dernière étape réduite à F(n), parité de k
+// pour le terme ±2). Les trois algorithmes concordent sur les puissances de 2 et leurs voisins, tous bits à 1 compris.
+#[test]
+fn perf_02_les_trois_algorithmes_concordent_autour_des_puissances_de_2_jusqu_a_2_puissance_14() {
+    for j in 1..=14u32 {
+        for n in [(1u64 << j) - 1, 1 << j, (1 << j) + 1] {
+            let [first, others @ ..] = Algo::ALL.map(|a| fib(n, a));
+            assert!(others.iter().all(|t| *t == first), "n = {n}");
+        }
+    }
+}
