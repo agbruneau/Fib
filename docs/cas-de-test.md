@@ -72,9 +72,9 @@ L'interface est `fib(n, algo)` et `fibList(n)`, nommées selon les conventions d
 | BIB-07 | `fib(n, matrix)` pour n = 0..2000 | le terme de l'oracle. Le cycle peut d'abord viser n ≤ 10. | O |
 | BIB-08 | `fib(100000, A)` pour chaque A | le même terme pour les trois algorithmes, qui compte 20 899 chiffres | M |
 | BIB-09 | `fib(99999, A)`, `fib(100000, A)` et `fib(100001, A)`, pour chaque A | F(99999)·F(100001) − F(100000)² = 1 (Cassini) | M |
-| BIB-10 | `fibList(0)` | [0] | O |
-| BIB-11 | `fibList(1)` | [0, 1] | O |
-| BIB-12 | `fibList(2000)` | les 2 001 termes de l'oracle, dans l'ordre | O |
+| BIB-10 | `fibList(0)` | `["0"]` | O |
+| BIB-11 | `fibList(1)` | `["0", "1"]` | O |
+| BIB-12 | `fibList(2000)` | les 2 001 termes de l'oracle, en chaînes décimales, dans l'ordre (ADR-0004) | O |
 | BIB-13 | `fib(5, X)` pour X parmi `all`, `bogus`, chaîne vide et `FAST` | refus, sous la forme d'erreur idiomatique du langage | C |
 | BIB-14 | `fib(−1, A)` et `fibList(−1)`; `fib(1.5, A)`, `fib(NaN, A)`, `fibList(1.5)` et `fibList(NaN)`; pour Python, aussi `fib(0.0, A)` et `fibList(0.0)`; si le type de l'indice admet ces valeurs | refus | C |
 
@@ -237,6 +237,7 @@ Chacun de ces cas attend une erreur.
 
 ## 6. Hors catalogue
 
+- **Tests de garde des optimisations** (ADR-0004) : `PERF-GO-<n>`, `PERF-RS-<n>`, `PERF-TS-<n>` et `PERF-PY-<n>`, propres à chaque langage et hors seams. Ils protègent ce que les cas BIB et CLI ne visent pas directement : la retenue de l'additionneur décimal, la dernière étape de `fast`, l'écriture par tranches, l'absence d'allocation ou d'import. Leur liste est dans les fichiers de test.
 - **Hors contrat, donc non testé** : un stdout fermé avant la fin (`fib --list 10000 | head`) et un argument qui n'est pas de l'Unicode valide.
 - **Lacune connue** : aucun cas CLI ne peut provoquer une discordance, donc le chemin du code 3 dans la CLI n'a pas de test automatique, et pas davantage la règle qui le restreint à une seule ligne `fib:` sans durée, même avec `--time`. BIB-08 vérifie que les algorithmes concordent; la revue de code vérifie ce chemin.
 - **Lacune connue** : le contrat vérifie le nom et le format des lignes de durée, mais ni que l'algorithme nommé s'exécute vraiment, ni que la durée est mesurée (`0.000 ms` passe). La revue de code couvre ce point.

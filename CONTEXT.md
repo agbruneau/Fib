@@ -39,7 +39,7 @@ L'algorithme qui élève la matrice [[1,1],[1,0]] à la puissance n par carrés 
 _Avoid_ : puissance de matrice
 
 **Doublement rapide** (`fast`) :
-L'algorithme qui passe de (F(k), F(k+1)) à (F(2k), F(2k+1)) en suivant les bits de l'indice.
+L'algorithme qui double l'indice à chaque bit de n, du poids fort au poids faible : de F(k) à F(2k), puis F(2k+1) si le bit vaut 1. Il s'appuie sur des termes voisins, F(k−1) ou F(k+1), ou sur le nombre de Lucas L(k).
 _Avoid_ : fast doubling, doubling, rapide
 
 **Comparaison** (`all`) :

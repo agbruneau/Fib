@@ -8,7 +8,8 @@
     "check:ts": "tsc --noEmit && node --test \"ts/**/*.test.ts\" && node contracts/cli.test.ts ts",
     "check:py": "python -m unittest discover -s python && node contracts/cli.test.ts py",
     "contract": "node contracts/cli.test.ts",
-    "check": "npm run check:go && npm run check:rust && npm run check:ts && npm run check:py"
+    "check": "npm run check:go && npm run check:rust && npm run check:ts && npm run check:py",
+    "bench": "node contracts/bench.ts"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

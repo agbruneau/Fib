@@ -1,6 +1,6 @@
 # PRD — Fib : calculateur Fibonacci académique en quatre langages
 
-Version 1.7 · 2026-10-11 · André-Guy Bruneau. Révisée par `/grill-with-docs`, par un audit, par le catalogue de cas de test, par l'implémentation des tickets #2 à #5, puis par l'audit et la refactorisation du 2026-10-11 : le vocabulaire est dans `CONTEXT.md`, les décisions durables dans `docs/adr/`.
+Version 1.8 · 2026-10-11 · André-Guy Bruneau. Révisée par `/grill-with-docs`, par un audit, par le catalogue de cas de test, par l'implémentation des tickets #2 à #5, par l'audit et la refactorisation du 2026-10-11, puis par l'optimisation des performances (ADR-0004) : le vocabulaire est dans `CONTEXT.md`, les décisions durables dans `docs/adr/`.
 
 ## 1. Contexte et objectifs
 
@@ -8,9 +8,9 @@ Fib sert de banc d'essai pour explorer les skills de Matt Pocock (plugin `mattpo
 
 - **O1** — Une même CLI dans les quatre langages, avec un contrat respecté à l'octet près.
 - **O2** — Chaque skill du flux de Matt Pocock (§ 9) sert au moins une fois sur du vrai travail, et son constat est consigné.
-- **O3** — Un code qu'un étudiant lit d'un trait : l'algorithme, sans optimisation au-delà.
+- **O3** — Un code qu'un étudiant lit d'un trait : l'algorithme, sans optimisation au-delà. Remplacé le 2026-10-11 par l'ADR-0004 : le temps de réponse prime, et chaque optimisation porte son pourquoi en commentaire.
 
-La performance n'est pas un objectif. `--time` sert à comparer les langages et les algorithmes, pas à les optimiser.
+Depuis l'ADR-0004, le temps de réponse est un objectif : le temps total du processus et le temps de calcul (`--time`), mesurés par `npm run bench`.
 
 ## 2. Ce que Fib retient de FibCalc
 
@@ -35,9 +35,9 @@ Fib ajoute `--list`, qui produit la liste F(0) … F(N).
 Le vocabulaire (indice, terme, liste, borne, algorithme, comparaison, discordance, oracle, contrat) est défini dans `CONTEXT.md`.
 
 - F(0) = 0, F(1) = 1, F(n) = F(n−1) + F(n−2) pour n ≥ 2. Les termes sont des entiers exacts, jamais en virgule flottante ni tronqués.
-- `iterative` : deux termes consécutifs en mémoire, O(n) additions.
-- `matrix` : [[1,1],[1,0]]ⁿ = [[F(n+1), F(n)], [F(n), F(n−1)]], par carrés successifs.
-- `fast` : doublement rapide, avec F(2k) = F(k)·(2F(k+1) − F(k)) et F(2k+1) = F(k)² + F(k+1)².
+- `iterative` : deux termes consécutifs en mémoire, O(n) additions, faites sur place.
+- `matrix` : [[1,1],[1,0]]ⁿ = [[F(n+1), F(n)], [F(n), F(n−1)]], par carrés successifs de gauche à droite. Une puissance de Q est symétrique, donc trois coefficients suffisent, et multiplier par Q ne coûte que des additions.
+- `fast` : doublement rapide, de F(k) à F(2k) ou F(2k+1) à chaque bit de n, en deux opérations de grand entier : formules de GMP (F(2k−1) = F(k)² + F(k−1)², F(2k+1) = 4F(k)² − F(k−1)² + 2(−1)ᵏ), ou nombres de Lucas en TypeScript (F(2k) = F(k)·L(k), L(2k) = L(k)² − 2(−1)ᵏ). La dernière étape ne calcule que F(n), comme celle de `matrix`.
 
 ## 4. Contrat de la CLI
 
@@ -69,7 +69,7 @@ usage: fib [--algo iterative|matrix|fast|all] [--time] N
 | F3 | `--algo all` lance la comparaison : `fast`, `iterative` puis `matrix`, l'un après l'autre (ordre alphabétique, comme FibCalc). S'ils concordent, le terme est écrit une seule fois. En cas de discordance, stdout reste vide, une seule ligne qui commence par `fib: ` va sur stderr, sans durée même avec `--time`, et le code est 3. |
 | F4 | `--list N` écrit la liste F(0) … F(N), un terme par ligne (N + 1 lignes, chacune terminée par `\n`, la dernière comprise), générée par l'algorithme `iterative`. |
 | F5 | `--list` et `--algo` s'excluent (grammaire, règle 6). |
-| F6 | `--time` écrit sur stderr une ligne par algorithme exécuté, dans l'ordre d'exécution : `<algo> <durée> ms`, la durée à 3 décimales avec un point décimal, quelle que soit la locale. La durée ne couvre que le calcul : ni l'analyse des arguments, ni la conversion décimale, ni l'écriture. `--list` compte comme `iterative`. stdout ne change pas. |
+| F6 | `--time` écrit sur stderr une ligne par algorithme exécuté, dans l'ordre d'exécution : `<algo> <durée> ms`, la durée à 3 décimales avec un point décimal, quelle que soit la locale. La durée ne couvre que le calcul : ni l'analyse des arguments, ni la conversion décimale d'un terme, ni l'écriture. `--list` compte comme `iterative`; sa durée couvre la production du texte décimal, puisque la liste est calculée en décimal (ADR-0004). stdout ne change pas. |
 | F7 | `--help` et `-h` écrivent le texte d'usage ci-dessus sur stdout. Code 0. |
 | F8 | Bornes : N ≤ 100 000 pour un terme; N ≤ 10 000 pour une liste, soit environ 10,5 Mo de sortie. |
 | F9 | Erreur d'usage (tout écart à la grammaire, ou N hors borne, y compris trop grand pour un entier natif) : stdout vide, exactement une ligne sur stderr qui commence par `fib: `, code 2. Le texte qui suit le préfixe est libre. Pas de panique, de trace de pile ni de texte d'usage ajouté. |
@@ -84,7 +84,7 @@ Codes de sortie : 0 succès, 2 erreur d'usage, 3 discordance. Tout autre code si
 Chaque langage expose une seule seam de bibliothèque, nommée selon ses conventions :
 
 - `fib(n, algo)` → le terme F(n), pour l'un des trois algorithmes. Elle rejette un algorithme inconnu, et n < 0 quand le type l'admet.
-- `fibList(n)` → la liste F(0) … F(n).
+- `fibList(n)` → la liste F(0) … F(n), en chaînes décimales calculées directement en base 10 (ADR-0004).
 
 La CLI est un adaptateur mince : grammaire, bornes, comparaison, durées, formatage, codes de sortie.
 
@@ -94,6 +94,7 @@ La CLI est un adaptateur mince : grammaire, bornes, comparaison, durées, format
 | Identifiant (scripts, test de contrat) | `go` | `rust` | `ts` | `py` |
 | Version minimale | Go 1.26 | stable, édition 2024 | Node 24, TypeScript 7 | Python 3.12 |
 | Grand entier | `math/big` | crate `num-bigint` 0.5 | `bigint` natif | `int` natif |
+| Liste en décimal | additionneur en base 10^18 | additionneur en base 10^18 | additionneur en base 10^4 | `decimal.Decimal` |
 | Arguments | analyse manuelle (ADR-0002) | idem, depuis `std::env::args_os` | idem | idem |
 | Tests | `go test`, tests table-driven | `cargo test` | `node --test` | `unittest` |
 | Analyse statique | `go vet` | `cargo clippy --all-targets -- -D warnings` | `tsc` (sans émission) | — |
@@ -101,12 +102,12 @@ La CLI est un adaptateur mince : grammaire, bornes, comparaison, durées, format
 
 Dépendances autorisées : `num-bigint`, avec ses dépendances transitives `num-integer`, `num-traits` et `autocfg`, pour Rust; `typescript` et `@types/node` en `devDependencies` pour TypeScript. Aucune autre.
 
-Durée indicative du calcul itératif de F(100 000) sur la machine de développement, mesurée le 2026-10-11 : Go 62 ms, Rust 35 ms, Node 42 ms, Python 53 ms. Go et Rust allouent un terme neuf à chaque pas, comme le veut la forme (a, b) ← (b, a + b) de la définition (O3).
+Durée indicative du calcul itératif de F(100 000) sur la machine de développement, mesurée le 2026-10-11 après optimisation (ADR-0004) : Go 16 ms, Rust 26 ms, Node 42 ms, Python 54 ms. Le temps de réponse complet, démarrage compris, se mesure par `npm run bench`.
 
 ### Pièges vérifiés le 2026-10-10
 
-- **Tous les langages** : valider `N` par l'expression régulière avant de le convertir. `int()` de Python accepte `+5`, `1_000`, ` 5 ` et des chiffres non ASCII; `Number` et `BigInt` acceptent `+5`, ` 5` et `0x10`, et valent 0 pour la chaîne vide; `parse::<u64>()` de Rust accepte `+5`, tout comme `strconv.Atoi` de Go (mais pas `ParseUint`). Vérifié le 2026-10-10. En Python, valider avec `re.fullmatch` : le `$` de `^[0-9]+$` accepte un saut de ligne final (cas CLI-I16).
-- **Python** : sous Windows, stdout et stderr écrivent `\r\n`, et `PYTHONIOENCODING` change leur encodage (cas CLI-V03). Au point d'entrée, appeler `reconfigure(encoding="ascii", newline="\n")` sur stdout et sur stderr. `str()` d'un terme de plus de 4 300 chiffres lève `ValueError` : appeler `sys.set_int_max_str_digits(0)` au chargement du module.
+- **Tous les langages** : valider `N` comme `^[0-9]+$`, par expression régulière ou par une boucle sur les caractères, avant de le convertir. `int()` de Python accepte `+5`, `1_000`, ` 5 ` et des chiffres non ASCII; `Number` et `BigInt` acceptent `+5`, ` 5` et `0x10`, et valent 0 pour la chaîne vide; `parse::<u64>()` de Rust accepte `+5`, tout comme `strconv.Atoi` de Go (mais pas `ParseUint`). Vérifié le 2026-10-10. En Python, `s.isascii() and s.isdigit()` évite l'import de `re`, qui coûte 8 ms au démarrage. Avec une regex, il faut `re.fullmatch`, parce que le `$` de `^[0-9]+$` accepte un saut de ligne final (cas CLI-I16).
+- **Python** : sous Windows, stdout et stderr écrivent `\r\n`, et `PYTHONIOENCODING` change leur encodage (cas CLI-V03). Au point d'entrée, appeler `reconfigure(encoding="ascii", newline="\n")` sur stdout et sur stderr. `str()` d'un terme de plus de 4 300 chiffres lève `ValueError` : appeler `sys.set_int_max_str_digits(0)` au chargement du module. Au-delà d'environ 9 000 chiffres, `str()` importe `_pylong` (environ 10 ms) : écrire le terme par tranches.
 - **TypeScript** :
   - Le `package.json` racine doit déclarer `"type": "module"`, sans quoi tsc 7 refuse les imports ES.
   - N'utiliser que de la syntaxe effaçable (`erasableSyntaxOnly` : ni `enum` ni `namespace`) et des imports relatifs avec l'extension `.ts` (`allowImportingTsExtensions`).
@@ -126,10 +127,12 @@ Fib/
 │   ├── generer_oracle.py  génère l'oracle par la formule de Binet
 │   ├── README.md        provenance de l'oracle
 │   ├── oracle.ts        lecture et vérification de l'oracle (ORA), en TypeScript
+│   ├── bench.ts         banc d'essai des temps de réponse (`npm run bench`)
 │   └── cli.test.ts      test de contrat
 ├── go/  rust/  ts/  python/
 ├── package.json         "type": "module", point d'entrée unique (avec package-lock.json)
-└── tsconfig.json        couvre ts/ et contracts/
+├── tsconfig.json        couvre ts/ et contracts/
+└── tsconfig.build.json  compile ts/src en JavaScript dans .build/ts (ADR-0004)
 ```
 
 Les quatre implémentations sont indépendantes (ADR-0001) : la seule frontière est la CLI, et la seule source de vérité partagée est `contracts/`.
@@ -138,9 +141,10 @@ Les quatre implémentations sont indépendantes (ADR-0001) : la seule frontière
 |---|---|
 | `check:go`, `check:rust`, `check:ts`, `check:py` | analyse statique, tests du langage, puis test de contrat pour ce seul langage |
 | `contract` | test de contrat pour les implémentations présentes |
+| `bench` | banc d'essai : temps total et temps de calcul, par langage et par scénario (ADR-0004) |
 | `check` | les quatre `check:*` |
 
-`node contracts/cli.test.ts [id…]` vérifie les implémentations nommées par leur identifiant. Un identifiant dont le dossier manque fait échouer le test. Sans argument, le test vérifie les implémentations dont le dossier existe; s'il n'y en a aucune, il ne vérifie que l'oracle. Pour Go, il compile d'abord le binaire (§ 5).
+`node contracts/cli.test.ts [id…]` vérifie les implémentations nommées par leur identifiant. Un identifiant dont le dossier manque fait échouer le test. Sans argument, le test vérifie les implémentations dont le dossier existe; s'il n'y en a aucune, il ne vérifie que l'oracle. Pour Go, Rust et TypeScript, il compile d'abord (§ 5).
 
 ## 7. Tests et critères d'acceptation
 
@@ -148,6 +152,8 @@ Les quatre implémentations sont indépendantes (ADR-0001) : la seule frontière
 
 1. la bibliothèque `fib` / `fibList` de chaque langage;
 2. la CLI, par le test de contrat commun.
+
+Les tests de garde `PERF-<ID>-<n>` (ADR-0004) peuvent viser une fonction privée. Ce ne sont pas des seams.
 
 **Oracle**
 
@@ -168,7 +174,7 @@ Le chemin de la discordance (code 3) dans la CLI n'a pas de test automatique, pu
 
 - **A1** — Chaque ticket de langage : les cas ORA, les cas BIB de son langage et tous les cas CLI de son identifiant passent, donc `npm run check:<id>` et `npm run contract` sont verts sur `main`. Le projet : `npm run check` passe sous Windows 11 une fois les quatre implémentations livrées.
 - **A2** — Aucune dépendance hors de celles du § 5.
-- **A3** — Environ 200 lignes physiques par langage, tests exclus (`wc -l` des fichiers sources, au formatage du dépôt). Un dépassement se justifie dans un ADR. Mesuré le 2026-10-11 : TypeScript 169, Python 191, Rust 229, Go 270 (ADR-0003).
+- **A3** — Remplacé par l'ADR-0004 : la taille suit la performance. Mesuré le 2026-10-11, après optimisation (`wc -l` des sources hors tests) : TypeScript 232, Python 228, Rust 359, Go 376.
 - **A4** — `docs/exploration.md` contient une entrée pour chaque skill du § 9 réellement utilisée.
 
 ## 8. Hors périmètre

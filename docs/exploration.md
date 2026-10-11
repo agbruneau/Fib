@@ -101,6 +101,23 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
   - Fixer un plafond de lignes dans les briefs de refactorisation.
   - Lancer `/code-review` à chaque ticket.
 
+## 2026-10-11 — Optimisation des performances (hors skill), puis `/code-review`
+
+- **A aidé** :
+  - Le banc d'essai commun, mesuré avant tout changement, a montré où partait le temps : le démarrage (TypeScript, Python) et la conversion décimale de la liste. Le calcul ne dominait que pour `iterative`. Sans lui, on aurait optimisé `fast`, qui prenait moins d'une milliseconde.
+  - Deux décisions sont revenues au propriétaire, chiffres à l'appui : la liste calculée en décimal, et les commandes de lancement.
+  - Une session antérieure avait laissé des pistes Python mesurées (branche `perf/py`); elles ont été reprises.
+  - `/code-review` a trouvé que `matrix` en TypeScript refaisait pas à pas l'ancien `fast` : l'algorithme avait perdu son identité.
+  - Gains, en temps total : liste 10 000 de ×2,9 à ×4,3, terme seul de −34 % à −45 % en TypeScript et en Python, iterative ×3,8 en Go.
+- **Friction** :
+  - Quatre agents qui mesurent en même temps se gênent. Leurs chiffres sont bruités, et une mesure seule après la fusion fait foi.
+  - Un sous-agent a écrasé le banc d'essai de l'orchestrateur, qui se trouvait dans un dossier temporaire partagé. Il vit maintenant dans le dépôt (`npm run bench`).
+  - Le code grossit nettement (TypeScript 232, Python 228, Rust 359, Go 376).
+  - Le sandbox refuse la suppression des dossiers de worktrees.
+- **À changer** :
+  - Fixer dès le brief le nom des tests de garde.
+  - Lancer les mesures en série, pas en parallèle.
+
 ## Bilan au 2026-10-11
 
 | Skill | Usage |
