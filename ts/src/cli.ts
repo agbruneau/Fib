@@ -1,4 +1,4 @@
-// CLI de Fib : analyse les arguments, calcule par la bibliothèque, écrit les termes sur stdout et les durées sur stderr.
+// CLI de Fib : analyse les arguments, calcule par la bibliothèque, écrit les termes sur stdout, les durées sur stderr.
 import { fib, fibList, type Algo } from './fib.ts';
 
 const USAGE = `usage: fib [--algo iterative|matrix|fast|all] [--time] N
@@ -72,15 +72,16 @@ function timed<T>(durations: string[], name: Algo, calc: () => T): T {
   return result;
 }
 
-// Rend les termes à écrire et les lignes de durée; pour all, fast, iterative puis matrix doivent concorder. Rien n'est écrit avant la fin : une discordance laisse stdout vide, sans durée (F3).
+// Rend les termes à écrire et les lignes de durée; avec all, les trois algorithmes doivent concorder.
+// Rien n'est écrit ici : une discordance (F3) laisse stdout vide et sans durée.
 function compute({ algos, list, n }: Options): { terms: bigint[]; durations: string[] } {
   const durations: string[] = [];
   if (list) return { terms: timed(durations, 'iterative', () => fibList(n)), durations };
-  const results = algos.map((algo) => timed(durations, algo, () => fib(n, algo)));
-  if (results.some((term) => term !== results[0])) {
+  const terms = algos.map((algo) => timed(durations, algo, () => fib(n, algo)));
+  if (terms.some((term) => term !== terms[0])) {
     throw new CliError(`discordance entre les algorithmes pour l'indice ${n}`, 3);
   }
-  return { terms: [results[0]], durations };
+  return { terms: [terms[0]], durations };
 }
 
 function main(args: string[]): void {
