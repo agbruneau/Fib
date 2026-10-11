@@ -122,7 +122,7 @@ fn iterative(n: u64) -> BigUint {
 }
 
 /// Q^k = [[F(k+1), F(k)], [F(k), F(k−1)]] est symétrique : trois coefficients (p, q, r) suffisent.
-struct Power {
+struct QPower {
     p: BigUint,
     q: BigUint,
     r: BigUint,
@@ -132,22 +132,22 @@ struct Power {
 /// Un bit à 1 multiplie par Q, ce qui ne coûte que des additions : Q^k·Q = [[p+q, p], [q+r, q]], et q+r = p.
 fn matrix(n: u64) -> BigUint {
     let bits = u64::BITS - n.leading_zeros();
-    let mut m = Power { p: BigUint::ONE, q: BigUint::ZERO, r: BigUint::ONE }; // Q^0
+    let mut m = QPower { p: BigUint::ONE, q: BigUint::ZERO, r: BigUint::ONE }; // Q^0
     for i in (1..bits).rev() {
         // (Q^k)² : trois carrés, et q' = p' − r' puisque p² − r² = q·(p + r)
         let (p2, q2, r2) = (&m.p * &m.p, &m.q * &m.q, &m.r * &m.r);
         let (p, r) = (p2 + &q2, q2 + r2);
-        m = Power { q: &p - &r, p, r };
+        m = QPower { q: &p - &r, p, r };
         if (n >> i) & 1 == 1 {
-            m = Power { p: &m.p + &m.q, r: m.q, q: m.p };
+            m = QPower { p: &m.p + &m.q, r: m.q, q: m.p };
         }
     }
     // Dernier bit : seul F(n) compte. Bit à 0, F(n) = q' = q·(p + r) (0 pour n = 0); bit à 1, F(n) = p' = p² + q².
     if n & 1 == 0 { &m.q * (&m.p + &m.r) } else { &m.p * &m.p + &m.q * &m.q }
 }
 
-/// x ← x + 2(−1)^k, pour k de parité donnée.
-fn add_sign_2(x: &mut BigUint, k_odd: bool) {
+/// x ← x + 2(−1)^k, pour k de parité donnée : +2 si k est pair, −2 s'il est impair.
+fn add_alternating_two(x: &mut BigUint, k_odd: bool) {
     if k_odd {
         *x -= 2u8;
     } else {
@@ -167,7 +167,7 @@ fn fast(n: u64) -> BigUint {
         let (a2, b2) = (&a * &a, &b * &b);
         let odd_inv = &a2 + &b2; // F(2k−1) = F(k)² + F(k−1)²
         let mut odd = (a2 << 2u32) - &b2; // F(2k+1) = 4F(k)² − F(k−1)² + 2(−1)^k : le 2 vient après, en non signé
-        add_sign_2(&mut odd, (n >> (i + 1)) & 1 == 1);
+        add_alternating_two(&mut odd, (n >> (i + 1)) & 1 == 1);
         let even = &odd - &odd_inv; // F(2k) = F(2k+1) − F(2k−1)
         (a, b) = if (n >> i) & 1 == 1 { (odd, even) } else { (even, odd_inv) };
     }
@@ -178,7 +178,7 @@ fn fast(n: u64) -> BigUint {
     }
     let a2 = a << 1u32;
     let mut odd = (&a2 - &b) * (a2 + &b);
-    add_sign_2(&mut odd, (n >> 1) & 1 == 1);
+    add_alternating_two(&mut odd, (n >> 1) & 1 == 1);
     odd
 }
 
@@ -186,20 +186,33 @@ fn fast(n: u64) -> BigUint {
 mod tests {
     use super::*;
 
-    /// PERF-03, hors catalogue : garde de l'optimisation « additionneur décimal en limbes » : la retenue franchit
-    /// plusieurs limbes pleins, et une somme de limbes qui vaut exactement 10^18 propage sa retenue.
+    fn sum(a: &[u64], b: &[u64]) -> Vec<u64> {
+        let mut a = a.to_vec();
+        add(&mut a, b);
+        a
+    }
+
+    // PERF-RS-4, hors catalogue : garde de l'optimisation « additionneur décimal en limbes ».
     #[test]
-    fn perf_03_la_retenue_de_l_additionneur_decimal_franchit_les_limbes_pleins() {
-        let cases: [(&[u64], &[u64], &[u64]); 4] = [
-            (&[BASE - 1, BASE - 1], &[1, 0], &[0, 0, 1]),
-            (&[BASE - 1], &[BASE - 1], &[BASE - 2, 1]),
-            (&[1, 0, 7], &[BASE - 1, BASE - 1, 0], &[0, 0, 8]),
-            (&[BASE / 2, 3], &[BASE / 2, 4], &[0, 8]),
-        ];
-        for (a, b, want) in cases {
-            let mut a = a.to_vec();
-            add(&mut a, b);
-            assert_eq!(a, want, "{a:?} + {b:?}");
-        }
+    fn perf_rs_4_une_somme_de_limbes_egale_a_10_puissance_18_propage_sa_retenue() {
+        assert_eq!(sum(&[BASE / 2, 3], &[BASE / 2, 4]), [0, 8]);
+    }
+
+    // PERF-RS-5, hors catalogue : garde de l'optimisation « additionneur décimal en limbes ».
+    #[test]
+    fn perf_rs_5_la_retenue_franchit_les_limbes_pleins() {
+        assert_eq!(sum(&[1, 0, 7], &[BASE - 1, BASE - 1, 0]), [0, 0, 8]);
+    }
+
+    // PERF-RS-6, hors catalogue : garde de l'optimisation « additionneur décimal en limbes ».
+    #[test]
+    fn perf_rs_6_une_retenue_hors_du_dernier_limbe_en_cree_un_nouveau() {
+        assert_eq!(sum(&[BASE - 1, BASE - 1], &[1, 0]), [0, 0, 1]);
+    }
+
+    // PERF-RS-7, hors catalogue : garde de l'optimisation « additionneur décimal en limbes ».
+    #[test]
+    fn perf_rs_7_une_somme_de_limbes_au_dessus_de_10_puissance_18_garde_son_reste() {
+        assert_eq!(sum(&[BASE - 1], &[BASE - 1]), [BASE - 2, 1]);
     }
 }
