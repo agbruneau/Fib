@@ -2,9 +2,14 @@
 package fib
 
 import (
+	"encoding/binary"
 	"fmt"
 	"math/big"
+	"math/bits"
+	"slices"
 	"strconv"
+	"strings"
+	"sync"
 )
 
 // Fib rend F(n) par l'algorithme algo (iterative, matrix ou fast); elle refuse un indice négatif et tout autre nom.
@@ -23,75 +28,159 @@ func Fib(n int, algo string) (*big.Int, error) {
 	return nil, fmt.Errorf("algorithme inconnu : %+q", algo)
 }
 
-// FibList rend F(0) … F(n), toujours par l'algorithme iterative; elle refuse un indice négatif.
-func FibList(n int) ([]*big.Int, error) {
+// base : un limbe décimal tient 18 chiffres. 10^18 laisse la place d'une retenue dans un uint64; 10^19 déborderait.
+const (
+	base       = 1_000_000_000_000_000_000
+	baseDigits = 18
+)
+
+// FibList rend F(0) … F(n) en chaînes décimales, toujours par l'algorithme iterative; elle refuse un indice négatif.
+// Les termes sont additionnés directement en base 10^18 : aucune conversion binaire → décimal.
+func FibList(n int) ([]string, error) {
 	if n < 0 {
 		return nil, fmt.Errorf("indice negatif : %d", n)
 	}
-	a, b := big.NewInt(0), big.NewInt(1)
-	list := []*big.Int{a}
-	for range n {
-		a, b = b, new(big.Int).Add(a, b)
-		list = append(list, a)
+	quadsOnce.Do(fillQuads)
+	// F(k) compte moins de 0,209·k + 1 chiffres : une réserve pour tout le texte, et des limbes pour F(n + 1).
+	var text strings.Builder
+	text.Grow(n*(n+1)/2*209/1000 + 2*n + 2)
+	size := (n+2)*209/1000/baseDigits + 3
+	a, b := make([]uint64, size), make([]uint64, size) // F(k) et F(k + 1), limbes de poids faible d'abord
+	b[0] = 1
+	la, lb := 1, 1 // limbes utilisés; les suivants de a restent à 0
+	ends := make([]int, n+1)
+	digits := make([]byte, 0, size*baseDigits) // le texte d'un terme, réservé pour le plus long
+	for k := 0; ; k++ {
+		digits = appendDecimal(digits[:0], a[:la])
+		text.Write(digits)
+		ends[k] = text.Len()
+		if k == n {
+			break
+		}
+		// a, b = b, a + b : a reçoit la somme sur place, puis les rôles s'échangent.
+		var carry uint64
+		for i, y := range b[:lb] {
+			s := a[i] + y + carry
+			carry = 0
+			if s >= base {
+				s -= base
+				carry = 1
+			}
+			a[i] = s
+		}
+		a[lb] += carry // a[lb] est à 0 : a n'a jamais plus de limbes que b
+		a, b, la, lb = b, a, lb, lb+int(carry)
+	}
+	all, list := text.String(), make([]string, n+1)
+	for k, start := 0, 0; k <= n; k++ {
+		list[k], start = all[start:ends[k]], ends[k]
 	}
 	return list, nil
 }
 
+// quads donne les quatre chiffres ASCII de 0000 à 9999, un par entrée : une recherche par quatre chiffres au lieu de
+// quatre divisions. fillQuads le remplit au premier FibList, pour que les autres commandes ne paient rien au démarrage.
+var (
+	quads     [10_000]uint32
+	quadsOnce sync.Once
+)
+
+func fillQuads() {
+	for i := range quads {
+		quads[i] = uint32('0'+i/1000)<<24 | uint32('0'+i/100%10)<<16 | uint32('0'+i/10%10)<<8 | uint32('0'+i%10)
+	}
+}
+
+// appendDecimal écrit le nombre de limbes limbs (poids faible d'abord) : celui de tête tel quel, les autres sur 18.
+func appendDecimal(dst []byte, limbs []uint64) []byte {
+	top := len(limbs) - 1
+	dst = strconv.AppendUint(dst, limbs[top], 10)
+	start := len(dst)
+	// Les autres limbes s'écrivent sur place, dans une réserve prise d'un coup : pas d'append par limbe.
+	dst = slices.Grow(dst, top*baseDigits)[:start+top*baseDigits]
+	for i := top - 1; i >= 0; i-- {
+		t := (*[baseDigits]byte)(dst[start:])
+		x := limbs[i]
+		for j := baseDigits - 4; j >= 2; j -= 4 {
+			q := x / 10_000
+			binary.BigEndian.PutUint32(t[j:], quads[x-q*10_000])
+			x = q
+		}
+		pair := quads[x] // x < 100 : les deux derniers octets de « 00xy » sont les deux chiffres de tête
+		t[0], t[1] = byte(pair>>8), byte(pair)
+		start += baseDigits
+	}
+	return dst
+}
+
 // iterative applique la définition indice par indice, avec deux termes consécutifs en mémoire.
+// L'addition se fait sur place dans des tampons réservés d'emblée : aucune allocation par pas.
 func iterative(n int) *big.Int {
-	a, b := big.NewInt(0), big.NewInt(1)
+	// F(n) compte moins de 0,7·n bits (0,694·n); un mot de plus pour la retenue de Add.
+	words := n*7/10/bits.UintSize + 3
+	a := new(big.Int).SetBits(make([]big.Word, 0, words))
+	b := new(big.Int).SetBits(make([]big.Word, 0, words)).SetInt64(1)
 	for range n {
-		a, b = b, new(big.Int).Add(a, b)
+		a.Add(a, b) // a = F(k) + F(k + 1) = F(k + 2), puis les rôles s'échangent
+		a, b = b, a
 	}
 	return a
 }
 
-type mat [2][2]*big.Int
-
-func newMat(a, b, c, d int64) mat {
-	return mat{{big.NewInt(a), big.NewInt(b)}, {big.NewInt(c), big.NewInt(d)}}
-}
-
-func (x mat) mul(y mat) mat {
-	var z mat
-	for i := range 2 {
-		for j := range 2 {
-			z[i][j] = new(big.Int).Mul(x[i][0], y[0][j])
-			z[i][j].Add(z[i][j], new(big.Int).Mul(x[i][1], y[1][j]))
-		}
-	}
-	return z
-}
-
-// matrix : [[1,1],[1,0]]^n = [[F(n+1), F(n)], [F(n), F(n-1)]], par carrés successifs.
+// matrix : [[1,1],[1,0]]^n = [[F(n+1), F(n)], [F(n), F(n-1)]], par carrés successifs, des bits de poids fort à ceux
+// de poids faible. Chaque puissance est symétrique : trois coefficients (a, b, c) = (F(k+1), F(k), F(k-1)) suffisent.
 func matrix(n int) *big.Int {
-	result, base := newMat(1, 0, 0, 1), newMat(1, 1, 1, 0)
-	for ; n > 0; n >>= 1 {
-		if n&1 == 1 {
-			result = result.mul(base)
-		}
-		base = base.mul(base)
+	if n < 2 {
+		return big.NewInt(int64(n))
 	}
-	return result[0][1]
+	a, b, c := big.NewInt(1), big.NewInt(1), new(big.Int) // Q¹, le bit de poids fort de n
+	for i := bits.Len(uint(n)) - 2; i >= 1; i-- {
+		// [[a,b],[b,c]]² = [[a²+b², b(a+c)], [b(a+c), b²+c²]] : trois carrés et un produit
+		aa, bb, cc := new(big.Int).Mul(a, a), new(big.Int).Mul(b, b), new(big.Int).Mul(c, c)
+		a, b, c = aa.Add(aa, bb), new(big.Int).Mul(new(big.Int).Add(a, c), b), cc.Add(cc, bb)
+		if n>>i&1 == 1 {
+			// fois Q : [[a,b],[b,c]]·[[1,1],[1,0]] = [[a+b, a], [a, b]], des additions seulement
+			a, b, c = new(big.Int).Add(a, b), a, b
+		}
+	}
+	// Dernier bit : seul F(n), le coefficient b, est utile; ni c ni le reste de la matrice ne sont calculés.
+	if n&1 == 0 {
+		return new(big.Int).Mul(new(big.Int).Add(a, c), b) // b(a+c)
+	}
+	aa, bb := new(big.Int).Mul(a, a), new(big.Int).Mul(b, b)
+	return aa.Add(aa, bb) // a²+b², le coefficient a du carré, que fois Q ramène en b
 }
 
-// fast est le doublement rapide : (F(k), F(k+1)) devient (F(2k), F(2k+1)) à chaque bit de n, du poids fort
-// au poids faible; un bit à 1 avance encore d'un cran.
+// fast est le doublement rapide, lu de gauche à droite sur les bits de n : à chaque bit, (F(k), F(k-1)) devient
+// (F(2k), F(2k-1)) pour un bit à 0, ou (F(2k+1), F(2k)) pour un bit à 1. Deux carrés par bit (formules de GMP) :
+// F(2k-1) = F(k)² + F(k-1)², F(2k+1) = 4F(k)² - F(k-1)² + 2(-1)^k, F(2k) = F(2k+1) - F(2k-1).
 func fast(n int) *big.Int {
-	a, b := big.NewInt(0), big.NewInt(1) // F(k), F(k+1) pour k = 0
-	for _, bit := range strconv.FormatInt(int64(n), 2) {
-		// F(2k) = F(k)·(2F(k+1) − F(k))
-		even := new(big.Int).Lsh(b, 1)
-		even.Sub(even, a)
-		even.Mul(even, a)
-		// F(2k+1) = F(k)² + F(k+1)²
-		odd := new(big.Int).Mul(a, a)
-		odd.Add(odd, new(big.Int).Mul(b, b))
-		if bit == '1' {
-			a, b = odd, new(big.Int).Add(even, odd)
+	if n < 2 {
+		return big.NewInt(int64(n))
+	}
+	a, c := big.NewInt(1), new(big.Int) // F(1), F(0) : k = 1, le bit de poids fort de n
+	two := big.NewInt(2)
+	for i := bits.Len(uint(n)) - 2; i >= 1; i-- {
+		sa, sc := new(big.Int).Mul(a, a), new(big.Int).Mul(c, c)
+		odd := new(big.Int).Add(sa, sc) // F(2k-1)
+		mid := sa.Lsh(sa, 2)            // 4F(k)², sur place
+		mid.Sub(mid, sc)
+		if n>>(i+1)&1 == 0 { // k est pair
+			mid.Add(mid, two)
 		} else {
-			a, b = even, odd
+			mid.Sub(mid, two)
+		}
+		even := sc.Sub(mid, odd) // F(2k), sur place
+		if n>>i&1 == 1 {
+			a, c = mid, even
+		} else {
+			a, c = even, odd
 		}
 	}
-	return a
+	// Dernier bit : seul F(n) est utile. F(2k) = F(k)(F(k) + 2F(k-1)) et F(2k+1) = F(k)² + (F(k) + F(k-1))².
+	if n&1 == 0 {
+		return new(big.Int).Mul(a, new(big.Int).Add(a, new(big.Int).Lsh(c, 1)))
+	}
+	aa, ac := new(big.Int).Mul(a, a), new(big.Int).Add(a, c)
+	return aa.Add(aa, ac.Mul(ac, ac))
 }
