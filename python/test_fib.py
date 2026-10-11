@@ -12,7 +12,8 @@ REFUSED = ((-1, ValueError), (1.5, TypeError), (float("nan"), TypeError), (0.0, 
 
 @cache
 def oracle():
-    """F(0) … F(2000), lus à l'exécution dans l'oracle. Toute anomalie lève une exception : le test échoue au lieu de passer."""
+    """F(0) … F(2000), lus à l'exécution dans l'oracle.
+    Toute anomalie lève une exception : le test échoue au lieu de passer."""
     terms = []
     for line in ORACLE.read_text(encoding="ascii").splitlines():
         if line.strip():
