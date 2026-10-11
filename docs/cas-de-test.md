@@ -233,7 +233,7 @@ Chacun de ces cas attend une erreur.
 |---|---|---|
 | CLI-V01 | `--time 50`, avec `LANG`, `LC_ALL` et `LC_NUMERIC` à `fr_CA.UTF-8` | comme D01 : la durée garde un point décimal. Sous Windows, les variables de locale sont sans effet : V01 n'y éprouve que la locale de la session. |
 | CLI-V02 | `--bogus 5`, puis `--help`, puis `10`, avec `FORCE_COLOR=1`, `CLICOLOR_FORCE=1` et `PYTHON_COLORS=1` | les mêmes sorties que U01, H01 et T01, sans aucun octet ESC. L'exécution qui lit l'oracle vient en dernier, pour chercher l'ESC même sans oracle. |
-| CLI-V03 | `--time 50`, avec `PYTHONIOENCODING=utf-16` | comme D01 : stdout et stderr restent en ASCII, sans BOM. Seul Python lit cette variable. |
+| CLI-V03 | `--time 50`, avec `PYTHONIOENCODING=utf-16` | comme D01 : stdout et stderr restent en ASCII, sans BOM. Seul Python lit cette variable. Sous `python -I`, commande de lancement du contrat, la variable est ignorée : le cas reste joué, et `reconfigure(encoding="ascii")` garde la protection si Python est lancé autrement. |
 
 ## 6. Hors catalogue
 

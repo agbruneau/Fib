@@ -73,12 +73,12 @@ Depuis la racine du dépôt :
 
 | Langage | Commande |
 |---|---|
-| TypeScript | `node ts/src/cli.ts 10` |
+| TypeScript | `npx tsc -p tsconfig.build.json`, puis `node .build/ts/cli.js 10` |
 | Go | `go -C go build -o ../.build/fib.exe ./cmd/fib`, puis `.build/fib.exe 10` (sans `.exe` hors de Windows) |
-| Rust | `cargo run -q --release --manifest-path rust/Cargo.toml -- 10` |
-| Python | `python python/fib.py 10` |
+| Rust | `cargo build -q --release --manifest-path rust/Cargo.toml`, puis `rust/target/release/fib.exe 10` (sans `.exe` hors de Windows) |
+| Python | `python -I -S python/fib.py 10` |
 
-Go se lance par un binaire compilé, parce que `go run` remplace le code de sortie du programme.
+Go, Rust et TypeScript se lancent compilés : le démarrage ne se paie qu'une fois, et `go run` remplace en plus le code de sortie du programme. Python prend `-I -S` pour sauter l'import de `site` et les variables `PYTHON*`.
 
 ## Vérifier
 

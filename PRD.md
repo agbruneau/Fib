@@ -97,7 +97,7 @@ La CLI est un adaptateur mince : grammaire, bornes, comparaison, durées, format
 | Arguments | analyse manuelle (ADR-0002) | idem, depuis `std::env::args_os` | idem | idem |
 | Tests | `go test`, tests table-driven | `cargo test` | `node --test` | `unittest` |
 | Analyse statique | `go vet` | `cargo clippy --all-targets -- -D warnings` | `tsc` (sans émission) | — |
-| Exécutable du contrat, depuis la racine | `go -C go build -o ../.build/fib ./cmd/fib`, puis `.build/fib` (`fib.exe` sous Windows, suffixe donné à `-o`) | `cargo run -q --release --manifest-path rust/Cargo.toml --` | `node ts/src/cli.ts` | `python python/fib.py` |
+| Exécutable du contrat, depuis la racine | `go -C go build -o ../.build/fib ./cmd/fib`, puis `.build/fib` (`fib.exe` sous Windows, suffixe donné à `-o`) | `cargo build -q --release --manifest-path rust/Cargo.toml`, puis `rust/target/release/fib` (`fib.exe` sous Windows) | `npx tsc -p tsconfig.build.json` (émet dans `.build/ts/`), puis `node .build/ts/cli.js` | `python -I -S python/fib.py` |
 
 Dépendances autorisées : `num-bigint`, avec ses dépendances transitives `num-integer`, `num-traits` et `autocfg`, pour Rust; `typescript` et `@types/node` en `devDependencies` pour TypeScript. Aucune autre.
 
@@ -112,7 +112,7 @@ Durée indicative du calcul itératif de F(100 000) sur la machine de développe
   - N'utiliser que de la syntaxe effaçable (`erasableSyntaxOnly` : ni `enum` ni `namespace`) et des imports relatifs avec l'extension `.ts` (`allowImportingTsExtensions`).
   - Terminer en posant `process.exitCode`, jamais par `process.exit()` : sur un pipe POSIX, les écritures sont asynchrones et `exit()` peut tronquer la sortie. Ce n'est pas reproduit sous Windows, où elles sont synchrones.
   - `node --test` prend un glob (`"ts/**/*.test.ts"`), pas un dossier.
-- **Go** : `go run` remplace le code de sortie du programme par 1 et ajoute `exit status N` sur stderr (vérifié le 2026-10-10) : le contrat s'exécute donc sur un binaire compilé par `go build`. `cargo run -q` conserve le code et le stderr (vérifié). Un premier build à froid prend environ 17 s, les suivants moins d'une seconde. Sous Windows, l'horloge peut afficher `0.000 ms` pour un petit N, ce qui est accepté.
+- **Go** : `go run` remplace le code de sortie du programme par 1 et ajoute `exit status N` sur stderr (vérifié le 2026-10-10) : le contrat s'exécute donc sur un binaire compilé par `go build`. Rust et TypeScript passent aussi par un build préalable, non par `cargo run -q` (qui conserve pourtant le code et le stderr) ni par `node ts/src/cli.ts` : le contrat ne paie plus le démarrage à chaque cas, soit environ 50 ms pour `cargo run` et 25 ms pour le retrait des types d'un `.ts` (médiane de 9 lancements de `10`, 2026-10-11). Python prend `-I -S`, qui saute l'import de `site` (environ 3 ms). Un premier build à froid prend environ 17 s, les suivants moins d'une seconde. Sous Windows, l'horloge peut afficher `0.000 ms` pour un petit N, ce qui est accepté.
 - **Rust** : `std::env::args` panique sur un argument qui n'est pas de l'Unicode valide, d'où `args_os`. Sous Windows, la toolchain MSVC exige le composant C++ de Visual Studio Build Tools, absent de la machine de développement. Le dossier du dépôt y utilise donc une override rustup locale (`rustup override set stable-x86_64-pc-windows-gnu`), qui ne fait pas partie du dépôt mais couvre ses sous-dossiers, donc les worktrees de `fib-dev` sous `.claude/worktrees/` (vérifié). Ailleurs, la toolchain par défaut convient.
 
 ## 6. Dépôt
