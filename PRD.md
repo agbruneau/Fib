@@ -96,7 +96,7 @@ La CLI est un adaptateur mince : grammaire, bornes, comparaison, durées, format
 | Grand entier | `math/big` | crate `num-bigint` 0.5 | `bigint` natif | `int` natif |
 | Arguments | analyse manuelle (ADR-0002) | idem, depuis `std::env::args_os` | idem | idem |
 | Tests | `go test`, tests table-driven | `cargo test` | `node --test` | `unittest` |
-| Analyse statique | `go vet` | `cargo clippy -- -D warnings` | `tsc` (sans émission) | — |
+| Analyse statique | `go vet` | `cargo clippy --all-targets -- -D warnings` | `tsc` (sans émission) | — |
 | Exécutable du contrat, depuis la racine | `go -C go build -o ../.build/fib ./cmd/fib`, puis `.build/fib` (`fib.exe` sous Windows, suffixe donné à `-o`) | `cargo run -q --release --manifest-path rust/Cargo.toml --` | `node ts/src/cli.ts` | `python python/fib.py` |
 
 Dépendances autorisées : `num-bigint`, avec ses dépendances transitives `num-integer`, `num-traits` et `autocfg`, pour Rust; `typescript` et `@types/node` en `devDependencies` pour TypeScript. Aucune autre.

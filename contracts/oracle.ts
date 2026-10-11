@@ -16,8 +16,8 @@ const digits = (line: string) => line.split(' ')[1];
 /** ORA-01 à ORA-06 : [identifiant, comportement, vérification]. */
 export const CHECKS: [id: string, title: string, run: (l: string[]) => void][] = [
   ['ORA-01', 'le fichier contient 2 001 lignes non vides', (l) => assert.equal(l.length, 2001)],
-  ['ORA-02', 'chaque ligne est « n F(n) » en chiffres ASCII, sans \\r', (l) =>
-    l.forEach((x) => assert.match(x, /^[0-9]+ [0-9]+$/))],
+  ['ORA-02', 'chaque ligne est « n F(n) » en chiffres ASCII, sans zéro de tête ni \\r', (l) =>
+    l.forEach((x) => assert.match(x, /^[0-9]+ (0|[1-9][0-9]*)$/))],
   ['ORA-03', 'les indices vont de 0 à 2000, consécutifs et dans l’ordre', (l) =>
     l.forEach((x, i) => assert.equal(x.split(' ')[0], String(i)))],
   ['ORA-04', 'F(0) = 0 et F(1) = 1', (l) => assert.deepEqual(l.slice(0, 2).map(digits), ['0', '1'])],

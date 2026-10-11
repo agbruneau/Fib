@@ -28,13 +28,20 @@ const USAGE = `usage: fib [--algo iterative|matrix|fast|all] [--time] N
 type Want = 'erreur' | { out?: string | (() => string); check?: (out: string) => void; times?: string[] };
 type Case = [id: string, title: string, args: string[], want: Want, env?: Record<string, string>];
 
+// term et list sont paresseux : un oracle absent ne fait échouer que les cas qui en tirent leur attendu (catalogue § 3).
 const term = (k: number) => () => `${terms()[k]}\n`;
 const list = (n: number) => () => terms().slice(0, n + 1).map((t) => `${t}\n`).join('');
 
 function run(id: string, args: string[], env: Record<string, string> = {}) {
   const [cmd, ...head] = IMPLS[id].cmd;
   const r = spawnSync(cmd, [...head, ...args], {
-    cwd: root, env: { ...process.env, ...env }, encoding: 'latin1', maxBuffer: 1 << 28,
+    cwd: root, env: { ...process.env, ...env },
+    // latin1 : un octet égale un caractère, donc X-2, X-4 et les longueurs voient les octets bruts.
+    encoding: 'latin1',
+    // `--list 10000` écrit environ 10,5 Mo, au-delà du défaut.
+    maxBuffer: 1 << 28,
+    // Filet contre une CLI qui boucle, large pour un `cargo run --release` à froid.
+    timeout: 300_000,
   });
   assert.ifError(r.error);
   return { code: r.status, out: r.stdout, err: r.stderr };
@@ -120,6 +127,8 @@ const A: Case[] = [
   ['CLI-A14', 'le nom de l’option est sensible à la casse', ['--Algo', 'fast', '5'], 'erreur'],
   ['CLI-A15', '--algo --list 5 prend --list pour valeur', ['--algo', '--list', '5'], 'erreur'],
   ['CLI-A16', 'chaque occurrence de --algo doit être valide, même si une valide suit', ['--algo', 'bogus', '--algo', 'fast', '5'], 'erreur'],
+  ['CLI-A17', '--algo avec une valeur vide (forme séparée) est refusé', ['--algo', '', '5'], 'erreur'],
+  ['CLI-A18', 'un saut de ligne dans la valeur citée ne produit pas deux lignes sur stderr', ['--algo', 'x\ny', '5'], 'erreur'],
 ];
 
 const L: Case[] = [
@@ -149,18 +158,15 @@ const L: Case[] = [
   ['CLI-L14', '--list=5 est refusé : un drapeau ne prend pas de valeur', ['--list=5'], 'erreur'],
 ];
 
-const F50 = '12586269025\n'; // F(50) : littéral du catalogue (§ 5.5)
-const SIX = '0\n1\n1\n2\n3\n5\n'; // F(0) … F(5) : « les 6 premiers termes » du catalogue
-
 const D: Case[] = [
-  ['CLI-D01', '--time écrit la durée de fast sur stderr', ['--time', '50'], { out: F50, times: ['fast'] }],
-  ['CLI-D02', '--time avec --algo all chronomètre fast, iterative puis matrix', ['--time', '--algo', 'all', '50'], { out: F50, times: ['fast', 'iterative', 'matrix'] }],
-  ['CLI-D03', '--time avec --algo matrix chronomètre matrix', ['--time', '--algo', 'matrix', '50'], { out: F50, times: ['matrix'] }],
-  ['CLI-D04', 'la dernière occurrence de --algo gagne', ['--time', '--algo', 'fast', '--algo', 'matrix', '50'], { out: F50, times: ['matrix'] }],
-  ['CLI-D05', 'une occurrence de --algo gagne aussi sur all', ['--algo', 'all', '--algo', 'iterative', '--time', '50'], { out: F50, times: ['iterative'] }],
-  ['CLI-D06', '--time avec --list chronomètre iterative', ['--time', '--list', '5'], { out: SIX, times: ['iterative'] }],
-  ['CLI-D07', '--time peut suivre l’indice', ['50', '--time'], { out: F50, times: ['fast'] }],
-  ['CLI-D08', 'répéter --time ne donne qu’une ligne', ['--time', '--time', '50'], { out: F50, times: ['fast'] }],
+  ['CLI-D01', '--time écrit la durée de fast sur stderr', ['--time', '50'], { out: term(50), times: ['fast'] }],
+  ['CLI-D02', '--time avec --algo all chronomètre fast, iterative puis matrix', ['--time', '--algo', 'all', '50'], { out: term(50), times: ['fast', 'iterative', 'matrix'] }],
+  ['CLI-D03', '--time avec --algo matrix chronomètre matrix', ['--time', '--algo', 'matrix', '50'], { out: term(50), times: ['matrix'] }],
+  ['CLI-D04', 'la dernière occurrence de --algo gagne', ['--time', '--algo', 'fast', '--algo', 'matrix', '50'], { out: term(50), times: ['matrix'] }],
+  ['CLI-D05', 'une occurrence de --algo gagne aussi sur all', ['--algo', 'all', '--algo', 'iterative', '--time', '50'], { out: term(50), times: ['iterative'] }],
+  ['CLI-D06', '--time avec --list chronomètre iterative', ['--time', '--list', '5'], { out: list(5), times: ['iterative'] }],
+  ['CLI-D07', '--time peut suivre l’indice', ['50', '--time'], { out: term(50), times: ['fast'] }],
+  ['CLI-D08', 'répéter --time ne donne qu’une ligne', ['--time', '--time', '50'], { out: term(50), times: ['fast'] }],
   ['CLI-D09', '--time sans indice est refusé', ['--time'], 'erreur'],
   ['CLI-D10', '--time=1 est refusé : un drapeau ne prend pas de valeur', ['--time=1', '5'], 'erreur'],
   ['CLI-D11', 'un indice invalide ne laisse aucune ligne de durée', ['--time', 'abc'], 'erreur'],
@@ -177,16 +183,18 @@ const H: Case[] = [
   ['CLI-H08', '-help est une option inconnue', ['-help'], 'erreur'],
   ['CLI-H09', '--HELP est sensible à la casse', ['--HELP'], 'erreur'],
   ['CLI-H10', '--algo=--help n’est pas l’aide', ['--algo=--help', '5'], 'erreur'],
+  ['CLI-H11', 'l’aide l’emporte sur un indice invalide', ['abc', '--help'], { out: USAGE }],
 ];
 
 const U: Case[] = [
   ['CLI-U01', 'une option longue inconnue est refusée', ['--bogus', '5'], 'erreur'],
   ['CLI-U02', 'un tiret seul est une option inconnue', ['-', '5'], 'erreur'],
   ['CLI-U03', 'un double tiret est une option inconnue, pas une fin des options', ['--', '5'], 'erreur'],
+  ['CLI-U04', 'une option non ASCII est citée en ASCII', ['--bogüs', '5'], 'erreur'],
 ];
 
 const V: Case[] = [
-  ['CLI-V01', 'la locale ne change pas le point décimal des durées', ['--time', '50'], { out: F50, times: ['fast'] },
+  ['CLI-V01', 'la locale ne change pas le point décimal des durées', ['--time', '50'], { out: term(50), times: ['fast'] },
     { LANG: 'fr_CA.UTF-8', LC_ALL: 'fr_CA.UTF-8', LC_NUMERIC: 'fr_CA.UTF-8' }],
 ];
 
