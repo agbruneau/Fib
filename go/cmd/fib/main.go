@@ -142,6 +142,7 @@ func compute(o options) ([]string, []string, error) {
 			return nil, nil, fmt.Errorf("%w pour l'indice %d", errDiscordance, o.n)
 		}
 	}
+	// String() et non Append dans un tampon : mesuré, les deux coûtent pareil.
 	return []string{terms[0].String()}, durations, nil
 }
 
