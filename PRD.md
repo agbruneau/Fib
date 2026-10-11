@@ -1,6 +1,6 @@
 # PRD — Fib : calculateur Fibonacci académique en quatre langages
 
-Version 1.8 · 2026-10-11 · André-Guy Bruneau. Révisée par `/grill-with-docs`, par un audit, par le catalogue de cas de test, par l'implémentation des tickets #2 à #5, par l'audit et la refactorisation du 2026-10-11, puis par l'optimisation des performances (ADR-0004) : le vocabulaire est dans `CONTEXT.md`, les décisions durables dans `docs/adr/`.
+Version 1.9 · 2026-10-11 · André-Guy Bruneau. Révisée par `/grill-with-docs`, par un audit, par le catalogue de cas de test, par l'implémentation des tickets #2 à #5, par l'audit et la refactorisation du 2026-10-11, par l'optimisation des performances (ADR-0004), puis par la borne d'un terme à 1 000 000 : le vocabulaire est dans `CONTEXT.md`, les décisions durables dans `docs/adr/`.
 
 ## 1. Contexte et objectifs
 
@@ -95,6 +95,7 @@ La CLI est un adaptateur mince : grammaire, bornes, comparaison, durées, format
 | Version minimale | Go 1.26 | stable, édition 2024 | Node 24, TypeScript 7 | Python 3.12 |
 | Grand entier | `math/big` | crate `num-bigint` 0.5 | `bigint` natif | `int` natif |
 | Liste en décimal | additionneur en base 10^18 | additionneur en base 10^18 | additionneur en base 10^4 | `decimal.Decimal` |
+| Grand terme en décimal | conversion de `math/big` | conversion de `num-bigint` | conversion de V8 | `fast` et `matrix` en `decimal.Decimal` dès 170 000; `str()` au-delà de 200 000 bits |
 | Arguments | analyse manuelle (ADR-0002) | idem, depuis `std::env::args_os` | idem | idem |
 | Tests | `go test`, tests table-driven | `cargo test` | `node --test` | `unittest` |
 | Analyse statique | `go vet` | `cargo clippy --all-targets -- -D warnings` | `tsc` (sans émission) | — |
@@ -107,7 +108,7 @@ Durée indicative du calcul itératif de F(100 000) sur la machine de développe
 ### Pièges vérifiés le 2026-10-10
 
 - **Tous les langages** : valider `N` comme `^[0-9]+$`, par expression régulière ou par une boucle sur les caractères, avant de le convertir. `int()` de Python accepte `+5`, `1_000`, ` 5 ` et des chiffres non ASCII; `Number` et `BigInt` acceptent `+5`, ` 5` et `0x10`, et valent 0 pour la chaîne vide; `parse::<u64>()` de Rust accepte `+5`, tout comme `strconv.Atoi` de Go (mais pas `ParseUint`). Vérifié le 2026-10-10. En Python, `s.isascii() and s.isdigit()` évite l'import de `re`, qui coûte 8 ms au démarrage. Avec une regex, il faut `re.fullmatch`, parce que le `$` de `^[0-9]+$` accepte un saut de ligne final (cas CLI-I16).
-- **Python** : sous Windows, stdout et stderr écrivent `\r\n`, et `PYTHONIOENCODING` change leur encodage (cas CLI-V03). Au point d'entrée, appeler `reconfigure(encoding="ascii", newline="\n")` sur stdout et sur stderr. `str()` d'un terme de plus de 4 300 chiffres lève `ValueError` : appeler `sys.set_int_max_str_digits(0)` au chargement du module. Au-delà d'environ 9 000 chiffres, `str()` importe `_pylong` (environ 10 ms) : écrire le terme par tranches.
+- **Python** : sous Windows, stdout et stderr écrivent `\r\n`, et `PYTHONIOENCODING` change leur encodage (cas CLI-V03). Au point d'entrée, appeler `reconfigure(encoding="ascii", newline="\n")` sur stdout et sur stderr. `str()` d'un terme de plus de 4 300 chiffres lève `ValueError` : appeler `sys.set_int_max_str_digits(0)` au chargement du module. Au-delà d'environ 9 000 chiffres, `str()` importe `_pylong` (environ 10 ms) : écrire le terme par tranches, mais seulement jusqu'à 200 000 bits, au-delà desquels l'écriture par tranches, quadratique, perd. Dès 170 000, la CLI calcule `fast` et `matrix` en `decimal.Decimal`, dont `str()` est linéaire (ADR-0004).
 - **TypeScript** :
   - Le `package.json` racine doit déclarer `"type": "module"`, sans quoi tsc 7 refuse les imports ES.
   - N'utiliser que de la syntaxe effaçable (`erasableSyntaxOnly` : ni `enum` ni `namespace`) et des imports relatifs avec l'extension `.ts` (`allowImportingTsExtensions`).
@@ -174,7 +175,7 @@ Le chemin de la discordance (code 3) dans la CLI n'a pas de test automatique, pu
 
 - **A1** — Chaque ticket de langage : les cas ORA, les cas BIB de son langage et tous les cas CLI de son identifiant passent, donc `npm run check:<id>` et `npm run contract` sont verts sur `main`. Le projet : `npm run check` passe sous Windows 11 une fois les quatre implémentations livrées.
 - **A2** — Aucune dépendance hors de celles du § 5.
-- **A3** — Remplacé par l'ADR-0004 : la taille suit la performance. Mesuré le 2026-10-11, après optimisation (`wc -l` des sources hors tests) : TypeScript 232, Python 228, Rust 359, Go 376.
+- **A3** — Remplacé par l'ADR-0004 : la taille suit la performance. Mesuré le 2026-10-11, après optimisation et borne à 1 000 000 (`wc -l` des sources hors tests) : TypeScript 232, Python 261, Rust 359, Go 376.
 - **A4** — `docs/exploration.md` contient une entrée pour chaque skill du § 9 réellement utilisée.
 
 ## 8. Hors périmètre

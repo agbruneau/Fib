@@ -2,7 +2,7 @@
 
 Le 2026-10-11, le propriétaire demande de minimiser le temps de réponse de la CLI dans les quatre langages. La décision renverse O3 et la phrase du PRD § 1 « La performance n'est pas un objectif ». Désormais, le temps de réponse prime : le temps total du processus, et le temps de calcul que rapporte `--time`. Le code reste lisible : chaque écart à la forme d'école porte un commentaire d'une ligne qui dit pourquoi.
 
-Un banc d'essai (`npm run bench`, six scénarios, médianes) montre où va le temps. Le démarrage du processus domine le terme seul, la conversion binaire → décimal domine `--list`, et le calcul ne domine que `iterative` et `all`. D'où les décisions :
+Un banc d'essai (`npm run bench`, sept scénarios depuis la borne à 1 000 000, médianes) montre où va le temps. Le démarrage du processus domine le terme seul, la conversion binaire → décimal domine `--list`, et le calcul ne domine que `iterative` et `all`. D'où les décisions :
 
 - **Commandes de lancement** :
   - TypeScript est compilé en JavaScript par tsc dans `.build/ts/`, car retirer les types d'un `.ts` coûtait 21 ms par lancement.
@@ -17,7 +17,7 @@ Un banc d'essai (`npm run bench`, six scénarios, médianes) montre où va le te
   La dernière étape de `matrix` et de `fast` ne calcule que F(n).
 - **Démarrage** :
   - aucun import ni initialisation coûteuse : ni `re` en Python, ni regex compilée au chargement en Go;
-  - en Python, le terme s'écrit par tranches, pour éviter l'import de `_pylong` au-delà de 9 000 chiffres.
+  - en Python, le terme s'écrit par tranches, pour éviter l'import de `_pylong` au-delà de 9 000 chiffres (voir l'amendement pour les grands termes).
 - **Aucune dépendance nouvelle** : GMP reste exclu (PRD § 8).
 
 ## Considered Options
@@ -41,3 +41,16 @@ Un banc d'essai (`npm run bench`, six scénarios, médianes) montre où va le te
 | `--algo iterative 100000` | 88,1 → 22,9 | 42,2 → 31,6 | 109,6 → 82,6 | 88,2 → 75,8 |
 | `--algo all 100000` | 73,5 → 23,4 | 45,4 → 32,3 | 110,1 → 84,0 | 95,3 → 76,8 |
 | `--list 10000` | 78,6 → 23,4 | 107,2 → 24,7 | 206,3 → 70,2 | 229,2 → 66,9 |
+
+## Amendement du 2026-10-11 : borne d'un terme à 1 000 000
+
+Le propriétaire relève la borne d'un terme de 100 000 à 1 000 000 (F8). Celle d'une liste reste à 10 000. À 1 000 000, F(n) compte 208 988 chiffres, et sa conversion en décimal devient la plus grosse part du temps.
+
+- **Go, Rust, TypeScript** : seule la borne change. `math/big`, `num-bigint` 0.5.1 et V8 convertissent déjà par diviser pour régner. Aucune conversion écrite à la main ne les bat de plus de 3 % de façon répétable. Seul le parallélisme gagnerait vraiment, et le PRD § 8 l'exclut.
+- **Python** : l'écriture par tranches est quadratique et prenait 240 ms à 1 000 000. Deux seuils, mesurés, la remplacent :
+  - dès `DECIMAL_FROM` (170 000), `fast` et `matrix` calculent en `decimal.Decimal` exact, dont `str()` est linéaire. La CLI passe pour cela par une aide privée de la bibliothèque, et la seam `fib()` rend toujours un `int`;
+  - au-delà de `STR_FROM_BITS` (200 000 bits), un `int` passe par `str()`, sous-quadratique par `_pylong`. Ce seuil ne sert qu'avec `iterative` et `all`.
+- **`--time`** : sur le chemin `Decimal`, le calcul de `fast` est un peu plus lent qu'en `int` (environ 3 ms contre 1 ms à 170 000), mais le temps total baisse. C'est le temps de réponse qui prime.
+- **GMP** reste exclu. À 1 000 000, le temps de réponse est de 22 ms en Go, 29 ms en Rust, 42 ms en Python et 63 ms en TypeScript, dont 6 à 40 ms de démarrage. GMP gagnerait quelques millisecondes de calcul et de conversion, au prix d'une dépendance native.
+
+Mesures, en millisecondes de temps total (`terme (1000000, fast)`) : Python passe de 288 à 42; Go, Rust et TypeScript sont à 22, 29 et 63, sans changement de code hors la borne.

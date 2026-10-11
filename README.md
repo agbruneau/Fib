@@ -102,7 +102,7 @@ npm run check
 - `check:<id>` vérifie un langage (`go`, `rust`, `ts` ou `py`) : analyse statique, tests du langage, puis contrat.
 - `contract` joue le contrat sur les implémentations présentes.
 - `check` vérifie les quatre langages.
-- `bench` mesure le temps total et le temps de calcul de chaque langage sur six scénarios (ADR-0004).
+- `bench` mesure le temps total et le temps de calcul de chaque langage sur sept scénarios, dont un terme à 1 000 000 (ADR-0004).
 
 ## Prérequis
 

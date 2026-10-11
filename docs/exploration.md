@@ -118,6 +118,17 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
   - Fixer dès le brief le nom des tests de garde.
   - Lancer les mesures en série, pas en parallèle.
 
+## 2026-10-11 — Borne d'un terme à 1 000 000, puis `/code-review`
+
+- **A aidé** :
+  - Les faits attendus (208 988 chiffres, et les congruences mod 2048 et mod 1000 tirées des périodes de Pisano) ont été vérifiés avant d'écrire le cas CLI-T13. Le contrat est passé au rouge, puis les quatre langages au vert.
+  - Le banc d'essai a dit où optimiser, et où ne pas le faire. Go, Rust et TypeScript convertissent déjà en temps sous-quadratique, et aucune piste maison n'y a passé le seuil des 3 %. En Python, deux seuils mesurés font passer F(1 000 000) de 288 à 42 ms.
+  - `/code-review` : l'axe Spec a joué 152 sondes, sans un seul écart, jusqu'à F(1 000 000) par `iterative`. L'axe Standards a vu que le chemin `Decimal` contournait la seam, et que deux gardes avaient un attendu tautologique ou pris d'un autre algorithme.
+- **Friction** :
+  - Un brief a supposé que `num-bigint` convertissait en temps quadratique, ce qui était faux. L'agent l'a vérifié dans la source avant d'écrire du code.
+  - Les gains restants passent tous par le parallélisme, que le PRD § 8 exclut.
+- **À changer** : mesurer la bibliothèque à la nouvelle taille avant de rédiger les pistes du brief.
+
 ## Bilan au 2026-10-11
 
 | Skill | Usage |
