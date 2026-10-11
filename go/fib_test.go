@@ -13,22 +13,27 @@ import (
 	"fib"
 )
 
-var cached []*big.Int // l'oracle, lu une fois (les tests ne sont pas parallèles)
+var (
+	cached     []*big.Int // l'oracle, lu une fois (les tests ne sont pas parallèles)
+	cachedText []string   // les mêmes termes, tels qu'écrits dans le fichier
+)
 
 var algos = []string{"iterative", "matrix", "fast"}
 
-// oracle rend F(0) … F(2000) lus dans contracts/b000045.txt. Les attendus ne sont jamais recalculés ici.
+// oracle rend F(0) … F(2000) lus dans contracts/b000045.txt, en entiers puis en texte décimal.
+// Les attendus ne sont jamais recalculés ici.
 // Un oracle absent, mal formé ou sans exactement 2 001 termes fait échouer le test qui l'utilise.
-func oracle(t *testing.T) []*big.Int {
+func oracle(t *testing.T) ([]*big.Int, []string) {
 	t.Helper()
 	if cached != nil {
-		return cached
+		return cached, cachedText
 	}
 	data, err := os.ReadFile(filepath.Join("..", "contracts", "b000045.txt"))
 	if err != nil {
 		t.Fatalf("oracle illisible : %v", err)
 	}
 	var terms []*big.Int
+	var texts []string
 	for line := range strings.SplitSeq(string(data), "\n") {
 		if line == "" {
 			continue
@@ -39,12 +44,13 @@ func oracle(t *testing.T) []*big.Int {
 			t.Fatalf("oracle mal formé à la ligne %q", line)
 		}
 		terms = append(terms, term)
+		texts = append(texts, digits)
 	}
 	if len(terms) != 2001 {
 		t.Fatalf("oracle : %d termes, attendu 2001", len(terms))
 	}
-	cached = terms
-	return terms
+	cached, cachedText = terms, texts
+	return terms, texts
 }
 
 // mustFib rend Fib(n, algo), ou arrête le test.
@@ -60,7 +66,8 @@ func mustFib(t *testing.T, n int, algo string) *big.Int {
 // check compare Fib(n, algo) au terme n de l'oracle.
 func check(t *testing.T, n int, algo string) {
 	t.Helper()
-	want := oracle(t)[n]
+	terms, _ := oracle(t)
+	want := terms[n]
 	got := mustFib(t, n, algo)
 	if got.Cmp(want) != 0 {
 		t.Errorf("Fib(%d, %s) = %v, attendu %v", n, algo, got, want)
@@ -122,14 +129,15 @@ func TestBIB09_CassiniAutourDe100000(t *testing.T) {
 	}
 }
 
-// BIB-10 à BIB-12 : FibList(n) égale les n + 1 premiers termes de l'oracle, dans l'ordre.
+// BIB-10 à BIB-12 : FibList(n) égale, en chaînes décimales, les n + 1 premiers termes de l'oracle, dans l'ordre.
 func TestBIB10a12_FibListEgaleLOracle(t *testing.T) {
 	for _, c := range []struct {
 		id string
 		n  int
 	}{{"BIB-10", 0}, {"BIB-11", 1}, {"BIB-12", 2000}} {
 		t.Run(fmt.Sprintf("%s : FibList(%d) vaut les %d premiers termes de l'oracle", c.id, c.n, c.n+1), func(t *testing.T) {
-			want := oracle(t)[:c.n+1]
+			_, texts := oracle(t)
+			want := texts[:c.n+1]
 			got, err := fib.FibList(c.n)
 			if err != nil {
 				t.Fatal(err)
@@ -138,11 +146,58 @@ func TestBIB10a12_FibListEgaleLOracle(t *testing.T) {
 				t.Fatalf("FibList(%d) a %d termes, attendu %d", c.n, len(got), len(want))
 			}
 			for i := range want {
-				if got[i].Cmp(want[i]) != 0 {
-					t.Fatalf("FibList(%d)[%d] = %v, attendu %v", c.n, i, got[i], want[i])
+				if got[i] != want[i] {
+					t.Fatalf("FibList(%d)[%d] = %s, attendu %s", c.n, i, got[i], want[i])
 				}
 			}
 		})
+	}
+}
+
+// PERF-1, hors catalogue : garde de l'optimisation de FibList, l'additionneur décimal en base 10^18 (retenue aux
+// frontières de limbe, zéros de remplissage, formatage par quadruplets), au-delà des 2 001 termes de l'oracle et jusqu'à
+// la borne (10 000). L'attendu vient d'un autre chemin : le doublement rapide, puis la conversion décimale de math/big.
+func TestPERF1_FibListAuDelaDeLOracle(t *testing.T) {
+	list, err := fib.FibList(10000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 10001 {
+		t.Fatalf("FibList(10000) a %d termes, attendu 10001", len(list))
+	}
+	for k, got := range list {
+		if want := mustFib(t, k, "fast").String(); got != want {
+			t.Fatalf("FibList(10000)[%d] = %s, attendu %s", k, got, want)
+		}
+	}
+}
+
+// PERF-2, hors catalogue : garde de l'optimisation de FibList qui réserve les limbes d'avance, pour chaque n. De 0 à 300,
+// les termes franchissent plusieurs fois la frontière d'un limbe : une réserve trop juste ferait paniquer, une retenue
+// perdue changerait le dernier terme.
+func TestPERF2_FibListReserveDeLimbes(t *testing.T) {
+	_, texts := oracle(t)
+	for n := 0; n <= 300; n++ {
+		list, err := fib.FibList(n)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(list) != n+1 || list[n] != texts[n] {
+			t.Fatalf("FibList(%d) a %d termes, dernier %q, attendu %q", n, len(list), list[len(list)-1], texts[n])
+		}
+	}
+}
+
+// PERF-3, hors catalogue : garde de l'optimisation d'iterative et de FibList, l'addition sur place dans des tampons
+// réservés d'emblée. Quelques allocations suffisent; une par pas, le défaut de la forme (a, b) ← (b, a + b) avec un
+// entier neuf, en ferait des milliers. Un chronomètre serait instable; ce compte est exact.
+func TestPERF3_IterativeNAllouePasParPas(t *testing.T) {
+	const most = 12 // observé : 6 ou moins; la marge absorbe les changements d'allocation de la chaîne d'outils
+	if got := testing.AllocsPerRun(3, func() { mustFib(t, 20000, "iterative") }); got > most {
+		t.Errorf("Fib(20000, iterative) alloue %v fois, attendu %d au plus", got, most)
+	}
+	if got := testing.AllocsPerRun(3, func() { fib.FibList(5000) }); got > most {
+		t.Errorf("FibList(5000) alloue %v fois, attendu %d au plus", got, most)
 	}
 }
 

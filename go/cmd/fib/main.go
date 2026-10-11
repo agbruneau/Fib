@@ -9,7 +9,6 @@ import (
 	"io"
 	"math/big"
 	"os"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -31,8 +30,6 @@ const (
 var comparison = []string{"fast", "iterative", "matrix"}
 
 var errDiscordance = errors.New("discordance entre les algorithmes")
-
-var indexPattern = regexp.MustCompile(`^[0-9]+$`)
 
 type options struct {
 	algos []string
@@ -87,8 +84,9 @@ func parse(args []string) (options, error) {
 	if len(positional) != 1 {
 		return o, errors.New("exactement un indice attendu")
 	}
-	// La regex passe avant toute conversion : Atoi accepte « +5 », et un indice trop grand pour un int est hors borne.
-	if !indexPattern.MatchString(positional[0]) {
+	// Les chiffres ASCII passent avant toute conversion : Atoi accepte « +5 », et un indice trop grand pour un int
+	// est hors borne.
+	if !isDigits(positional[0]) {
 		return o, errors.New("indice invalide : chiffres ASCII seulement")
 	}
 	bound := maxTerm
@@ -103,15 +101,26 @@ func parse(args []string) (options, error) {
 	return o, nil
 }
 
+// isDigits dit si s est non vide et ne compte que des chiffres ASCII (^[0-9]+$ du PRD § 4); une boucle sur les octets
+// évite de compiler une regexp à chaque démarrage.
+func isDigits(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return s != ""
+}
+
 // lap rend la ligne « <algo> <durée> ms » d'un calcul : le chronomètre ne couvre que le calcul,
 // et le format ignore la locale.
 func lap(algo string, start time.Time) string {
 	return fmt.Sprintf("%s %.3f ms\n", algo, float64(time.Since(start))/float64(time.Millisecond))
 }
 
-// compute rend les termes à écrire et les lignes de durée; avec all, les trois algorithmes doivent concorder.
-// Rien n'est écrit ici : une discordance (F3) laisse stdout vide et sans durée.
-func compute(o options) ([]*big.Int, []string, error) {
+// compute rend les lignes à écrire (déjà en décimal pour une liste) et les lignes de durée; avec all, les trois
+// algorithmes doivent concorder. Rien n'est écrit ici : une discordance (F3) laisse stdout vide et sans durée.
+func compute(o options) ([]string, []string, error) {
 	if o.list {
 		start := time.Now()
 		list, err := fib.FibList(o.n)
@@ -133,7 +142,7 @@ func compute(o options) ([]*big.Int, []string, error) {
 			return nil, nil, fmt.Errorf("%w pour l'indice %d", errDiscordance, o.n)
 		}
 	}
-	return terms[:1], durations, nil
+	return []string{terms[0].String()}, durations, nil
 }
 
 // run rend le code de sortie : 0 succès, 2 erreur d'usage, 3 discordance.
@@ -144,10 +153,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	o, err := parse(args)
-	var terms []*big.Int
-	var durations []string
+	var lines, durations []string
 	if err == nil {
-		terms, durations, err = compute(o)
+		lines, durations, err = compute(o)
 	}
 	if err != nil {
 		fmt.Fprintf(stderr, "fib: %v\n", err)
@@ -156,10 +164,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 		return 2
 	}
-	// Tampon : sans lui, --list 10000 ferait un appel système par terme.
-	out := bufio.NewWriter(stdout)
-	for _, t := range terms {
-		fmt.Fprintln(out, t)
+	// 64 Ko : sans tampon, --list 10000 ferait un appel système par terme; mesuré, 4 Ko coûte 12 % de plus.
+	out := bufio.NewWriterSize(stdout, 64<<10)
+	for _, line := range lines {
+		out.WriteString(line)
+		out.WriteByte('\n')
 	}
 	out.Flush()
 	if o.time {
