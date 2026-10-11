@@ -24,7 +24,8 @@ function matrix(n: number): bigint {
   return result[1];
 }
 
-// Doublement rapide : les bits de n, lus du poids fort au poids faible, font passer de (F(k), F(k+1)) à (F(2k), F(2k+1)); un bit à 1 avance encore d'un cran.
+// Doublement rapide : (F(k), F(k+1)) devient (F(2k), F(2k+1)) à chaque bit de n, du poids fort au poids faible;
+// un bit à 1 avance encore d'un cran.
 function fast(n: number): bigint {
   let [a, b] = [0n, 1n];
   for (const bit of n.toString(2)) {
@@ -53,7 +54,8 @@ export function fibList(n: number): bigint[] {
 
 const algos: Record<Algo, (n: number) => bigint> = { iterative, matrix, fast };
 
-/** Rend F(n) par l'algorithme algo. Lève TypeError pour un algorithme inconnu, RangeError pour un indice qui n'est pas un entier >= 0. */
+/** Rend F(n) par l'algorithme algo.
+ * Lève TypeError pour un algorithme inconnu, RangeError pour un indice qui n'est pas un entier >= 0. */
 export function fib(n: number, algo: Algo): bigint {
   if (!Object.hasOwn(algos, algo)) throw new TypeError(`algorithme inconnu : ${algo}`);
   checkIndex(n);
