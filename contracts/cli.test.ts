@@ -102,7 +102,7 @@ const T: Case[] = [
     check: (out) => {
       assert.match(out, /^[1-9][0-9]*\n$/);
       assert.equal(out.length - 1, 208988);
-      // Restes lus chiffre à chiffre : évite la conversion décimal → BigInt, quadratique, d'un terme de 208 988 chiffres.
+      // Restes lus chiffre à chiffre : évite la conversion décimal → BigInt, quadratique, de 208 988 chiffres.
       const mod = (m: number) => [...out.slice(0, -1)].reduce((r, c) => (r * 10 + Number(c)) % m, 0);
       assert.equal(mod(2048), Number(BigInt(terms()[1600]) % 2048n));
       assert.equal(mod(1000), Number(BigInt(terms()[1000]) % 1000n));
