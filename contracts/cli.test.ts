@@ -149,7 +149,7 @@ const A: Case[] = [
   ['CLI-A15', '--algo --list 5 prend --list pour valeur', ['--algo', '--list', '5'], 'erreur'],
   ['CLI-A16', 'chaque occurrence de --algo doit être valide, même si une valide suit', ['--algo', 'bogus', '--algo', 'fast', '5'], 'erreur'],
   ['CLI-A17', '--algo avec une valeur vide (forme séparée) est refusé', ['--algo', '', '5'], 'erreur'],
-  ['CLI-A18', 'un saut de ligne dans la valeur citée ne produit pas deux lignes sur stderr', ['--algo', 'x\ny', '5'], 'erreur'],
+  ['CLI-A18', 'un saut de ligne dans un argument ne produit pas deux lignes', ['--algo', 'x\ny', '5'], 'erreur'],
   ['CLI-A19', 'la casse compte à chaque occurrence de --algo, même si une valide suit', ['--algo', 'FAST', '--algo', 'fast', '5'], 'erreur'],
   ['CLI-A20', 'une valeur non ASCII de --algo est citée en ASCII', ['--algo', 'fäst', '5'], 'erreur'],
 ];
@@ -220,7 +220,7 @@ const U: Case[] = [
   ['CLI-U01', 'une option longue inconnue est refusée', ['--bogus', '5'], 'erreur'],
   ['CLI-U02', 'un tiret seul est une option inconnue', ['-', '5'], 'erreur'],
   ['CLI-U03', 'un double tiret est une option inconnue, pas une fin des options', ['--', '5'], 'erreur'],
-  ['CLI-U04', 'une option non ASCII est citée en ASCII', ['--bogüs', '5'], 'erreur'],
+  ['CLI-U04', 'option non ASCII : la ligne d’erreur reste en ASCII', ['--bogüs', '5'], 'erreur'],
   ['CLI-U05', 'chaque caractère non ASCII d’une option est cité en ASCII', ['--bögüs', '5'], 'erreur'],
   ['CLI-U06', 'deux fautes ne produisent qu’une seule ligne fib:', ['--bogus', 'abc'], 'erreur'],
 ];
