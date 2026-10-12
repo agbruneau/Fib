@@ -75,7 +75,17 @@ usage: fib [--algo iterative|matrix|fast|all] [--time] N
 
 Codes de sortie : 0 succès, 2 erreur d'usage, 3 discordance. Tout autre code signale une défaillance hors contrat.
 
-**Hors contrat** (comportement non spécifié, non testé) : un stdout fermé avant la fin (`fib --list 10000 | head`) et un argument qui n'est pas de l'Unicode valide. En revanche, un stderr fermé au lancement (`2>&-`) est dans le contrat : il ne change ni stdout ni le code (cas CLI-V04).
+**Hors contrat** (comportement non spécifié, non testé) :
+
+- un stdout fermé avant la fin (`fib --list 10000 | head`).
+- un argument qui n'est pas de l'Unicode valide.
+- un stdout ou un stderr **ouvert** dont l'écriture échoue ou bloque : tube non bloquant, `/dev/full`, limite de taille de fichier (`ulimit -f`), tube sans lecteur.
+- les limites de ressources : mémoire, espace d'adressage (`ulimit -v`), taille de fichier.
+- l'ordre relatif des octets de stdout et de stderr quand ils partagent un même tube (`2>&1`). Le contrat juge chaque flux séparément.
+
+Dans ces cas, le comportement de la CLI est libre : code de sortie, texte et traces. F10 ne s'applique pas à une trace de plantage, qui peut contenir des séquences ANSI.
+
+En revanche, un stderr fermé au lancement (`2>&-`) est dans le contrat : il ne change ni stdout ni le code (cas CLI-V04). Un descripteur fermé au lancement est dans le contrat; un descripteur ouvert dont l'écriture échoue est hors contrat.
 
 ## 5. Exigences par langage
 
