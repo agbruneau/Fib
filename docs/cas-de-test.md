@@ -170,7 +170,7 @@ Chacun de ces cas attend une erreur (source C).
 | CLI-A17 | `--algo "" 5` | erreur : valeur vide dans la forme séparée (A10 ne couvre que `--algo=`) | C |
 | CLI-A18 | `--algo`, puis `x`, un saut de ligne et `y` dans un même argument, puis `5` | erreur : un saut de ligne dans un argument ne produit pas deux lignes (F9, F10) | C |
 | CLI-A19 | `--algo FAST --algo fast 5` | erreur : la casse compte à chaque occurrence | C |
-| CLI-A20 | `--algo fäst 5` | erreur : la valeur non ASCII est citée en ASCII, et stderr reste en ASCII (X-4) | C |
+| CLI-A20 | `--algo fäst 5` | erreur; stderr reste en ASCII (X-4) | C |
 
 ### 5.4 Liste — L (F4, F5, F8, règles 3 et 6)
 
@@ -239,7 +239,7 @@ Chacun de ces cas attend une erreur (source C).
 | CLI-U02 | `- 5` | tiret seul |
 | CLI-U03 | `-- 5` | double tiret, sans le sens « fin des options » |
 | CLI-U04 | `--bogüs 5` | option non ASCII : la ligne d'erreur reste en ASCII (F9, F10, règle 4) |
-| CLI-U05 | `--bögüs 5` | option avec plusieurs caractères non ASCII : le message les cite tous en ASCII, et stderr reste en ASCII (X-4) |
+| CLI-U05 | `--bögüs 5` | option avec plusieurs caractères non ASCII : la ligne d'erreur reste en ASCII (X-4) |
 | CLI-U06 | `--bogus abc` | deux fautes, l'option inconnue et l'indice invalide : une seule ligne `fib:` |
 
 ### 5.8 Environnement — V (F6, F10)
@@ -247,7 +247,7 @@ Chacun de ces cas attend une erreur (source C).
 | ID | Arguments et environnement | Attendu |
 |---|---|---|
 | CLI-V01 | `--time 50`, avec `LANG`, `LC_ALL` et `LC_NUMERIC` à `fr_CA.UTF-8` | comme D01 : la durée garde un point décimal. Sous Windows, les variables de locale sont sans effet : V01 n'y éprouve que la locale de la session. |
-| CLI-V02 | `--bogus 5`, puis `--help`, puis `10`, avec `FORCE_COLOR=1`, `CLICOLOR_FORCE=1` et `PYTHON_COLORS=1`, et un `NO_COLOR` vide | les mêmes sorties que U01, H01 et T01, sans aucun octet ESC. L'exécution qui lit l'oracle vient en dernier, pour chercher l'ESC même sans oracle. Le `NO_COLOR` vide écarte un `NO_COLOR` hérité du parent : sous Python 3.14, il l'emporterait sur `FORCE_COLOR` et viderait le cas de son sens. `python -I -S`, commande de lancement du contrat, ignore `PYTHON_COLORS` (vérifié) : pour Python, seul `FORCE_COLOR` force la couleur. |
+| CLI-V02 | `--bogus 5`, puis `--help`, puis `10`, avec `FORCE_COLOR=1`, `CLICOLOR_FORCE=1` et `PYTHON_COLORS=1`, sans `NO_COLOR` | les mêmes sorties que U01, H01 et T01, sans aucun octet ESC. L'exécution qui lit l'oracle vient en dernier, pour chercher l'ESC même sans oracle. `NO_COLOR` est retiré de l'environnement du fils, non vidé. Hérité du parent, il l'emporterait sur `FORCE_COLOR` sous Python 3.14 et viderait le cas de son sens. Vidé, il fait écrire à Node 22 `Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set` sur stderr dès qu'un `console.*` tourne (vérifié), et X-3 rougirait pour une raison du harnais. Les premiers CPython 3.13 (3.13.0 et 3.13.1) testent probablement la présence de `NO_COLOR`, non sa valeur, alors que 3.13.3 et Python 3.13.16 testent la valeur : seul le retrait vaut pour toutes les versions. `python -I -S`, commande de lancement du contrat, ignore `PYTHON_COLORS` (vérifié) : pour Python, seul `FORCE_COLOR` force la couleur. |
 | CLI-V03 | `--time 50`, avec `PYTHONIOENCODING=utf-16` | comme D01 : stdout et stderr restent en ASCII, sans BOM. Seul Python lit cette variable. Sous `python -I -S`, commande de lancement du contrat, la variable est ignorée : le cas reste joué, et `reconfigure(encoding="ascii")` garde la protection si Python est lancé autrement. |
 
 ## 6. Hors catalogue
