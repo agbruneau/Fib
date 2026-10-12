@@ -50,7 +50,7 @@ Temps total du processus, en millisecondes, médianes de 15 exécutions (`npm ru
 
 **Qualité.**
 
-- L'audit, en 8 dimensions (les quatre langages, contrat, cohérence, test différentiel, documentation), a rendu 233 constats, dont 36 réfutés par un vérificateur sceptique. Il n'a trouvé aucune erreur de calcul et un seul écart au contrat : Python laissait `PYTHONIOENCODING` changer l'encodage de sa sortie. L'écart est corrigé et gardé par PERF-PY-20 : CLI-V03 ne peut pas le voir, car `python -I` ignore la variable. Un test différentiel de 121 vecteurs hors catalogue n'a trouvé aucun écart entre les quatre implémentations. Le 2026-10-12, une boucle différentielle d'environ 170 000 entrées en a trouvé un : avec stderr fermé, Python sortait en code 1, stdout vide. Il est corrigé et gardé par CLI-V04 et PERF-PY-23. Elle a aussi relevé des comportements que le contrat ne tranche pas, comme un stdout qui refuse l'écriture : ils sont consignés dans `docs/exploration.md`.
+- L'audit, en 8 dimensions (les quatre langages, contrat, cohérence, test différentiel, documentation), a rendu 233 constats, dont 36 réfutés par un vérificateur sceptique. Il n'a trouvé aucune erreur de calcul et un seul écart au contrat : Python laissait `PYTHONIOENCODING` changer l'encodage de sa sortie. L'écart est corrigé et gardé par PERF-PY-20 : CLI-V03 ne peut pas le voir, car `python -I` ignore la variable. Un test différentiel de 121 vecteurs hors catalogue n'a trouvé aucun écart entre les quatre implémentations. Le 2026-10-12, une boucle différentielle d'environ 170 000 entrées en a trouvé un : avec stderr fermé, Python sortait en code 1, stdout vide. Il est corrigé et gardé par CLI-V04 et PERF-PY-23. Elle a aussi relevé des comportements que le contrat ne tranchait pas, comme un stdout qui refuse l'écriture : ils sont désormais hors contrat (PRD § 4, [agbruneau/Fib#18](https://github.com/agbruneau/Fib/issues/18)).
 - Chaque langage passe les 99 cas CLI du contrat (CLI-V04 se saute sous Windows), ORA-01 à ORA-06 sur l'oracle et le contrôle du harnais (106 tests par langage), BIB-01 à BIB-14 sur sa bibliothèque (BIB-14 est sans objet en Rust), et des tests de garde de ses optimisations : 8 en Go, 10 en Rust, 5 en TypeScript, 24 en Python.
 - Une revue `/code-review` a suivi chacun des cinq chantiers. Ces revues ont trouvé, entre autres, une violation du PRD § 7 en Rust (lignes vides de l'oracle) et un `matrix` TypeScript qui refaisait l'ancien `fast`. Les constats sont corrigés.
 
@@ -101,7 +101,7 @@ Les durées affichées sont illustratives. Ici, `fib` désigne l'une des quatre 
 `--algo all` compare les trois algorithmes et vérifie qu'ils concordent. `--list` additionne directement en décimal, sans conversion binaire → décimal. `--time` écrit la durée du calcul sur stderr.
 
 - **Bornes** : N ≤ 1 000 000 pour un terme, N ≤ 10 000 pour une liste.
-- **Codes de sortie** : 0 succès, 2 erreur d'usage, 3 discordance entre algorithmes.
+- **Codes de sortie** : 0 succès, 2 erreur d'usage, 3 discordance entre algorithmes. Hors contrat (PRD § 4 : flux en échec d'écriture, limites de ressources), le code est libre.
 
 Le contrat complet est au § 4 du [PRD](PRD.md) : grammaire, formats, erreurs.
 
