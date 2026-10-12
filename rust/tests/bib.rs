@@ -1,4 +1,5 @@
-//! Seam 1 : la bibliothèque. Les attendus viennent de l'oracle (contracts/b000045.txt) ou de faits mathématiques.
+//! Seam 1 : la bibliothèque. Les attendus des cas BIB viennent de l'oracle (contracts/b000045.txt) ou de faits
+//! mathématiques; les gardes PERF-RS-1 à 3, hors seams, comparent à un autre algorithme.
 use fib::{Algo, fib, fib_list};
 use num_bigint::BigUint;
 
@@ -33,48 +34,60 @@ fn sweep(algo: Algo) {
     }
 }
 
+// BIB-01
 #[test]
 fn bib_01_fib_0_iterative_vaut_0() {
     assert_eq!(fib(0, Algo::Iterative), oracle()[0]);
 }
 
+// BIB-02
 #[test]
 fn bib_02_fib_1_iterative_vaut_1() {
     assert_eq!(fib(1, Algo::Iterative), oracle()[1]);
 }
 
+// BIB-03
 #[test]
 fn bib_03_fib_2_iterative_vaut_1() {
     assert_eq!(fib(2, Algo::Iterative), oracle()[2]);
 }
 
+// BIB-04
 #[test]
 fn bib_04_fib_10_iterative_vaut_55() {
     assert_eq!(fib(10, Algo::Iterative), oracle()[10]);
 }
 
+// BIB-05
 #[test]
 fn bib_05_iterative_egale_l_oracle_de_0_a_2000_au_dela_d_int64_et_d_uint64() {
     sweep(Algo::Iterative);
 }
 
+// BIB-06
 #[test]
 fn bib_06_fast_egale_l_oracle_de_0_a_2000() {
     sweep(Algo::Fast);
 }
 
+// BIB-07
 #[test]
 fn bib_07_matrix_egale_l_oracle_de_0_a_2000() {
     sweep(Algo::Matrix);
 }
 
+// BIB-08
 #[test]
 fn bib_08_fib_100000_rend_le_meme_terme_de_20899_chiffres_pour_les_trois_algorithmes() {
-    let [first, others @ ..] = Algo::ALL.map(|a| fib(100_000, a));
-    assert!(others.iter().all(|t| *t == first));
-    assert_eq!(first.to_string().len(), 20_899);
+    // Pas d'assert_eq! : il imprimerait deux fois 20 899 chiffres. Le message nomme l'algorithme fautif.
+    let terms = Algo::ALL.map(|a| fib(100_000, a));
+    for (algo, term) in Algo::ALL.into_iter().zip(&terms).skip(1) {
+        assert!(*term == terms[0], "{algo:?} rend un autre terme que {:?} pour n = 100000", Algo::ALL[0]);
+    }
+    assert_eq!(terms[0].to_string().len(), 20_899);
 }
 
+// BIB-09
 #[test]
 fn bib_09_cassini_a_n_100000_pour_chaque_algorithme() {
     for algo in Algo::ALL {
@@ -84,21 +97,25 @@ fn bib_09_cassini_a_n_100000_pour_chaque_algorithme() {
     }
 }
 
+// BIB-10
 #[test]
 fn bib_10_fib_list_0_vaut_0() {
     assert_eq!(fib_list(0), oracle_text()[..1]);
 }
 
+// BIB-11
 #[test]
 fn bib_11_fib_list_1_vaut_0_1() {
     assert_eq!(fib_list(1), oracle_text()[..2]);
 }
 
+// BIB-12
 #[test]
 fn bib_12_fib_list_2000_rend_les_2001_termes_de_l_oracle_dans_l_ordre() {
     assert_eq!(fib_list(2000), oracle_text());
 }
 
+// BIB-13
 #[test]
 fn bib_13_un_nom_d_algorithme_inconnu_est_refuse() {
     for name in ["all", "bogus", "", "FAST"] {
