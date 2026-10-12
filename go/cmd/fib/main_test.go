@@ -46,6 +46,10 @@ func TestPERFGO6_ListeEcriteParBlocs(t *testing.T) {
 // GODEBUG=inittrace=1 : le runtime écrit sur stderr une ligne « init <paquet> » pour chaque paquet qui initialise
 // quelque chose. La ligne « init main », celle du paquet de test généré, n'est pas la commande.
 func TestPERFGO7_LeDemarrageNInitialiseRien(t *testing.T) {
+	// L'instrumentation de couverture ajoute un init à fib/cmd/fib (et à fib sous -coverpkg) : la garde les prendrait pour les nôtres.
+	if testing.CoverMode() != "" {
+		t.Skip("PERF-GO-7 saute sous couverture : l'instrumentation ajoute un init à fib/cmd/fib (et à fib sous -coverpkg)")
+	}
 	t.Run("PERF-GO-7 : le chargement de fib et de la commande n'exécute aucune initialisation", func(t *testing.T) {
 		cmd := exec.Command(os.Args[0], "-test.run=^$")
 		cmd.Env = append(os.Environ(), "GODEBUG=inittrace=1")
