@@ -210,7 +210,7 @@ Chaque entrée de `docs/exploration.md` donne : la skill, l'étape ou le ticket,
 |---|---|
 | Fins de ligne CRLF et encodage imposé par l'environnement (Python, checkout Git) | F10, `reconfigure(encoding="ascii", newline="\n")`, `.gitattributes` en `eol=lf`, contrat comparé à l'octet |
 | Conversions trop permissives de `N` | validation de `^[0-9]+$` avant conversion (§ 5); cas `+5`, `1_000`, `0x10`, `٣`, `""` |
-| Limite de conversion entier → texte de Python | `set_int_max_str_digits(0)`, gardé par PERF-PY-5 et PERF-PY-14 : les cas `100000` et `1000000` passent désormais par les tranches et par `Decimal` |
+| Limite de conversion entier → texte de Python | `set_int_max_str_digits(0)`, gardé par CLI-T14 et PERF-PY-14 : les cas `100000` et `1000000` passent désormais par les tranches et par `Decimal` |
 | Débordement à l'analyse de `N` | cas `99999999999999999999` |
 | Sortie tronquée par `process.exit()` (Node, POSIX) | `process.exitCode`; à vérifier en CI Linux |
 | Rust ne lie pas sous Windows sans le composant C++ MSVC | override rustup GNU locale au dossier |
