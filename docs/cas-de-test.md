@@ -166,7 +166,7 @@ Chacun de ces cas attend une erreur (source C).
 | CLI-A15 | `--algo --list 5` | erreur : `--list` devient la valeur de `--algo` | C |
 | CLI-A16 | `--algo bogus --algo fast 5` | erreur : chaque occurrence doit être valide, même si une occurrence valide suit | C |
 | CLI-A17 | `--algo "" 5` | erreur : valeur vide dans la forme séparée (A10 ne couvre que `--algo=`) | C |
-| CLI-A18 | `--algo`, puis `x`, un saut de ligne et `y` dans un même argument, puis `5` | erreur : le saut de ligne de la valeur citée ne produit pas deux lignes sur stderr (F9, F10) | C |
+| CLI-A18 | `--algo`, puis `x`, un saut de ligne et `y` dans un même argument, puis `5` | erreur : un saut de ligne dans un argument ne produit pas deux lignes (F9, F10) | C |
 | CLI-A19 | `--algo FAST --algo fast 5` | erreur : la casse compte à chaque occurrence | C |
 | CLI-A20 | `--algo fäst 5` | erreur : la valeur non ASCII est citée en ASCII, et stderr reste en ASCII (X-4) | C |
 
@@ -236,7 +236,7 @@ Chacun de ces cas attend une erreur (source C).
 | CLI-U01 | `--bogus 5` | option longue inconnue |
 | CLI-U02 | `- 5` | tiret seul |
 | CLI-U03 | `-- 5` | double tiret, sans le sens « fin des options » |
-| CLI-U04 | `--bogüs 5` | option non ASCII : le message la cite en ASCII (F9, F10, règle 4) |
+| CLI-U04 | `--bogüs 5` | option non ASCII : la ligne d'erreur reste en ASCII (F9, F10, règle 4) |
 | CLI-U05 | `--bögüs 5` | option avec plusieurs caractères non ASCII : le message les cite tous en ASCII, et stderr reste en ASCII (X-4) |
 | CLI-U06 | `--bogus abc` | deux fautes, l'option inconnue et l'indice invalide : une seule ligne `fib:` |
 
