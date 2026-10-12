@@ -191,6 +191,47 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
   - Installer `mattpocock-skills` dans l'environnement infonuagique, ou dire d'emblée dans le prompt que `tdd` manque.
   - Quand des tickets parallèles touchent la même règle, comme #6 et #12 pour les citations, donner la règle aux deux.
 
+## 2026-10-12 — `diagnosing-bugs` (étape 9, #16)
+
+- **Contexte** : aucun écart entre langages n'était connu. Le différentiel de 121 vecteurs du 2026-10-11 n'en avait trouvé aucun, et l'écart `PYTHONIOENCODING` était déjà corrigé. La skill part d'un bug signalé ; il a donc fallu en trouver un d'abord. La skill n'est pas installée dans la session infonuagique : son `SKILL.md` a été lu dans `mattpocock/skills` et suivi à la main.
+- **Recherche** : un workflow de cinq chercheurs a construit chacun une boucle différentielle, le n° 9 de la phase 1 de la skill. Les dimensions sont la grammaire, les valeurs, les durées, l'environnement et les arguments extrêmes, soit environ 170 000 entrées sur les quatre CLI. Un vérificateur sceptique par dimension a ensuite reproduit, minimisé et classé chaque candidat face au PRD § 4.
+  - La grammaire (83 319 suites, dont toutes celles de 1 à 3 jetons sur 41) et les valeurs (14 793 entrées, autour de chaque seuil d'optimisation) n'ont donné aucun candidat.
+  - L'écart retenu a été trouvé trois fois, de façon indépendante : avec le fd 2 fermé, Python sort en code 1, stdout vide.
+  - D'autres comportements divergent là où le contrat ne tranche pas. Ils sont listés plus bas.
+- **Phases** :
+  1. La boucle de rétroaction est un script Python qui lance les quatre CLI avec `os.close(2)`. Elle rougit sur 6 entrées, Python seul, en 0,46 s, de façon déterministe sur 4 passes.
+  2. Minimisation : `python python/fib.py 2>&-` suffit. Ni l'argument, ni `-I -S` ne sont nécessaires.
+  3. Hypothèses : 5, classées.
+  4. Sondes : une par prédiction. H1 est confirmée : avec le fd 2 fermé, CPython met `sys.stderr` à `None`, et `reconfigure` plante avant `main`. Les quatre autres hypothèses sont réfutées. Un prototype jetable a montré que garder le seul `reconfigure` ne suffisait pas : les écritures de `main` tombaient ensuite sur le même `None`.
+  5. Correctif et non-régression, test d'abord, par un `fib-dev`. CLI-V04 a été vu rouge pour Python seul, puis vert partout. Le correctif donne un puits `/dev/null` à un flux `None`, avec un `import os` paresseux. Le banc A/B reste à +0,2 à +0,7 % sur `petit (10)`.
+  6. Nettoyage : le prototype est supprimé, et le dépôt ne garde aucune instrumentation.
+- **`/code-review`** : 9 constats, 7 retenus.
+  - V04 ne prouvait pas que le fd 2 était fermé pour la CLI elle-même : un mutant du harnais le laissait vert.
+  - Rien ne gardait le correctif sous Windows, où V04 se saute : ajout de PERF-PY-23, portable.
+  - L'`import os` paresseux n'avait pas de garde : ajout de PERF-PY-24. Celle-ci compare au démarrage nu de l'interpréteur, pour ne pas rougir à tort sur une plateforme qui charge `os` au démarrage.
+  - Le commentaire du correctif était faux pour le fd 1.
+  - Le PRD § 4 était muet sur un stderr fermé.
+  - Retouches mineures : le contrôle du harnais tournait quatre fois, et les nouveaux cas n'étaient pas comptés au README.
+  
+  Écarté : un stderr ouvert mais qui refuse l'écriture, qui relève des comportements à arbitrer ci-dessous.
+- **A aidé** :
+  - La boucle différentielle a trouvé un vrai écart là où 121 vecteurs et 402 cas verts n'en voyaient aucun. Elle a pris la dimension que personne n'avait jouée : l'état des descripteurs au lancement.
+  - Le vérificateur sceptique a ramené 15 candidats à 4 bugs et 10 lacunes, chacun avec sa commande minimale.
+  - La phase 4 a évité un correctif à moitié : le seul garde de `reconfigure` aurait laissé `--time` et les erreurs d'usage en code 1.
+- **Friction** :
+  - La skill suppose un bug signalé. Sans écart connu, la recherche a coûté plus que le diagnostic : 1,1 million de jetons et 88 minutes pour le workflow, contre quelques minutes pour les phases 1 à 4.
+  - Le contrat ne sait pas fermer un descripteur sous Windows : V04 s'y saute, et une garde Python prend le relais.
+  - `/code-review` a dû rattraper deux trous dans un test écrit test d'abord : un harnais qui pouvait passer à vide, et une plateforme non couverte.
+- **À arbitrer**, des cas que le contrat ne tranche pas et où les CLI divergent, tous reproduits :
+  - stdout en tube non bloquant : Rust tronque en silence avec le code 0, Python plante, Go et TS réessaient.
+  - stdout ou stderr qui refuse l'écriture (`/dev/full`, `ulimit -f`, tube sans lecteur) : quatre codes différents, et un succès annoncé à tort par Go et Rust (`/dev/full`) ou par Go et TS (`ulimit -f`).
+  - Traces de plantage de TS et de Python : elles contiennent des séquences ANSI quand `FORCE_COLOR=1`.
+  - `2>&1` sur un tube : TS place la ligne de durée au milieu d'un terme dès 64 Kio de sortie.
+  - `ulimit -v` : Go sort en code 2, le code d'une erreur d'usage.
+- **À changer** :
+  - Garder la boucle différentielle comme outil de recherche, avant `diagnosing-bugs`, quand aucun bug n'est signalé.
+  - Faire écrire au `fib-dev`, dans tout test qui manipule le harnais, le mutant du harnais qui doit le faire rougir.
+
 ## Bilan au 2026-10-12
 
 | Skill | Usage |
@@ -201,10 +242,11 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
 | `/to-tickets` | utilisée : tickets #2 à #5, avec dépendances natives |
 | `tdd` | utilisée : catalogue de cas, puis cycles des quatre `fib-dev`; absente de la session infonuagique du 2026-10-12, où les `fib-dev` ont suivi son cycle à la main |
 | `/implement` | remplacée par l'agent `fib-dev`, qui applique `tdd` directement |
-| `resolving-merge-conflicts` | non nécessaire : aucune des 39 fusions n'a conflicté |
+| `resolving-merge-conflicts` | non nécessaire : aucune des 41 fusions n'a conflicté |
 | `research`, `prototype` | non utilisées; un `prototype` aurait détecté plus tôt le piège de `go run` |
 | `/code-review` | utilisée trois fois le 2026-10-11, axes Standards et Spec : après la refactorisation, après l'optimisation, après la borne à 1 000 000; puis une fois le 2026-10-12, sur les tickets #6 à #14 |
-| `diagnosing-bugs`, `/improve-codebase-architecture`, `/handoff` | à venir (étapes 9 à 11 du PRD) |
+| `diagnosing-bugs` | utilisée à l'étape 9 (#16), lue dans `mattpocock/skills` faute de plugin; précédée d'une boucle différentielle pour trouver l'écart |
+| `/improve-codebase-architecture`, `/handoff` | à venir (étapes 10 et 11 du PRD) |
 
 Hors skill : l'audit du PRD (2026-10-10), l'audit en workflow du 2026-10-11 (auditeurs en lecture seule), puis l'optimisation des performances et la borne à 1 000 000, confiées à des sous-agents `fib-dev`, et enfin l'épreuve des cas de test en workflow.
 
