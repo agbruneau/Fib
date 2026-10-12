@@ -16,7 +16,8 @@ from fib import DECIMAL_FROM, STR_FROM_BITS, _fib_decimal, _text, compute, fib, 
 ALGOS = ("iterative", "matrix", "fast")
 HERE = Path(__file__).resolve().parent
 ORACLE = HERE.parent / "contracts" / "b000045.txt"
-REFUSED = ((-1, ValueError), (1.5, TypeError), (float("nan"), TypeError), (0.0, TypeError))
+# True : bool hérite d'int, donc le type de l'indice l'admet, et `isinstance(n, int)` le laisserait passer.
+REFUSED = ((-1, ValueError), (1.5, TypeError), (float("nan"), TypeError), (0.0, TypeError), (True, TypeError))
 # Les chemins qui calculent en Decimal, chacun appelé avec un indice de 50.
 DECIMAL_PATHS = (
     ("fib_list", lambda: fib_list(50)),

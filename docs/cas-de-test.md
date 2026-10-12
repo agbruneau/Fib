@@ -78,13 +78,13 @@ L'interface est `fib(n, algo)` et `fibList(n)`, nommées selon les conventions d
 | BIB-11 | `fibList(1)` | `["0", "1"]` | O |
 | BIB-12 | `fibList(2000)` | les 2 001 termes de l'oracle, en chaînes décimales, dans l'ordre (ADR-0004) | O |
 | BIB-13 | `fib(5, X)` pour X parmi `all`, `bogus`, chaîne vide et `FAST` | refus, sous la forme d'erreur idiomatique du langage | C |
-| BIB-14 | `fib(-1, A)` et `fibList(-1)`; `fib(1.5, A)`, `fib(NaN, A)`, `fibList(1.5)` et `fibList(NaN)`; pour Python, aussi `fib(0.0, A)` et `fibList(0.0)`; si le type de l'indice admet ces valeurs | refus | C |
+| BIB-14 | `fib(-1, A)` et `fibList(-1)`; `fib(1.5, A)`, `fib(NaN, A)`, `fibList(1.5)` et `fibList(NaN)`; pour Python, aussi `fib(0.0, A)`, `fib(True, A)`, `fibList(0.0)` et `fibList(True)`; si le type de l'indice admet ces valeurs | refus | C |
 
 Notes par langage :
 
 - **BIB-13** : si le système de types rend un algorithme inconnu impossible à passer (enum Rust, par exemple), le cas porte sur la conversion du nom vers l'algorithme, que la bibliothèque expose.
 - **BIB-13, TypeScript** : X comprend aussi `toString`, une clé héritée du prototype.
-- **BIB-14** : Rust est exclu (indice `u64`). Go (`int`), Python et TypeScript testent -1. Seuls Python et TypeScript testent 1.5 et NaN, et seul Python teste 0.0, puisque son type distingue flottant et entier.
+- **BIB-14** : Rust est exclu (indice `u64`). Go (`int`), Python et TypeScript testent -1. Seuls Python et TypeScript testent 1.5 et NaN, et seul Python teste 0.0 et `True`, puisque son type distingue flottant et entier, et que `bool` hérite d'`int` : le type de l'indice admet `True`, que `isinstance(n, int)` laisserait passer.
 
 ## 5. Contrat CLI — CLI (seam 2, joué sur chaque implémentation)
 
