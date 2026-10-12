@@ -61,17 +61,7 @@ func FibList(n int) ([]string, error) {
 			break
 		}
 		// a, b = b, a + b : a reçoit la somme sur place, puis les rôles s'échangent.
-		var carry uint64
-		for i, y := range b[:lb] {
-			s := a[i] + y + carry
-			carry = 0
-			if s >= base {
-				s -= base
-				carry = 1
-			}
-			a[i] = s
-		}
-		a[lb] += carry // a[lb] est à 0 : a n'a jamais plus de limbes que b
+		carry := addLimbs(a, b[:lb]) // a[lb] est à 0 : a n'a jamais plus de limbes que b
 		a, b, la, lb = b, a, lb, lb+int(carry)
 	}
 	// String() ne copie pas : les n + 1 termes sont des sous-chaînes du même tampon, sans allocation chacun.
@@ -80,6 +70,22 @@ func FibList(n int) ([]string, error) {
 		list[k], start = all[start:ends[k]], ends[k]
 	}
 	return list, nil
+}
+
+// addLimbs ajoute b à a sur place, limbe par limbe, et range la retenue finale (0 ou 1) dans a[len(b)], qu'elle rend aussi.
+// À part pour que PERF-GO-5 en vise la retenue à 10^18, et assez courte pour rester inlinée (go build -gcflags=-m).
+func addLimbs(a, b []uint64) (carry uint64) {
+	for i, y := range b {
+		s := a[i] + y + carry
+		carry = 0
+		if s >= base {
+			s -= base
+			carry = 1
+		}
+		a[i] = s
+	}
+	a[len(b)] += carry
+	return carry
 }
 
 // quads donne les quatre chiffres ASCII de 0000 à 9999, un par entrée : une recherche par quatre chiffres au lieu de
