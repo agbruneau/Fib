@@ -41,7 +41,7 @@ type Case = [id: string, title: string, args: string[], want: Want, env?: Record
 const term = (k: number) => () => `${terms()[k]}\n`;
 const list = (n: number) => () => terms().slice(0, n + 1).map((t) => `${t}\n`).join('');
 
-function run(id: string, args: string[], env: Record<string, string> = {}) {
+function run(id: string, args: string[], env: Record<string, string | undefined> = {}) {
   const [cmd, ...head] = IMPLS[id].cmd;
   const r = spawnSync(cmd, [...head, ...args], {
     cwd: root, env: { ...process.env, ...env },
@@ -165,7 +165,7 @@ const A: Case[] = [
   ['CLI-A17', '--algo avec une valeur vide (forme séparée) est refusé', ['--algo', '', '5'], 'erreur'],
   ['CLI-A18', 'un saut de ligne dans un argument ne produit pas deux lignes', ['--algo', 'x\ny', '5'], 'erreur'],
   ['CLI-A19', 'la casse compte à chaque occurrence de --algo, même si une valide suit', ['--algo', 'FAST', '--algo', 'fast', '5'], 'erreur'],
-  ['CLI-A20', 'une valeur non ASCII de --algo est citée en ASCII', ['--algo', 'fäst', '5'], 'erreur'],
+  ['CLI-A20', 'une valeur non ASCII de --algo : la ligne d’erreur reste en ASCII', ['--algo', 'fäst', '5'], 'erreur'],
 ];
 
 // Partagé par CLI-L06 et CLI-L16 : la liste de 10 001 termes, quelle que soit l'écriture de l'indice.
@@ -235,7 +235,7 @@ const U: Case[] = [
   ['CLI-U02', 'un tiret seul est une option inconnue', ['-', '5'], 'erreur'],
   ['CLI-U03', 'un double tiret est une option inconnue, pas une fin des options', ['--', '5'], 'erreur'],
   ['CLI-U04', 'option non ASCII : la ligne d’erreur reste en ASCII', ['--bogüs', '5'], 'erreur'],
-  ['CLI-U05', 'chaque caractère non ASCII d’une option est cité en ASCII', ['--bögüs', '5'], 'erreur'],
+  ['CLI-U05', 'plusieurs caractères non ASCII dans une option : la ligne d’erreur reste en ASCII', ['--bögüs', '5'], 'erreur'],
   ['CLI-U06', 'deux fautes ne produisent qu’une seule ligne fib:', ['--bogus', 'abc'], 'erreur'],
 ];
 
@@ -247,8 +247,9 @@ const V: Case[] = [
 
 // CLI-V02 joue trois exécutions (U01, H01 puis T01) : l'oracle ne sert qu'à la dernière, pour que l'ESC soit cherché partout.
 const V02 = (impl: string) => {
-  // NO_COLOR vide : sous Python 3.14, un NO_COLOR hérité l'emporte sur FORCE_COLOR et viderait le cas de son sens.
-  const env = { FORCE_COLOR: '1', CLICOLOR_FORCE: '1', PYTHON_COLORS: '1', NO_COLOR: '' };
+  // NO_COLOR retiré (undefined : spawnSync l'omet), non vidé. Hérité du parent, il l'emporterait sur FORCE_COLOR sous Python 3.14 et viderait le cas de son sens.
+  // Vidé, il ferait écrire à Node 22 un avertissement sur stderr dès qu'un console.* tourne avec FORCE_COLOR, et rougir X-3 pour une raison du harnais.
+  const env = { FORCE_COLOR: '1', CLICOLOR_FORCE: '1', PYTHON_COLORS: '1', NO_COLOR: undefined };
   verify(run(impl, ['--bogus', '5'], env), 'erreur');
   verify(run(impl, ['--help'], env), { out: USAGE });
   verify(run(impl, ['10'], env), { out: term(10) });
