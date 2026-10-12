@@ -170,15 +170,18 @@ mod tests {
 
     // PERF-RS-8, hors catalogue : garde de l'optimisation « écriture tamponnée de stdout » (ADR-0004). Elle compte les
     // appels à `write` au lieu de chronométrer : un chronomètre serait instable, ce compte est exact. Observé : 162
-    // appels avec le tampon de 64 Kio, 1 394 avec `BufWriter::new` (8 Kio), 20 002 sans tampon; la borne est la moitié
-    // du tampon.
+    // appels avec le tampon de 64 Kio, 1 394 avec `BufWriter::new` (8 Kio), 20 002 sans tampon. La borne ne dérive pas
+    // de `STDOUT_BUFFER`, la constante que la garde protège : avec `1 << 4` (16 octets), une borne tirée de la
+    // constante grimpe à 1,3 million d'appels et laisse passer le mutant. `MIN_BLOCK` est absolue, la moitié du tampon
+    // mesuré (comme `minBlock` de PERF-GO-6) : 320 appels au plus, soit un facteur 2 de marge sur les 162 observés.
     #[test]
     fn perf_rs_8_la_liste_maximale_s_ecrit_par_blocs_du_tampon_sans_perdre_un_octet() {
+        const MIN_BLOCK: usize = 32 << 10;
         let lines = fib_list(MAX_LIST);
         let total: usize = lines.iter().map(|l| l.len() + 1).sum();
         let mut spy = Spy::default();
         write_lines(&mut spy, &lines);
-        let at_most = total.div_ceil(STDOUT_BUFFER / 2);
+        let at_most = total.div_ceil(MIN_BLOCK);
         assert!(spy.writes <= at_most, "{} appels à write, attendu {at_most} au plus", spy.writes);
         assert!(
             spy.bytes == format!("{}\n", lines.join("\n")).as_bytes(),
