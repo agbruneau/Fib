@@ -36,8 +36,8 @@ func oracleText(t *testing.T) []string {
 		if line == "" {
 			continue
 		}
-		index, digits, _ := strings.Cut(line, " ")
-		if index != strconv.Itoa(len(texts)) {
+		index, digits, found := strings.Cut(line, " ")
+		if !found || index != strconv.Itoa(len(texts)) {
 			t.Fatalf("oracle mal formé à la ligne %q", line)
 		}
 		texts = append(texts, digits)
@@ -145,7 +145,7 @@ func TestBIB08_LesAlgorithmesConcordentA100000(t *testing.T) {
 // BIB-09 : identité de Cassini, F(n-1)·F(n+1) - F(n)² = (-1)^n, pour n = 100 000.
 func TestBIB09_CassiniAutourDe100000(t *testing.T) {
 	for _, algo := range algos {
-		t.Run(fmt.Sprintf("BIB-09 : Cassini avec %s", algo), func(t *testing.T) {
+		t.Run(fmt.Sprintf("BIB-09 : %s respecte l'identité de Cassini à n = 100 000", algo), func(t *testing.T) {
 			before, at, after := mustFib(t, 99999, algo), mustFib(t, 100000, algo), mustFib(t, 100001, algo)
 			cassini := new(big.Int).Mul(before, after)
 			cassini.Sub(cassini, new(big.Int).Mul(at, at))
@@ -163,14 +163,7 @@ func TestBIB10a12_FibListEgaleLOracle(t *testing.T) {
 		n  int
 	}{{"BIB-10", 0}, {"BIB-11", 1}, {"BIB-12", 2000}} {
 		t.Run(fmt.Sprintf("%s : FibList(%d) vaut les %d premiers termes de l'oracle", c.id, c.n, c.n+1), func(t *testing.T) {
-			want := oracleText(t)[:c.n+1]
-			got, err := fib.FibList(c.n)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(got) != len(want) {
-				t.Fatalf("FibList(%d) a %d termes, attendu %d", c.n, len(got), len(want))
-			}
+			want, got := oracleText(t)[:c.n+1], mustFibList(t, c.n)
 			for i := range want {
 				if got[i] != want[i] {
 					t.Fatalf("FibList(%d)[%d] = %s, attendu %s", c.n, i, got[i], want[i])
@@ -193,34 +186,39 @@ func TestPERFGO1_FibListAuDelaDeLOracle(t *testing.T) {
 
 // PERF-GO-2, hors catalogue : garde de l'optimisation de FibList (réserve de limbes d'avance), pour n de 0 à 300.
 func TestPERFGO2_FibListReserveDeLimbes(t *testing.T) {
-	t.Run("PERF-GO-2 : le dernier terme de FibList(n) vaut celui de l'oracle pour chaque n de 0 à 300", func(t *testing.T) {
-		texts := oracleText(t)
-		for n := 0; n <= 300; n++ {
+	texts := oracleText(t) // un oracle absent arrête le test ici, au lieu de produire 301 échecs identiques
+	for n := 0; n <= 300; n++ {
+		t.Run(fmt.Sprintf("PERF-GO-2 : le dernier terme de FibList(%d) vaut celui de l'oracle", n), func(t *testing.T) {
 			if got := mustFibList(t, n)[n]; got != texts[n] {
-				t.Fatalf("FibList(%d)[%d] = %s, attendu %s", n, n, got, texts[n])
+				t.Errorf("FibList(%d)[%d] = %s, attendu %s", n, n, got, texts[n])
 			}
-		}
-	})
+		})
+	}
 }
 
-// maxAllocs borne les allocations de PERF-GO-3 et PERF-GO-4 : un chronomètre serait instable, ce compte est exact.
-// Observé : 6 ou moins; la marge absorbe les changements d'allocation de la chaîne d'outils.
-const maxAllocs = 12
+// Bornes d'allocations de PERF-GO-3 et PERF-GO-4 : un chronomètre serait instable, ce compte est exact.
+// Observé : 4 pour iterative, 6 pour FibList, sans marge; le mutant d'une réserve trop courte en lit 10.
+// Sur 3 passes, FibList a lu 8 une fois sur 30 : une allocation parasite, divisée par 3. Sur 20, elle est absorbée.
+const (
+	maxAllocsIterative = 4
+	maxAllocsFibList   = 6
+	allocsRuns         = 20
+)
 
 // PERF-GO-3, hors catalogue : garde de l'optimisation d'iterative (addition sur place) : pas d'allocation par pas.
 func TestPERFGO3_IterativeNAllouePasParPas(t *testing.T) {
-	t.Run(fmt.Sprintf("PERF-GO-3 : Fib(20000, iterative) alloue au plus %d fois", maxAllocs), func(t *testing.T) {
-		if got := testing.AllocsPerRun(3, func() { mustFib(t, 20000, "iterative") }); got > maxAllocs {
-			t.Errorf("Fib(20000, iterative) alloue %v fois, attendu %d au plus", got, maxAllocs)
+	t.Run(fmt.Sprintf("PERF-GO-3 : Fib(20000, iterative) alloue au plus %d fois", maxAllocsIterative), func(t *testing.T) {
+		if got := testing.AllocsPerRun(allocsRuns, func() { mustFib(t, 20000, "iterative") }); got > maxAllocsIterative {
+			t.Errorf("Fib(20000, iterative) alloue %v fois, attendu %d au plus", got, maxAllocsIterative)
 		}
 	})
 }
 
 // PERF-GO-4, hors catalogue : garde de l'optimisation de FibList (addition sur place) : pas d'allocation par pas.
 func TestPERFGO4_FibListNAllouePasParPas(t *testing.T) {
-	t.Run(fmt.Sprintf("PERF-GO-4 : FibList(5000) alloue au plus %d fois", maxAllocs), func(t *testing.T) {
-		if got := testing.AllocsPerRun(3, func() { mustFibList(t, 5000) }); got > maxAllocs {
-			t.Errorf("FibList(5000) alloue %v fois, attendu %d au plus", got, maxAllocs)
+	t.Run(fmt.Sprintf("PERF-GO-4 : FibList(5000) alloue au plus %d fois", maxAllocsFibList), func(t *testing.T) {
+		if got := testing.AllocsPerRun(allocsRuns, func() { mustFibList(t, 5000) }); got > maxAllocsFibList {
+			t.Errorf("FibList(5000) alloue %v fois, attendu %d au plus", got, maxAllocsFibList)
 		}
 	})
 }
