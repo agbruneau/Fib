@@ -51,7 +51,7 @@ Le cas où deux algorithmes d'une même implémentation rendent des termes diff�
 _Avoid_ : mismatch, incohérence
 
 **Écart** :
-Ce qu'une implémentation produit (stdout, stderr ou code de sortie) autrement que le contrat l'exige, ou autrement qu'une autre implémentation pour les mêmes arguments.
+Ce qu'une implémentation produit (stdout, stderr ou code de sortie) autrement que le contrat l'exige, ou autrement qu'une autre implémentation pour les mêmes arguments, dans un cas que le contrat couvre.
 _Avoid_ : divergence, bug
 
 ## Vérification

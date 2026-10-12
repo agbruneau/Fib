@@ -1,6 +1,6 @@
 # PRD — Fib : calculateur Fibonacci académique en quatre langages
 
-Version 1.10 · 2026-10-11 · André-Guy Bruneau. Révisée par `/grill-with-docs`, par un audit, par le catalogue de cas de test, par l'implémentation des tickets #2 à #5, par l'audit et la refactorisation du 2026-10-11, par l'optimisation des performances (ADR-0004), puis par la borne d'un terme à 1 000 000 et le bilan des résultats : le vocabulaire est dans `CONTEXT.md`, les décisions durables dans `docs/adr/`.
+Version 1.11 · 2026-10-12 · André-Guy Bruneau. Révisée par `/grill-with-docs`, par un audit, par le catalogue de cas de test, par l'implémentation des tickets #2 à #5, par l'audit et la refactorisation du 2026-10-11, par l'optimisation des performances (ADR-0004), par la borne d'un terme à 1 000 000 et le bilan des résultats, puis par l'étape 9 (`diagnosing-bugs`, #16) et par les cas hors contrat (#18) : le vocabulaire est dans `CONTEXT.md`, les décisions durables dans `docs/adr/`.
 
 ## 1. Contexte et objectifs
 
@@ -73,19 +73,19 @@ usage: fib [--algo iterative|matrix|fast|all] [--time] N
 | F9 | Erreur d'usage (tout écart à la grammaire, ou N hors borne, y compris trop grand pour un entier natif) : stdout vide, exactement une ligne sur stderr qui commence par `fib: `, code 2. Le texte qui suit le préfixe est libre. Pas de panique, de trace de pile ni de texte d'usage ajouté. |
 | F10 | stdout et stderr sont en ASCII, sans séquence ANSI, avec des fins de ligne `\n` sur toutes les plateformes, Windows compris. |
 
-Codes de sortie : 0 succès, 2 erreur d'usage, 3 discordance. Tout autre code signale une défaillance hors contrat.
+Dans le contrat, les codes de sortie sont 0 succès, 2 erreur d'usage, 3 discordance; tout autre code signale une défaillance. Hors contrat, le code est libre (voir plus bas).
 
 **Hors contrat** (comportement non spécifié, non testé) :
 
-- un stdout fermé avant la fin (`fib --list 10000 | head`).
+- un stdout fermé, au lancement ou en cours d'écriture.
 - un argument qui n'est pas de l'Unicode valide.
-- un stdout ou un stderr **ouvert** dont l'écriture échoue ou bloque : tube non bloquant, `/dev/full`, limite de taille de fichier (`ulimit -f`), tube sans lecteur.
-- les limites de ressources : mémoire, espace d'adressage (`ulimit -v`), taille de fichier.
-- l'ordre relatif des octets de stdout et de stderr quand ils partagent un même tube (`2>&1`). Le contrat juge chaque flux séparément.
+- un stdout ou un stderr **ouvert** dont l'écriture échoue : tube non bloquant plein (`EAGAIN`), `/dev/full`, tube sans lecteur (`fib --list 10000 | head`).
+- toute limite de ressources (`ulimit` ou l'équivalent du système), par exemple mémoire, espace d'adressage, nombre de descripteurs ouverts, taille de fichier.
+- l'ordre relatif des octets de stdout et de stderr quand ils partagent une même destination : tube (`2>&1`), fichier ou terminal. Le contrat juge chaque flux séparément.
 
-Dans ces cas, le comportement de la CLI est libre : code de sortie, texte et traces. F10 ne s'applique pas à une trace de plantage, qui peut contenir des séquences ANSI.
+Dans ces cas, ni F9 ni F10 ne s'appliquent : le code, le texte et les traces sont libres.
 
-En revanche, un stderr fermé au lancement (`2>&-`) est dans le contrat : il ne change ni stdout ni le code (cas CLI-V04). Un descripteur fermé au lancement est dans le contrat; un descripteur ouvert dont l'écriture échoue est hors contrat.
+En revanche, un stderr fermé au lancement (`2>&-`) est dans le contrat : il ne change ni stdout ni le code (cas CLI-V04). C'est la seule exception : un stdout fermé, au lancement ou en cours d'écriture, et un flux ouvert dont l'écriture échoue, stderr compris, sont hors contrat.
 
 ## 5. Exigences par langage
 
