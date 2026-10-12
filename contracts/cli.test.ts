@@ -67,19 +67,18 @@ const assertAscii = (r: ReturnType<typeof run>) =>
 // Assertions communes X-1 à X-4.
 function verify(r: ReturnType<typeof run>, want: Want): void {
   const ctx = `code ${r.code}, stderr ${JSON.stringify(r.err.slice(0, 200))}`;
-  const ascii = () => assertAscii(r);
   if (want === 'erreur') {
     assert.equal(r.code, 2, `X-1 : ${ctx}`);
     assert.match(r.err, /^fib: [^\n]*\n$/, 'X-3 : une seule ligne « fib: … »');
     assert.equal(r.out, '', 'X-2 : stdout vide');
-    return ascii();
+    return assertAscii(r);
   }
   assert.equal(r.code, 0, `X-1 : ${ctx}`);
   const got = r.err.split('\n');
   assert.equal(got.pop(), '', `X-3 : stderr se termine par \\n (${ctx})`);
   got.forEach((l) => assert.match(l, /^(fast|iterative|matrix) [0-9]+\.[0-9]{3} ms$/, 'X-3 : ligne de durée'));
   assert.deepEqual(got.map((l) => l.split(' ')[0]), want.times ?? [], 'X-3 : algorithmes chronométrés');
-  ascii();
+  assertAscii(r);
   const exact = typeof want.out === 'function' ? want.out() : want.out;
   if (exact !== undefined) assert.equal(r.out, exact, 'X-2');
   want.check?.(r.out);
@@ -263,14 +262,13 @@ const V02 = (impl: string) => {
   verify(run(impl, ['10'], env), { out: term(10) });
 };
 
+// Sous Windows, ni Node ni le contrat ne savent lancer un processus sans stderr : la raison s'affiche à la place du test.
+const noShell = process.platform === 'win32' && 'Windows : ni Node ni le contrat ne lancent un processus sans stderr';
+
 // CLI-V04 joue trois exécutions, le fd 2 fermé : sans stderr, X-3 ne s'applique pas, et `verify` ne sert pas.
-// L'oracle ne sert qu'aux deux dernières, après le code.
+// L'oracle ne sert qu'aux deux dernières, après le code. X-4 n'a pas d'assertion à part : l'égalité exacte de stdout, dont
+// les attendus sont en ASCII, le couvre, et stderr vide ne laisse rien à y chercher.
 const V04 = (impl: string) => {
-  // Le harnais d'abord : si `2>&-` cessait de fermer le fd 2, le cas passerait à vide. Une redirection vers un fd fermé échoue (code non nul).
-  const [shell, shellArgs] = closeStderr(['/bin/sh', '-c', 'echo x >&2; echo $?']);
-  const probe = spawnSync(shell, shellArgs, { encoding: 'latin1' });
-  assert.ifError(probe.error);
-  assert.match(probe.stdout, /^[1-9][0-9]*\n$/, 'le harnais ne ferme pas le fd 2');
   const runs: [args: string[], code: number, out: () => string][] = [
     [['--bogus', '5'], 2, () => ''],
     [['--time', '50'], 0, term(50)],
@@ -278,9 +276,10 @@ const V04 = (impl: string) => {
   ];
   for (const [args, code, out] of runs) {
     const r = run(impl, args, {}, true);
+    // Si le fd 2 restait ouvert, la ligne `fib: …` ou la durée s'y lirait : stderr vide prouve que `run` a fermé le fd 2 pour la CLI.
+    assert.equal(r.err, '', `le fd 2 n'est pas fermé : fib ${args.join(' ')}, stderr ${JSON.stringify(r.err.slice(0, 200))}`);
     assert.equal(r.code, code, `X-1 : fib ${args.join(' ')}, code ${r.code}`);
     assert.equal(r.out, out(), `X-2 : fib ${args.join(' ')}`);
-    assertAscii(r);
   }
 };
 
@@ -288,6 +287,17 @@ const CASES: Case[] = [...T, ...I, ...A, ...L, ...D, ...H, ...U, ...V];
 
 describe('oracle', () => {
   for (const [id, title, check] of CHECKS) test(`${id} : ${title}`, () => check(lines()));
+});
+
+// Le harnais de CLI-V04, joué une fois pour les quatre CLI : si `2>&-` cessait de fermer le fd 2, le cas passerait à vide.
+// Une redirection vers un fd fermé échoue (code non nul).
+describe('harnais', () => {
+  test('CLI-V04 : le harnais ferme le fd 2', { skip: noShell }, () => {
+    const [shell, shellArgs] = closeStderr(['/bin/sh', '-c', 'echo x >&2; echo $?']);
+    const probe = spawnSync(shell, shellArgs, { encoding: 'latin1' });
+    assert.ifError(probe.error);
+    assert.match(probe.stdout, /^[1-9][0-9]*\n$/, 'le harnais ne ferme pas le fd 2');
+  });
 });
 
 const requested = process.argv.slice(2);
@@ -309,8 +319,6 @@ for (const id of ids) {
     }
     for (const [cid, title, args, want, env] of CASES) test(`${cid} : ${title}`, () => verify(run(id, args, env), want));
     test('CLI-V02 : forcer la couleur ne produit aucun octet ESC', () => V02(id));
-    // Sous Windows, ni Node ni le contrat ne savent lancer un processus sans stderr; la raison s'affiche à la place du test.
-    const noShell = process.platform === 'win32' && 'Windows : ni Node ni le contrat ne lancent un processus sans stderr';
     test('CLI-V04 : un stderr fermé ne change ni stdout ni le code', { skip: noShell }, () => V04(id));
   });
 }

@@ -75,7 +75,7 @@ usage: fib [--algo iterative|matrix|fast|all] [--time] N
 
 Codes de sortie : 0 succès, 2 erreur d'usage, 3 discordance. Tout autre code signale une défaillance hors contrat.
 
-**Hors contrat** (comportement non spécifié, non testé) : un stdout fermé avant la fin (`fib --list 10000 | head`) et un argument qui n'est pas de l'Unicode valide.
+**Hors contrat** (comportement non spécifié, non testé) : un stdout fermé avant la fin (`fib --list 10000 | head`) et un argument qui n'est pas de l'Unicode valide. En revanche, un stderr fermé au lancement (`2>&-`) est dans le contrat : il ne change ni stdout ni le code (cas CLI-V04).
 
 ## 5. Exigences par langage
 
