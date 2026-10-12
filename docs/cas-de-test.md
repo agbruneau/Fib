@@ -254,7 +254,14 @@ Chacun de ces cas attend une erreur (source C).
 ## 6. Hors catalogue
 
 - **Tests de garde des optimisations** (ADR-0004) : `PERF-GO-<n>`, `PERF-RS-<n>`, `PERF-TS-<n>` et `PERF-PY-<n>`, propres à chaque langage et hors seams, numérotés à la suite dans chaque langage. Ils protègent ce que les cas BIB et CLI ne visent pas directement : la retenue de l'additionneur décimal, la dernière étape de `matrix` et de `fast`, l'écriture par tranches (Go, Rust, Python; TypeScript écrit en un seul appel), les seuils de Python (`Decimal` dès 170 000, `str()` au-delà de 200 000 bits), l'absence d'allocation ou d'import. Un test de garde peut aussi protéger un correctif que le contrat ne peut pas éprouver, comme `encoding="ascii"` de Python, que `-I` neutralise sous CLI-V03 (`PERF-PY-20`), ou le puits donné à un flux standard absent, que CLI-V04 ne joue pas sous Windows (`PERF-PY-23`). Leur liste est dans les fichiers de test.
-- **Hors contrat, donc non testé** : un stdout fermé avant la fin (`fib --list 10000 | head`) et un argument qui n'est pas de l'Unicode valide.
+- **Hors contrat, donc non testé** (PRD § 4; constat à l'entrée « 2026-10-12 — `diagnosing-bugs` (étape 9, #16) » de `docs/exploration.md`, puce « À arbitrer ») :
+  - un stdout fermé, au lancement ou en cours d'écriture.
+  - un argument qui n'est pas de l'Unicode valide.
+  - un stdout ou un stderr **ouvert** dont l'écriture échoue : tube non bloquant plein (`EAGAIN`), `/dev/full`, tube sans lecteur (`fib --list 10000 | head`).
+  - toute limite de ressources (`ulimit` ou l'équivalent du système), par exemple mémoire, espace d'adressage, nombre de descripteurs ouverts, taille de fichier.
+  - l'ordre relatif des octets de stdout et de stderr quand ils partagent une même destination : tube (`2>&1`), fichier ou terminal. Le contrat juge chaque flux séparément.
+  - Dans ces cas, ni F9 ni F10 ne s'appliquent : le code, le texte et les traces sont libres.
+  - En revanche, un stderr fermé au lancement (`2>&-`) est dans le contrat : il ne change ni stdout ni le code (cas CLI-V04, § 5.8). C'est la seule exception : un stdout fermé, au lancement ou en cours d'écriture, et un flux ouvert dont l'écriture échoue, stderr compris, sont hors contrat.
 - **Lacune connue** : aucun cas CLI ne peut provoquer une discordance, donc le chemin du code 3 dans la CLI n'a pas de test automatique, et pas davantage la règle qui le restreint à une seule ligne `fib:` sans durée, même avec `--time`. BIB-08 vérifie que les algorithmes concordent; la revue de code vérifie ce chemin.
 - **Lacune connue** : le contrat vérifie le nom et le format des lignes de durée, mais ni que l'algorithme nommé s'exécute vraiment, ni que la durée est mesurée (`0.000 ms` passe). La revue de code couvre ce point.
 

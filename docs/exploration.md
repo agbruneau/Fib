@@ -197,7 +197,7 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
 - **Recherche** : un workflow de cinq chercheurs a construit chacun une boucle différentielle, le n° 9 de la phase 1 de la skill. Les dimensions sont la grammaire, les valeurs, les durées, l'environnement et les arguments extrêmes, soit environ 170 000 entrées sur les quatre CLI. Un vérificateur sceptique par dimension a ensuite reproduit, minimisé et classé chaque candidat face au PRD § 4.
   - La grammaire (83 319 suites, dont toutes celles de 1 à 3 jetons sur 41) et les valeurs (14 793 entrées, autour de chaque seuil d'optimisation) n'ont donné aucun candidat.
   - L'écart retenu a été trouvé trois fois, de façon indépendante : avec le fd 2 fermé, Python sort en code 1, stdout vide.
-  - D'autres comportements divergent là où le contrat ne tranche pas. Ils sont listés plus bas.
+  - D'autres comportements divergent là où le contrat ne tranchait pas. Ils sont listés plus bas, et #18 les a écrits hors contrat.
 - **Phases** :
   1. La boucle de rétroaction est un script Python qui lance les quatre CLI avec `os.close(2)`. Elle rougit sur 6 entrées, Python seul, en 0,46 s, de façon déterministe sur 4 passes.
   2. Minimisation : `python python/fib.py 2>&-` suffit. Ni l'argument, ni `-I -S` ne sont nécessaires.
@@ -222,7 +222,7 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
   - La skill suppose un bug signalé. Sans écart connu, la recherche a coûté plus que le diagnostic : 1,1 million de jetons et 88 minutes pour le workflow, contre quelques minutes pour les phases 1 à 4.
   - Le contrat ne sait pas fermer un descripteur sous Windows : V04 s'y saute, et une garde Python prend le relais.
   - `/code-review` a dû rattraper deux trous dans un test écrit test d'abord : un harnais qui pouvait passer à vide, et une plateforme non couverte.
-- **À arbitrer**, des cas que le contrat ne tranche pas et où les CLI divergent, tous reproduits :
+- **À arbitrer** : des cas que le contrat ne tranchait pas, où les CLI divergent, tous reproduits. Le propriétaire les a déclarés hors contrat le 2026-10-12, et #18 les a écrits au PRD § 4 et au catalogue § 6 :
   - stdout en tube non bloquant : Rust tronque en silence avec le code 0, Python plante, Go et TS réessaient.
   - stdout ou stderr qui refuse l'écriture (`/dev/full`, `ulimit -f`, tube sans lecteur) : quatre codes différents, et un succès annoncé à tort par Go et Rust (`/dev/full`) ou par Go et TS (`ulimit -f`).
   - Traces de plantage de TS et de Python : elles contiennent des séquences ANSI quand `FORCE_COLOR=1`.
