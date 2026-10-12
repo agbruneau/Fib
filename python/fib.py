@@ -256,6 +256,13 @@ def main(args):
 
 if __name__ == "__main__":
     # F10 : ASCII et \n quel que soit l'environnement (PYTHONIOENCODING, Windows).
-    for stream in (sys.stdout, sys.stderr):
+    for name in ("stdout", "stderr"):
+        stream = getattr(sys, name)
+        if stream is None:
+            # Un fd 1 ou 2 fermé au lancement met le flux à None : /dev/null le remplace, et stdout et le code ne changent pas.
+            import os  # ici seulement : 2,5 ms de démarrage sous -S (mesuré), que le chemin normal ne doit pas payer
+
+            stream = open(os.devnull, "w")
+            setattr(sys, name, stream)
         stream.reconfigure(encoding="ascii", newline="\n")
     sys.exit(main(sys.argv[1:]))
