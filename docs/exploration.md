@@ -128,6 +128,35 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
   - Les gains restants passent tous par le parallélisme, que le PRD § 8 exclut.
 - **À changer** : mesurer la bibliothèque à la nouvelle taille avant de rédiger les pistes du brief.
 
+## 2026-10-11 — Exécution et épreuve des cas de test, en workflow `ultracode` (hors skill)
+
+- **Résultats** :
+  - `npm run check:<id>` est vert dans les quatre langages. Le contrat passe 96 sur 96 partout (ORA-01 à 06 et les 90 cas CLI, tous joués). Tests unitaires : Go 11 (6 028 sous-tests), Rust 20, TypeScript 28, Python 30. BIB-01 à 14 sont portés partout, sauf BIB-14 en Rust, exclu comme prévu.
+  - L'oracle a été recalculé par addition, sans la formule de Binet du générateur. Ses 52 vérifications concordent : la table à l'octet, les valeurs et restes du § 2, les périodes de Pisano, les nombres de chiffres et Cassini.
+  - Différentiel : `100000`, `1000000`, `--list 10000`, `--algo all 1000000` et `--algo iterative 1000000` ont la même empreinte SHA-256 dans les quatre langages. Cela couvre les chiffres du milieu, que T12, T13 et L06 ne vérifient pas.
+  - Mutation, avec 16 mutants par langage dans des worktrees jetables : 57 tués sur 64. Deux survivants sont des lacunes du contrat :
+    - en Go, la CLI ne vérifie pas la casse de `--algo`; seule la bibliothèque la vérifie, et `--algo FAST --algo fast 5` passe à côté;
+    - en TypeScript, la citation ASCII ne remplace que le premier caractère non ASCII, ce que `--bögüs 5` révélerait.
+
+    Les autres survivants : l'écriture tamponnée, sans garde en Go comme en Rust; la retenue Go à exactement 10^18, inatteignable par la CLI mais testable dans la bibliothèque, comme le fait PERF-RS-4; un limbe de marge inutile dans le tampon TypeScript; `bool` accepté par la bibliothèque Python, hors contrat.
+  - Fidélité au catalogue : sur 100 constats bruts, 61 ont été maintenus par au moins deux vérificateurs sur trois (1 majeur, 35 mineurs, 25 cosmétiques).
+    - Le majeur, rejoué en mutant : PERF-PY-14 ne garde pas le passage à `str()` au-delà de 200 000 bits. Sans cette branche, les 30 tests Python restent verts.
+    - Mineurs récurrents : des tests PERF qui ne gardent pas ce qu'ils annoncent (écriture par tranches, absence d'allocation en Rust, seuils Python lus dans les constantes, démarrage Go), des balayages BIB-05 à 07 non paramétrés, une notation des espaces ambiguë (I15, U02), une traçabilité périmée (T12 encore sous F8), et V02 et V03 neutralisés par `python -I`.
+  - Banc d'essai sur 15 exécutions, machine au repos : les médianes tombent à 1 ms près des valeurs finales du README, donc aucune régression.
+- **A aidé** :
+  - La mutation mesure le pouvoir des tests, ce qu'un « tout vert » ne dit pas : elle a trouvé deux trous que 384 cas verts cachaient.
+  - La vérification adverse a écarté 39 constats sur 100.
+  - Le critique de complétude a relevé qu'une douzaine de constats maintenus n'étaient que des déductions. Le majeur a été exécuté avant d'être consigné.
+- **Friction** :
+  - Coût : 26 millions de jetons pour l'épreuve (327 agents, dont 300 vérificateurs), contre 0,35 million pour la simple exécution des quatre suites.
+  - Un vérificateur maintient une déduction aussi volontiers qu'un fait exécuté. Le vote ne remplace pas l'exécution.
+  - Les agents actifs faussent le banc d'essai : un premier passage dépassait le README de 5 à 20 %.
+  - Pour quatre survivants sur sept, les deux juges ont rendu des classes différentes, ou une classe que le critique conteste.
+- **À changer** :
+  - Trancher par l'exécution, mutant ou commande, plutôt que par le vote, et réserver les trois voix aux constats majeurs.
+  - Lancer le banc seul, sur une machine au repos.
+  - Décider des suites : les cas `--algo FAST --algo fast 5` et `--bögüs 5`; des gardes pour PERF-PY-14, pour l'écriture tamponnée et pour l'absence d'allocation en Rust; la notation des espaces et la traçabilité du catalogue.
+
 ## Bilan au 2026-10-11
 
 | Skill | Usage |
@@ -143,7 +172,7 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
 | `/code-review` | utilisée trois fois le 2026-10-11, axes Standards et Spec : après la refactorisation, après l'optimisation, après la borne à 1 000 000 |
 | `diagnosing-bugs`, `/improve-codebase-architecture`, `/handoff` | à venir (étapes 9 à 11 du PRD) |
 
-Hors skill : l'audit du PRD (2026-10-10), l'audit en workflow du 2026-10-11 (auditeurs en lecture seule), puis l'optimisation des performances et la borne à 1 000 000, confiées à des sous-agents `fib-dev`.
+Hors skill : l'audit du PRD (2026-10-10), l'audit en workflow du 2026-10-11 (auditeurs en lecture seule), puis l'optimisation des performances et la borne à 1 000 000, confiées à des sous-agents `fib-dev`, et enfin l'épreuve des cas de test en workflow.
 
 Cinq leçons :
 
