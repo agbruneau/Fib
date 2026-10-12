@@ -17,9 +17,10 @@ Fib est un terrain d'essai académique. Il sert à explorer, avec Claude Code, l
 | Refactorisation vers une forme commune aux quatre CLI, puis `/code-review` | 2026-10-11 | fait |
 | Optimisation du temps de réponse ([ADR-0004](docs/adr/0004-performance-du-calcul.md)) et banc d'essai, puis `/code-review` | 2026-10-11 | fait |
 | Borne d'un terme portée de 100 000 à 1 000 000, puis `/code-review` | 2026-10-11 | fait |
+| Suites de l'épreuve des cas de test : huit cas CLI, gardes de performance, décisions de [agbruneau/Fib#11](https://github.com/agbruneau/Fib/issues/11) (tickets #6 à #10, #12 à #14), puis `/code-review` | 2026-10-12 | fait |
 | Étapes 9 à 11 du PRD § 9 : `diagnosing-bugs`, `/improve-codebase-architecture`, `/handoff` | | à faire |
 
-Les quatre implémentations passent `npm run check` sous Windows 11, avec Python 3.14. Linux, Python 3.12 et 3.13 ne sont pas vérifiés.
+Les quatre implémentations passent `npm run check` sous Windows 11, avec Python 3.14, et sous Linux (2026-10-12), avec Go 1.26, Rust 1.97, Node 22 et Python 3.13. Python 3.12 n'est pas vérifié.
 
 | Implémentation | Grand entier |
 |---|---|
@@ -48,17 +49,17 @@ Temps total du processus, en millisecondes, médianes de 15 exécutions (`npm ru
 
 **Qualité.**
 
-- L'audit, en 8 dimensions (les quatre langages, contrat, cohérence, test différentiel, documentation), a rendu 233 constats, dont 36 réfutés par un vérificateur sceptique. Il n'a trouvé aucune erreur de calcul et un seul écart au contrat : Python laissait `PYTHONIOENCODING` changer l'encodage de sa sortie. L'écart est corrigé et gardé par CLI-V03. Un test différentiel de 121 vecteurs hors catalogue n'a trouvé aucun écart entre les quatre implémentations.
-- Chaque langage passe les 90 cas CLI du contrat et ORA-01 à ORA-06 sur l'oracle (96 tests par langage), BIB-01 à BIB-14 sur sa bibliothèque (BIB-14 est sans objet en Rust), et des tests de garde de ses optimisations : 4 en Go, 7 en Rust, 5 en TypeScript, 16 en Python.
-- Une revue `/code-review` a suivi chacun des trois chantiers. Ces revues ont trouvé, entre autres, une violation du PRD § 7 en Rust (lignes vides de l'oracle) et un `matrix` TypeScript qui refaisait l'ancien `fast`. Les constats sont corrigés.
+- L'audit, en 8 dimensions (les quatre langages, contrat, cohérence, test différentiel, documentation), a rendu 233 constats, dont 36 réfutés par un vérificateur sceptique. Il n'a trouvé aucune erreur de calcul et un seul écart au contrat : Python laissait `PYTHONIOENCODING` changer l'encodage de sa sortie. L'écart est corrigé et gardé par PERF-PY-20 : CLI-V03 ne peut pas le voir, car `python -I` ignore la variable. Un test différentiel de 121 vecteurs hors catalogue n'a trouvé aucun écart entre les quatre implémentations.
+- Chaque langage passe les 98 cas CLI du contrat et ORA-01 à ORA-06 sur l'oracle (104 tests par langage), BIB-01 à BIB-14 sur sa bibliothèque (BIB-14 est sans objet en Rust), et des tests de garde de ses optimisations : 8 en Go, 10 en Rust, 5 en TypeScript, 22 en Python.
+- Une revue `/code-review` a suivi chacun des quatre chantiers. Ces revues ont trouvé, entre autres, une violation du PRD § 7 en Rust (lignes vides de l'oracle) et un `matrix` TypeScript qui refaisait l'ancien `fast`. Les constats sont corrigés.
 
 **Coût.**
 
 | Lignes de code (`wc -l`, hors fichiers de test) | Go | Rust | TypeScript | Python |
 |---|---|---|---|---|
-| avant → final | 255 → 376 | 205 → 359 | 151 → 232 | 158 → 261 |
+| avant → final | 255 → 382 | 205 → 409 | 151 → 234 | 158 → 261 |
 
-- Rust compte aussi les 34 lignes de tests unitaires de `lib.rs`. La cible d'environ 200 lignes (PRD, A3) est remplacée par l'ADR-0004.
+- Rust compte aussi ses tests unitaires : 34 lignes dans `lib.rs` et 44 dans `main.rs` (PERF-RS-8). La cible d'environ 200 lignes (PRD, A3) est remplacée par l'ADR-0004.
 - `iterative` reste en O(n²) opérations sur les mots : à 1 000 000, il prend environ 1,6 s en Go et 5 s en Python, ce que F8 accepte.
 
 Le détail des décisions et des mesures est dans l'[ADR-0004](docs/adr/0004-performance-du-calcul.md).
