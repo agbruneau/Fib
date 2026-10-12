@@ -22,16 +22,17 @@ test('BIB-04 : fib(10, iterative) vaut 55', () => {
   assert.equal(fib(10, 'iterative'), oracle(10));
 });
 
-test('BIB-05 : fib(n, iterative) égale l’oracle pour n = 0..2000, au-delà d’int64 et d’uint64', () => {
-  for (let n = 0; n <= 2000; n++) assert.equal(fib(n, 'iterative'), oracle(n), `n = ${n}`);
+// Un sous-test par n : un algorithme faux à n = 5 et à n = 7 rougit les deux, au lieu de s'arrêter au premier échec.
+test('BIB-05 : fib(n, iterative) égale l’oracle pour n = 0..2000, au-delà d’int64 et d’uint64', async (t) => {
+  for (let n = 0; n <= 2000; n++) await t.test(`n = ${n}`, () => assert.equal(fib(n, 'iterative'), oracle(n)));
 });
 
-test('BIB-06 : fib(n, fast) égale l’oracle pour n = 0..2000', () => {
-  for (let n = 0; n <= 2000; n++) assert.equal(fib(n, 'fast'), oracle(n), `n = ${n}`);
+test('BIB-06 : fib(n, fast) égale l’oracle pour n = 0..2000', async (t) => {
+  for (let n = 0; n <= 2000; n++) await t.test(`n = ${n}`, () => assert.equal(fib(n, 'fast'), oracle(n)));
 });
 
-test('BIB-07 : fib(n, matrix) égale l’oracle pour n = 0..2000', () => {
-  for (let n = 0; n <= 2000; n++) assert.equal(fib(n, 'matrix'), oracle(n), `n = ${n}`);
+test('BIB-07 : fib(n, matrix) égale l’oracle pour n = 0..2000', async (t) => {
+  for (let n = 0; n <= 2000; n++) await t.test(`n = ${n}`, () => assert.equal(fib(n, 'matrix'), oracle(n)));
 });
 
 const ALGOS: Algo[] = ['iterative', 'matrix', 'fast'];
@@ -62,12 +63,18 @@ test('BIB-12 : fibList(2000) rend les 2 001 termes de l’oracle, dans l’ordre
   assert.deepEqual(fibList(2000), terms());
 });
 
-// hors catalogue : garde de l'optimisation de la liste (additionneur décimal en limbes de 4 chiffres)
+// hors catalogue : garde du comptage des termes de fibList (boucle à pas de 2, fin paire), pas de l'additionneur.
+// Rougit : `if (i < n)` → `if (i <= n)` (un terme de trop quand n est pair) et `i += 2` → `i += 3`.
+// Reste vert : la retenue `m = u >> 31` → `m = (u - 1) >> 31`, que gardent BIB-12, PERF-TS-3 à 5, CLI-L05 et CLI-L06;
+// et la fin impaire `if (i < n)` → `if (i < n - 1)`, que garde PERF-TS-5 (n = 10000 est pair).
 test('PERF-TS-1 : fibList(10000) rend 10 001 termes', () => {
   assert.equal(fibList(10000).length, 10001);
 });
 
-// hors catalogue : garde de l'optimisation de la liste (additionneur décimal en limbes de 4 chiffres)
+// hors catalogue : garde du limbe de poids fort du dernier terme (retenue qui sort, zéros de tête retirés).
+// Rougit : `if (m === 0)` → `if (m === 1)` (la retenue qui sort du dernier limbe est perdue) et la suppression de
+// `while (bytes[start] === 0x30) start++`. Pas l'additionneur : la retenue `m = u >> 31` → `m = (u - 1) >> 31` la
+// laisse verte.
 test('PERF-TS-2 : le dernier terme de fibList(10000) compte 2 090 chiffres', () => {
   assert.equal(fibList(10000)[10000].length, 2090);
 });
@@ -85,7 +92,11 @@ test('PERF-TS-4 : chaque terme de fibList(10000) dès F(2) est la somme des deux
   }
 });
 
-// hors catalogue : garde de l'optimisation de la liste (tampon de taille calculée d'après n, marge mince aux petits n)
+// hors catalogue : garde de la taille du tampon aux petits n et de la fin impaire de la boucle. Dans ts/src, seul ce
+// test rougit : `Math.ceil((n * 0.209) / 4) + 1` → `Math.round((n * 0.209) / 4)` (un limbe de trop peu dès n = 2) et
+// `if (i < n)` → `if (i < n - 1)`. BIB-12 et PERF-TS-1 à 4 n'éprouvent que n = 2000 et n = 10000 : pairs, et où round
+// et ceil donnent le même nombre de limbes. `Math.round` avec le « + 1 » conservé est équivalent : le limbe
+// d'assurance absorbe l'arrondi.
 test('PERF-TS-5 : fibList(n) rend les n + 1 premiers termes de l’oracle pour chaque n de 0 à 300', () => {
   const expected = terms();
   for (let n = 0; n <= 300; n++) assert.deepEqual(fibList(n), expected.slice(0, n + 1), `n = ${n}`);
@@ -97,16 +108,19 @@ for (const bogus of ['all', 'bogus', '', 'FAST', 'toString']) {
   });
 }
 
+// Un test par indice refusé : un contrôle qui laisse passer -1 et NaN rougit les deux, pas seulement -1.
+const BAD_INDEXES = [-1, 1.5, NaN];
+
 for (const algo of ALGOS) {
-  test(`BIB-14 : fib refuse -1, 1.5 et NaN pour ${algo}`, () => {
-    for (const n of [-1, 1.5, NaN]) {
-      assert.throws(() => fib(n, algo), { name: 'RangeError', message: /indice invalide/ }, `n = ${n}`);
-    }
-  });
+  for (const n of BAD_INDEXES) {
+    test(`BIB-14 : fib refuse ${n} pour ${algo}`, () => {
+      assert.throws(() => fib(n, algo), { name: 'RangeError', message: /indice invalide/ });
+    });
+  }
 }
 
-test('BIB-14 : fibList refuse -1, 1.5 et NaN', () => {
-  for (const n of [-1, 1.5, NaN]) {
-    assert.throws(() => fibList(n), { name: 'RangeError', message: /indice invalide/ }, `n = ${n}`);
-  }
-});
+for (const n of BAD_INDEXES) {
+  test(`BIB-14 : fibList refuse ${n}`, () => {
+    assert.throws(() => fibList(n), { name: 'RangeError', message: /indice invalide/ });
+  });
+}
