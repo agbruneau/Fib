@@ -135,10 +135,10 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
   - L'oracle a été recalculé par addition, sans la formule de Binet du générateur. Ses 52 vérifications concordent : la table à l'octet, les valeurs et restes du § 2, les périodes de Pisano, les nombres de chiffres et Cassini.
   - Différentiel : `100000`, `1000000`, `--list 10000`, `--algo all 1000000` et `--algo iterative 1000000` ont la même empreinte SHA-256 dans les quatre langages. Cela couvre les chiffres du milieu, que T12, T13 et L06 ne vérifient pas.
   - Mutation, avec 16 mutants par langage dans des worktrees jetables : 57 tués sur 64. Le code d'origine est correct partout; deux survivants montrent des cas absents du contrat :
-    - en Go, un mutant qui rend `--algo` insensible à la casse passe, parce que la bibliothèque refuse encore `FAST`. Seul `--algo FAST --algo fast 5` le distinguerait;
+    - en Go, un mutant qui rend `--algo` insensible à la casse passe, parce que la bibliothèque refuse encore `FAST`. `--algo FAST --algo fast 5`, par exemple, le distingue;
     - en TypeScript, un mutant qui ne cite en ASCII que le premier caractère non ASCII passe. `--bögüs 5` le tuerait.
 
-    Vérifié sur les quatre CLI d'origine : `--algo FAST --algo fast 5` sort en erreur, et `--bögüs 5` est cité en ASCII. Les autres survivants : l'écriture tamponnée, sans garde en Go comme en Rust; la retenue Go à exactement 10^18, inatteignable par la CLI mais testable dans la bibliothèque, comme le fait PERF-RS-4; un limbe de marge inutile dans le tampon TypeScript; `bool` accepté par la bibliothèque Python, hors contrat.
+    Vérifié sur les quatre CLI d'origine : `--algo FAST --algo fast 5` sort en erreur, et `--bögüs 5` est cité en ASCII. Les autres survivants : l'écriture tamponnée, sans garde en Go comme en Rust; la retenue Go à exactement 10^18, inatteignable par la CLI, et testable seulement une fois l'additionneur extrait de `FibList` (fait par #8 pour PERF-GO-5, pendant de PERF-RS-4); un limbe de marge inutile dans le tampon TypeScript; le mutant M-py-5, qui fait accepter `bool` par la bibliothèque Python. Le code d'origine le refuse (`TypeError`), mais BIB-14 ne nommait pas `True` : le catalogue n'arbitrait pas ce cas, ajouté par #14. (Corrigé le 2026-10-12 : cette ligne prêtait au vrai code le comportement du mutant.)
   - Fidélité au catalogue : sur 100 constats bruts, 61 ont été maintenus par au moins deux vérificateurs sur trois (1 majeur, 35 mineurs, 25 cosmétiques).
     - Le majeur, rejoué en mutant : PERF-PY-14 ne garde pas le passage à `str()` au-delà de 200 000 bits. Sans cette branche, les 30 tests Python restent verts.
     - Mineurs récurrents : des tests PERF qui ne gardent pas ce qu'ils annoncent (écriture par tranches, absence d'allocation en Rust, seuils Python lus dans les constantes, démarrage Go), des balayages BIB-05 à 07 non paramétrés, une notation des espaces ambiguë (I15, U02), une traçabilité périmée (T12 encore sous F8), et V02 et V03 neutralisés par `python -I`.
@@ -158,7 +158,40 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
   - Lancer le banc seul, sur une machine au repos.
   - Décider des suites : les cas `--algo FAST --algo fast 5` et `--bögüs 5`; des gardes pour PERF-PY-14, pour l'écriture tamponnée et pour l'absence d'allocation en Rust; la notation des espaces et la traçabilité du catalogue.
 
-## Bilan au 2026-10-11
+## 2026-10-12 — Tickets #6 à #10 et #12 à #14 par `fib-dev`, puis `/code-review` (session infonuagique)
+
+- **Contexte** : la session locale avait pris #6 à #10, puis s'était arrêtée parce que OneDrive avait passé des fichiers de `.git` en « nuage seulement ». Rien n'était poussé. Une session infonuagique (Linux, 4 cœurs) a tout repris depuis `bf684e5`. La branche `claude/determined-fermi-8r5kmg` a tenu lieu de `main` pour l'intégration, avec la PR agbruneau/Fib#15 vers `main`.
+- **Résultats** :
+  - Huit `fib-dev` ont livré les huit tickets en trois vagues, selon les bloqueurs : #6 à #10 en parallèle, puis #12 et #14, puis #13. Trois autres ont appliqué les corrections de revue. Les onze fusions se sont faites sans conflit.
+  - `npm run check` est vert sur les quatre langages, et `npm run contract` passe 398 sur 398 (6 ORA + 4 × 98 cas CLI). Chaque garde nouvelle a été vue rouge sur le mutant de son ticket, puis verte sur le code d'origine.
+  - Banc A/B au repos, binaires de `bf684e5` et de la branche lancés en alternance, 61 exécutions chacun. Les écarts restent sous le seuil de 3 % de #8 et #9 : Go `--list 10000` à +0,0 % au total (+1,5 % au calcul), Rust `--list 10000` à −1,0 %, Rust `iterative 100000` à +0,5 %.
+- **A aidé** :
+  - Les `fib-dev` ont corrigé ou nuancé quatre prototypes des tickets, en les exécutant plutôt qu'en les recopiant :
+    - PERF-PY-21, tel que prototypé, laissait survivre la fuite d'`Emax`. PERF-PY-10 passe avant lui dans l'ordre alphabétique et laissait déjà `Emax` modifié. La garde tourne maintenant dans un contexte neuf.
+    - PERF-TS-1 ne garde que la fin paire de la boucle de `fibList`; PERF-TS-5 garde la fin impaire.
+    - `Math.round` à la place de `Math.ceil` est un mutant équivalent tant que le limbe d'assurance reste.
+    - Sous M-py-5, quatre des sous-tests rouges sont dans BIB-14 et deux dans PERF-PY-16, qui partagent `REFUSED`.
+  - `/code-review` a trouvé quatre défauts que les agents n'avaient pas vus :
+    - CLI-U05 et CLI-A20, écrits par #6 en parallèle de #12, promettaient la citation que #12 retirait de U04 et A18;
+    - V02 vidait `NO_COLOR` au lieu de le retirer, alors qu'un `NO_COLOR` vide fait avertir Node 22 sur stderr;
+    - PERF-RS-8 tirait sa borne de la constante qu'il garde;
+    - PERF-GO-7 rougissait sous `go test -cover`.
+- **Friction** :
+  - La skill `tdd` (plugin `mattpocock-skills`) n'est pas installée dans la session infonuagique : chaque `fib-dev` a suivi son cycle à la main.
+  - `gh issue view` échoue, parce que GraphQL est refusé; `gh api repos/…/issues/<n>` passe.
+  - Les références du banc de #8 et #9 venaient de la machine Windows du propriétaire : la comparaison ne vaut que sur une même machine, d'où l'A/B en alternance.
+  - Deux `fib-dev` ont écrit dans le même dossier temporaire, et l'un a écrasé un fichier de l'autre.
+  - `/code-review bf684e5` a revu le seul commit `bf684e5`, et non la plage voulue. Ce passage a quand même trouvé trois erreurs du journal du 2026-10-11, corrigées ci-dessus.
+  - Huit constats de la revue sont écartés :
+    - six contestent un choix que le ticket imposait : la marge nulle des allocations Go, PERF-PY-18 qui fige les seuils, les 6 003 sous-tests TypeScript, les trois passes de T13, l'environnement sans `PYTHON*` de PERF-PY-20, les commentaires de deux lignes;
+    - deux reposent sur un environnement improbable ici : `go` absent du PATH, `PYTHONHOME` requis.
+- **À changer** :
+  - Donner à chaque `fib-dev` un sous-dossier temporaire à lui.
+  - Passer à `/code-review` une cible explicite (la branche), jamais un SHA seul.
+  - Installer `mattpocock-skills` dans l'environnement infonuagique, ou dire d'emblée dans le prompt que `tdd` manque.
+  - Quand des tickets parallèles touchent la même règle, comme #6 et #12 pour les citations, donner la règle aux deux.
+
+## Bilan au 2026-10-12
 
 | Skill | Usage |
 |---|---|
@@ -166,11 +199,11 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
 | `/grill-with-docs` (`grilling`, `domain-modeling`) | utilisée : glossaire, ADR-0001 et ADR-0002, PRD éprouvé |
 | `/to-spec` | utilisée : spec #1 |
 | `/to-tickets` | utilisée : tickets #2 à #5, avec dépendances natives |
-| `tdd` | utilisée : catalogue de cas, puis cycles des quatre `fib-dev` |
+| `tdd` | utilisée : catalogue de cas, puis cycles des quatre `fib-dev`; absente de la session infonuagique du 2026-10-12, où les `fib-dev` ont suivi son cycle à la main |
 | `/implement` | remplacée par l'agent `fib-dev`, qui applique `tdd` directement |
-| `resolving-merge-conflicts` | non nécessaire : aucune des 28 fusions n'a conflicté |
+| `resolving-merge-conflicts` | non nécessaire : aucune des 39 fusions n'a conflicté |
 | `research`, `prototype` | non utilisées; un `prototype` aurait détecté plus tôt le piège de `go run` |
-| `/code-review` | utilisée trois fois le 2026-10-11, axes Standards et Spec : après la refactorisation, après l'optimisation, après la borne à 1 000 000 |
+| `/code-review` | utilisée trois fois le 2026-10-11, axes Standards et Spec : après la refactorisation, après l'optimisation, après la borne à 1 000 000; puis une fois le 2026-10-12, sur les tickets #6 à #14 |
 | `diagnosing-bugs`, `/improve-codebase-architecture`, `/handoff` | à venir (étapes 9 à 11 du PRD) |
 
 Hors skill : l'audit du PRD (2026-10-10), l'audit en workflow du 2026-10-11 (auditeurs en lecture seule), puis l'optimisation des performances et la borne à 1 000 000, confiées à des sous-agents `fib-dev`, et enfin l'épreuve des cas de test en workflow.

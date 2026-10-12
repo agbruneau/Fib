@@ -183,7 +183,7 @@ FFT, GMP, Strassen, parallélisme, TUI, mode serveur, calibration et seuils rég
 
 ## 9. Démarche d'exploration des skills
 
-L'orchestrateur est la session principale (Opus 5.5 en `ultracode`); le code revient au sous-agent `fib-dev` (Sonnet 5.5). Voir `CLAUDE.md`. Les étapes 0, 1 et 4 à 8 sont faites : les quatre implémentations passent `npm run check`. L'étape 8 a pris la forme d'un audit, puis de trois chantiers suivis chacun de `/code-review` : la refactorisation, l'optimisation des performances (ADR-0004) et la borne d'un terme à 1 000 000 (2026-10-11). Les étapes 2 et 3 n'ont pas servi. Les étapes 9 à 11 restent à faire. Le bilan par skill, dont `/implement` remplacée par `fib-dev`, est dans `docs/exploration.md`.
+L'orchestrateur est la session principale (Opus 5.5 en `ultracode`); le code revient au sous-agent `fib-dev` (Sonnet 5.5). Voir `CLAUDE.md`. Les étapes 0, 1 et 4 à 8 sont faites : les quatre implémentations passent `npm run check`. L'étape 8 a pris la forme d'un audit, puis de quatre chantiers suivis chacun de `/code-review` : la refactorisation, l'optimisation des performances (ADR-0004) et la borne d'un terme à 1 000 000 (2026-10-11), puis les suites de l'épreuve des cas de test (tickets #6 à #14, 2026-10-12). Les étapes 2 et 3 n'ont pas servi. Les étapes 9 à 11 restent à faire. Le bilan par skill, dont `/implement` remplacée par `fib-dev`, est dans `docs/exploration.md`.
 
 | # | Étape | Skill | Livrable |
 |---|---|---|---|
@@ -210,7 +210,7 @@ Chaque entrée de `docs/exploration.md` donne : la skill, l'étape ou le ticket,
 |---|---|
 | Fins de ligne CRLF et encodage imposé par l'environnement (Python, checkout Git) | F10, `reconfigure(encoding="ascii", newline="\n")`, `.gitattributes` en `eol=lf`, contrat comparé à l'octet |
 | Conversions trop permissives de `N` | validation de `^[0-9]+$` avant conversion (§ 5); cas `+5`, `1_000`, `0x10`, `٣`, `""` |
-| Limite de conversion entier → texte de Python | `set_int_max_str_digits(0)`, gardé par PERF-PY-5 et PERF-PY-14 : les cas `100000` et `1000000` passent désormais par les tranches et par `Decimal` |
+| Limite de conversion entier → texte de Python | `set_int_max_str_digits(0)`, gardé par CLI-T14 et PERF-PY-14 : les cas `100000` et `1000000` passent désormais par les tranches et par `Decimal` |
 | Débordement à l'analyse de `N` | cas `99999999999999999999` |
 | Sortie tronquée par `process.exit()` (Node, POSIX) | `process.exitCode`; à vérifier en CI Linux |
 | Rust ne lie pas sous Windows sans le composant C++ MSVC | override rustup GNU locale au dossier |

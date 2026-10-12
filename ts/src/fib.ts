@@ -70,7 +70,9 @@ function asciiTable(): Uint32Array {
  * L'addition décimale s'écrit à la main sur des limbes de 4 chiffres : aucune conversion binaire → décimal. */
 export function fibList(n: number): string[] {
   checkIndex(n);
-  const size = Math.ceil((n * 0.209) / 4) + 1; // F(n) compte moins de 0,209·n + 1 chiffres : un limbe de marge
+  // log₁₀ φ < 0,209, donc ⌈0,209·n/4⌉ limbes suffisent à F(n). Le « + 1 » est un limbe d'assurance : un Int32Array
+  // ignore sans erreur une écriture hors bornes, donc un tampon trop court corromprait la sortie en silence.
+  const size = Math.ceil((n * 0.209) / 4) + 1;
   const a = new Int32Array(size); // F(i), limbes du poids faible au poids fort
   const b = new Int32Array(size); // F(i+1)
   b[0] = 1;

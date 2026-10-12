@@ -41,7 +41,7 @@ type Case = [id: string, title: string, args: string[], want: Want, env?: Record
 const term = (k: number) => () => `${terms()[k]}\n`;
 const list = (n: number) => () => terms().slice(0, n + 1).map((t) => `${t}\n`).join('');
 
-function run(id: string, args: string[], env: Record<string, string> = {}) {
+function run(id: string, args: string[], env: Record<string, string | undefined> = {}) {
   const [cmd, ...head] = IMPLS[id].cmd;
   const r = spawnSync(cmd, [...head, ...args], {
     cwd: root, env: { ...process.env, ...env },
@@ -77,6 +77,18 @@ function verify(r: ReturnType<typeof run>, want: Want): void {
   want.check?.(r.out);
 }
 
+// Partagé par CLI-T12 et CLI-T13 : F(k) divise F(mk), donc F(2000) divise F(100 000) et F(1 000 000) (catalogue § 2).
+// F(2000) vient de l'oracle. Reste lu par tranches de 18 chiffres, sans la conversion quadratique décimal → BigInt.
+const checkDivisibleByF2000 = (out: string) => {
+  const f = BigInt(terms()[2000]);
+  const digits = out.slice(0, -1);
+  const padded = digits.padStart(Math.ceil(digits.length / 18) * 18, '0');
+  const tranche = 10n ** 18n;
+  let r = 0n;
+  for (let i = 0; i < padded.length; i += 18) r = (r * tranche + BigInt(padded.slice(i, i + 18))) % f;
+  assert.ok(r === 0n, 'la sortie n’est pas divisible par F(2000)');
+};
+
 const T: Case[] = [
   ['CLI-T01', '10 écrit F(10)', ['10'], { out: term(10) }],
   ['CLI-T02', '0 écrit F(0)', ['0'], { out: term(0) }],
@@ -89,16 +101,17 @@ const T: Case[] = [
   ['CLI-T09', '2000 écrit F(2000)', ['2000'], { out: term(2000) }],
   ['CLI-T10', 'des zéros de tête sont permis : 007 vaut 7', ['007'], { out: term(7) }],
   ['CLI-T11', 'de nombreux zéros de tête : …010 vaut 10', ['00000000000000000000000000010'], { out: term(10) }],
-  ['CLI-T12', '100000 écrit un terme de 20 899 chiffres, congru à F(1696) mod 2048 et à F(1000) mod 1000', ['100000'], {
+  ['CLI-T12', '100000 écrit un terme de 20 899 chiffres, congru à F(1696) mod 2048 et à F(1000) mod 1000, divisible par F(2000)', ['100000'], {
     check: (out) => {
       assert.match(out, /^[1-9][0-9]*\n$/);
       assert.equal(out.length - 1, 20899);
       const t = BigInt(out);
       assert.equal(t % 2048n, BigInt(terms()[1696]) % 2048n);
       assert.equal(t % 1000n, BigInt(terms()[1000]) % 1000n);
+      checkDivisibleByF2000(out);
     },
   }],
-  ['CLI-T13', '1000000 écrit un terme de 208 988 chiffres, congru à F(1600) mod 2048 et à F(1000) mod 1000', ['1000000'], {
+  ['CLI-T13', '1000000 écrit un terme de 208 988 chiffres, congru à F(1600) mod 2048 et à F(1000) mod 1000, divisible par F(2000)', ['1000000'], {
     check: (out) => {
       assert.match(out, /^[1-9][0-9]*\n$/);
       assert.equal(out.length - 1, 208988);
@@ -106,8 +119,10 @@ const T: Case[] = [
       const mod = (m: number) => [...out.slice(0, -1)].reduce((r, c) => (r * 10 + Number(c)) % m, 0);
       assert.equal(mod(2048), Number(BigInt(terms()[1600]) % 2048n));
       assert.equal(mod(1000), Number(BigInt(terms()[1000]) % 1000n));
+      checkDivisibleByF2000(out);
     },
   }],
+  ['CLI-T14', '5 000 zéros de tête, puis 5, valent 5', ['0'.repeat(5000) + '5'], { out: term(5) }],
 ];
 
 const I: Case[] = [
@@ -127,6 +142,7 @@ const I: Case[] = [
   ['CLI-I14', 'un indice trop grand pour un entier natif est une erreur, pas une panique', ['99999999999999999999'], 'erreur'],
   ['CLI-I15', 'deux indices sont refusés', ['5', '6'], 'erreur'],
   ['CLI-I16', 'un saut de ligne après l’indice est refusé', ['5\n'], 'erreur'],
+  ['CLI-I17', 'une espace entre deux nombres, dans un seul argument, est refusée', ['5 6'], 'erreur'],
 ];
 
 const A: Case[] = [
@@ -147,8 +163,25 @@ const A: Case[] = [
   ['CLI-A15', '--algo --list 5 prend --list pour valeur', ['--algo', '--list', '5'], 'erreur'],
   ['CLI-A16', 'chaque occurrence de --algo doit être valide, même si une valide suit', ['--algo', 'bogus', '--algo', 'fast', '5'], 'erreur'],
   ['CLI-A17', '--algo avec une valeur vide (forme séparée) est refusé', ['--algo', '', '5'], 'erreur'],
-  ['CLI-A18', 'un saut de ligne dans la valeur citée ne produit pas deux lignes sur stderr', ['--algo', 'x\ny', '5'], 'erreur'],
+  ['CLI-A18', 'un saut de ligne dans un argument ne produit pas deux lignes', ['--algo', 'x\ny', '5'], 'erreur'],
+  ['CLI-A19', 'la casse compte à chaque occurrence de --algo, même si une valide suit', ['--algo', 'FAST', '--algo', 'fast', '5'], 'erreur'],
+  ['CLI-A20', 'une valeur non ASCII de --algo : la ligne d’erreur reste en ASCII', ['--algo', 'fäst', '5'], 'erreur'],
 ];
+
+// Partagé par CLI-L06 et CLI-L16 : la liste de 10 001 termes, quelle que soit l'écriture de l'indice.
+const checkList10000 = (out: string) => {
+  assert.ok(out.endsWith('\n'), 'la dernière ligne se termine par \\n');
+  const rows = out.split('\n');
+  rows.pop();
+  assert.equal(rows.length, 10001);
+  assert.deepEqual(rows.slice(0, 2001), terms());
+  for (let i = 2; i < rows.length; i++) {
+    // BigInt() accepte `007`, ` 12`, `12 `, `+5` et `0x10` : la forme décimale se vérifie avant la somme.
+    assert.match(rows[i], /^(0|[1-9][0-9]*)$/, `ligne ${i}`);
+    assert.equal(BigInt(rows[i]), BigInt(rows[i - 1]) + BigInt(rows[i - 2]), `ligne ${i}`);
+  }
+  assert.equal(rows[10000].length, 2090);
+};
 
 const L: Case[] = [
   ['CLI-L01', '--list 0 écrit seulement F(0)', ['--list', '0'], { out: list(0) }],
@@ -156,17 +189,7 @@ const L: Case[] = [
   ['CLI-L03', '--list 2 écrit trois lignes', ['--list', '2'], { out: list(2) }],
   ['CLI-L04', '--list 20 écrit les 21 premiers termes', ['--list', '20'], { out: list(20) }],
   ['CLI-L05', '--list 2000 écrit les 2 001 termes de l’oracle', ['--list', '2000'], { out: list(2000) }],
-  ['CLI-L06', '--list 10000 écrit 10 001 lignes cohérentes avec l’oracle et la récurrence', ['--list', '10000'], {
-    check: (out) => {
-      assert.ok(out.endsWith('\n'), 'la dernière ligne se termine par \\n');
-      const rows = out.split('\n');
-      rows.pop();
-      assert.equal(rows.length, 10001);
-      assert.deepEqual(rows.slice(0, 2001), terms());
-      for (let i = 2; i < rows.length; i++) assert.equal(BigInt(rows[i]), BigInt(rows[i - 1]) + BigInt(rows[i - 2]), `ligne ${i}`);
-      assert.equal(rows[10000].length, 2090);
-    },
-  }],
+  ['CLI-L06', '--list 10000 écrit 10 001 lignes cohérentes avec l’oracle et la récurrence', ['--list', '10000'], { check: checkList10000 }],
   ['CLI-L07', 'le drapeau peut suivre l’indice', ['5', '--list'], { out: list(5) }],
   ['CLI-L08', 'répéter --list ne change rien', ['--list', '--list', '3'], { out: list(3) }],
   ['CLI-L09', '10001 dépasse la borne d’une liste', ['--list', '10001'], 'erreur'],
@@ -175,6 +198,8 @@ const L: Case[] = [
   ['CLI-L12', '--list et --algo all s’excluent', ['--list', '--algo', 'all', '5'], 'erreur'],
   ['CLI-L13', '--list sans indice est refusé', ['--list'], 'erreur'],
   ['CLI-L14', '--list=5 est refusé : un drapeau ne prend pas de valeur', ['--list=5'], 'erreur'],
+  ['CLI-L15', 'la borne d’une liste s’applique malgré les zéros de tête', ['--list', '00010001'], 'erreur'],
+  ['CLI-L16', 'des zéros de tête sont permis pour une liste : 010000 vaut 10000', ['--list', '010000'], { check: checkList10000 }],
 ];
 
 const D: Case[] = [
@@ -182,7 +207,7 @@ const D: Case[] = [
   ['CLI-D02', '--time avec --algo all chronomètre fast, iterative puis matrix', ['--time', '--algo', 'all', '50'], { out: term(50), times: ['fast', 'iterative', 'matrix'] }],
   ['CLI-D03', '--time avec --algo matrix chronomètre matrix', ['--time', '--algo', 'matrix', '50'], { out: term(50), times: ['matrix'] }],
   ['CLI-D04', 'la dernière occurrence de --algo gagne', ['--time', '--algo', 'fast', '--algo', 'matrix', '50'], { out: term(50), times: ['matrix'] }],
-  ['CLI-D05', 'une occurrence de --algo gagne aussi sur all', ['--algo', 'all', '--algo', 'iterative', '--time', '50'], { out: term(50), times: ['iterative'] }],
+  ['CLI-D05', 'la dernière occurrence de --algo gagne aussi sur all', ['--algo', 'all', '--algo', 'iterative', '--time', '50'], { out: term(50), times: ['iterative'] }],
   ['CLI-D06', '--time avec --list chronomètre iterative', ['--time', '--list', '5'], { out: list(5), times: ['iterative'] }],
   ['CLI-D07', '--time peut suivre l’indice', ['50', '--time'], { out: term(50), times: ['fast'] }],
   ['CLI-D08', 'répéter --time ne donne qu’une ligne', ['--time', '--time', '50'], { out: term(50), times: ['fast'] }],
@@ -200,7 +225,7 @@ const H: Case[] = [
   ['CLI-H06', 'l’aide l’emporte sur une borne dépassée', ['--list', '10001', '--help'], { out: USAGE }],
   ['CLI-H07', 'répéter --help écrit l’usage une fois', ['--help', '--help'], { out: USAGE }],
   ['CLI-H08', '-help est une option inconnue', ['-help'], 'erreur'],
-  ['CLI-H09', '--HELP est sensible à la casse', ['--HELP'], 'erreur'],
+  ['CLI-H09', '--HELP est refusé : le nom de l’option est sensible à la casse', ['--HELP'], 'erreur'],
   ['CLI-H10', '--algo=--help n’est pas l’aide', ['--algo=--help', '5'], 'erreur'],
   ['CLI-H11', 'l’aide l’emporte sur un indice invalide', ['abc', '--help'], { out: USAGE }],
 ];
@@ -209,7 +234,9 @@ const U: Case[] = [
   ['CLI-U01', 'une option longue inconnue est refusée', ['--bogus', '5'], 'erreur'],
   ['CLI-U02', 'un tiret seul est une option inconnue', ['-', '5'], 'erreur'],
   ['CLI-U03', 'un double tiret est une option inconnue, pas une fin des options', ['--', '5'], 'erreur'],
-  ['CLI-U04', 'une option non ASCII est citée en ASCII', ['--bogüs', '5'], 'erreur'],
+  ['CLI-U04', 'option non ASCII : la ligne d’erreur reste en ASCII', ['--bogüs', '5'], 'erreur'],
+  ['CLI-U05', 'plusieurs caractères non ASCII dans une option : la ligne d’erreur reste en ASCII', ['--bögüs', '5'], 'erreur'],
+  ['CLI-U06', 'deux fautes ne produisent qu’une seule ligne fib:', ['--bogus', 'abc'], 'erreur'],
 ];
 
 const V: Case[] = [
@@ -220,7 +247,9 @@ const V: Case[] = [
 
 // CLI-V02 joue trois exécutions (U01, H01 puis T01) : l'oracle ne sert qu'à la dernière, pour que l'ESC soit cherché partout.
 const V02 = (impl: string) => {
-  const env = { FORCE_COLOR: '1', CLICOLOR_FORCE: '1', PYTHON_COLORS: '1' };
+  // NO_COLOR retiré (undefined : spawnSync l'omet), non vidé. Hérité du parent, il l'emporterait sur FORCE_COLOR sous Python 3.14 et viderait le cas de son sens.
+  // Vidé, il ferait écrire à Node 22 un avertissement sur stderr dès qu'un console.* tourne avec FORCE_COLOR, et rougir X-3 pour une raison du harnais.
+  const env = { FORCE_COLOR: '1', CLICOLOR_FORCE: '1', PYTHON_COLORS: '1', NO_COLOR: undefined };
   verify(run(impl, ['--bogus', '5'], env), 'erreur');
   verify(run(impl, ['--help'], env), { out: USAGE });
   verify(run(impl, ['10'], env), { out: term(10) });
