@@ -249,10 +249,11 @@ Chacun de ces cas attend une erreur (source C).
 | CLI-V01 | `--time 50`, avec `LANG`, `LC_ALL` et `LC_NUMERIC` à `fr_CA.UTF-8` | comme D01 : la durée garde un point décimal. Sous Windows, les variables de locale sont sans effet : V01 n'y éprouve que la locale de la session. |
 | CLI-V02 | `--bogus 5`, puis `--help`, puis `10`, avec `FORCE_COLOR=1`, `CLICOLOR_FORCE=1` et `PYTHON_COLORS=1`, sans `NO_COLOR` | les mêmes sorties que U01, H01 et T01, sans aucun octet ESC. L'exécution qui lit l'oracle vient en dernier, pour chercher l'ESC même sans oracle. `NO_COLOR` est retiré de l'environnement du fils, non vidé. Hérité du parent, il l'emporterait sur `FORCE_COLOR` sous Python 3.14 et viderait le cas de son sens. Vidé, il fait écrire à Node 22 `Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set` sur stderr dès qu'un `console.*` tourne (vérifié), et X-3 rougirait pour une raison du harnais. Les premiers CPython 3.13 (3.13.0 et 3.13.1) testent probablement la présence de `NO_COLOR`, non sa valeur, alors que 3.13.3 et Python 3.13.16 testent la valeur : seul le retrait vaut pour toutes les versions. `python -I -S`, commande de lancement du contrat, ignore `PYTHON_COLORS` (vérifié) : pour Python, seul `FORCE_COLOR` force la couleur. |
 | CLI-V03 | `--time 50`, avec `PYTHONIOENCODING=utf-16` | comme D01 : stdout et stderr restent en ASCII, sans BOM. Seul Python lit cette variable. Sous `python -I -S`, commande de lancement du contrat, la variable est ignorée : le cas reste joué, et `reconfigure(encoding="ascii")` garde la protection si Python est lancé autrement. |
+| CLI-V04 | `--bogus 5`, puis `--time 50`, puis `10`, avec le descripteur 2 fermé au lancement (`2>&-`) | stderr fermé : stdout et code inchangés, comme U01, D01 et T01. `--bogus 5` donne un stdout vide et le code 2; `--time 50` donne `12586269025\n` et le code 0; `10` donne `55\n` et le code 0. X-3 ne s'applique pas, puisque stderr n'existe pas : le cas exige à la place un stderr vide pour chaque exécution, ce qui prouve que le contrat a fermé le fd 2 pour la CLI elle-même. X-4 n'a pas d'assertion à part : l'égalité exacte de stdout, dont les attendus sont en ASCII, le couvre. Avant le correctif, Go, Rust et TypeScript tenaient le cas; Python sortait en code 1, stdout vide, sur toute entrée : CPython met alors `sys.stderr` à `None`, et `reconfigure` plante avant `main`. Sous POSIX, le contrat ferme le fd 2 par `/bin/sh -c 'exec "$0" "$@" 2>&-'`, qui passe les arguments tels quels, sans les réinterpréter. `spawnSync` n'offre rien de plus direct : `stdio: 'ignore'` ouvre `/dev/null`, ce qui n'est pas un fd fermé (vérifié). Un test à part, `CLI-V04 : le harnais ferme le fd 2`, joué une seule fois pour les quatre CLI, vérifie le harnais : une redirection vers le fd 2 doit échouer, sans quoi le cas passerait à vide. Sous Windows, ni Node ni le contrat ne savent lancer un processus sans stderr : le cas et ce test se sautent, avec leur raison écrite dans le test, et `PERF-PY-23` garde alors le correctif de Python (§ 6). |
 
 ## 6. Hors catalogue
 
-- **Tests de garde des optimisations** (ADR-0004) : `PERF-GO-<n>`, `PERF-RS-<n>`, `PERF-TS-<n>` et `PERF-PY-<n>`, propres à chaque langage et hors seams, numérotés à la suite dans chaque langage. Ils protègent ce que les cas BIB et CLI ne visent pas directement : la retenue de l'additionneur décimal, la dernière étape de `matrix` et de `fast`, l'écriture par tranches (Go, Rust, Python; TypeScript écrit en un seul appel), les seuils de Python (`Decimal` dès 170 000, `str()` au-delà de 200 000 bits), l'absence d'allocation ou d'import. Un test de garde peut aussi protéger un correctif que le contrat ne peut pas éprouver, comme `encoding="ascii"` de Python, que `-I` neutralise sous CLI-V03. Leur liste est dans les fichiers de test.
+- **Tests de garde des optimisations** (ADR-0004) : `PERF-GO-<n>`, `PERF-RS-<n>`, `PERF-TS-<n>` et `PERF-PY-<n>`, propres à chaque langage et hors seams, numérotés à la suite dans chaque langage. Ils protègent ce que les cas BIB et CLI ne visent pas directement : la retenue de l'additionneur décimal, la dernière étape de `matrix` et de `fast`, l'écriture par tranches (Go, Rust, Python; TypeScript écrit en un seul appel), les seuils de Python (`Decimal` dès 170 000, `str()` au-delà de 200 000 bits), l'absence d'allocation ou d'import. Un test de garde peut aussi protéger un correctif que le contrat ne peut pas éprouver, comme `encoding="ascii"` de Python, que `-I` neutralise sous CLI-V03 (`PERF-PY-20`), ou le puits donné à un flux standard absent, que CLI-V04 ne joue pas sous Windows (`PERF-PY-23`). Leur liste est dans les fichiers de test.
 - **Hors contrat, donc non testé** : un stdout fermé avant la fin (`fib --list 10000 | head`) et un argument qui n'est pas de l'Unicode valide.
 - **Lacune connue** : aucun cas CLI ne peut provoquer une discordance, donc le chemin du code 3 dans la CLI n'a pas de test automatique, et pas davantage la règle qui le restreint à une seule ligne `fib:` sans durée, même avec `--time`. BIB-08 vérifie que les algorithmes concordent; la revue de code vérifie ce chemin.
 - **Lacune connue** : le contrat vérifie le nom et le format des lignes de durée, mais ni que l'algorithme nommé s'exécute vraiment, ni que la durée est mesurée (`0.000 ms` passe). La revue de code couvre ce point.
@@ -263,15 +264,15 @@ Le § 7 fait foi : les titres du § 5 ne nomment que les exigences principales d
 
 | Exigence | Cas |
 |---|---|
-| F1 — terme | T01–T14, D01, D07, D08 |
+| F1 — terme | T01–T14, D01, D07, D08, V04 |
 | F2 — choix de l'algorithme | A01–A03, A06–A08, D03–D05 |
 | F3 — comparaison | A04, A05, D02; code 3 : voir § 6 |
 | F4 — liste | L01–L08, L16 |
 | F5 — exclusion `--list` / `--algo` | L10–L12 |
-| F6 — durées | D01–D08, X-3 sur chaque succès sans `--time`, V01 |
+| F6 — durées | D01–D08, X-3 sur chaque succès sans `--time`, V01, V04 |
 | F7 — aide | H01–H07, H11 |
 | F8 — bornes | T13, I12–I14, L06, L09, L15, L16 |
-| F9 — erreurs d'usage | I01–I17, A09–A20, L09–L15, D09–D11, H08–H10, U01–U06 |
+| F9 — erreurs d'usage | I01–I17, A09–A20, L09–L15, D09–D11, H08–H10, U01–U06, V04 |
 | F10 — format des sorties | X-4 sur chaque cas, A18, A20, U04, U05, V02, V03 |
 | Règle 1 — aide d'abord | H01–H11 |
 | Règle 2 — `--algo` | A06–A20, D04, D05, H10 |

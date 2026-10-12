@@ -75,7 +75,7 @@ usage: fib [--algo iterative|matrix|fast|all] [--time] N
 
 Codes de sortie : 0 succès, 2 erreur d'usage, 3 discordance. Tout autre code signale une défaillance hors contrat.
 
-**Hors contrat** (comportement non spécifié, non testé) : un stdout fermé avant la fin (`fib --list 10000 | head`) et un argument qui n'est pas de l'Unicode valide.
+**Hors contrat** (comportement non spécifié, non testé) : un stdout fermé avant la fin (`fib --list 10000 | head`) et un argument qui n'est pas de l'Unicode valide. En revanche, un stderr fermé au lancement (`2>&-`) est dans le contrat : il ne change ni stdout ni le code (cas CLI-V04).
 
 ## 5. Exigences par langage
 
@@ -106,7 +106,7 @@ Durée indicative du calcul itératif de F(100 000) sur la machine de développe
 ### Pièges vérifiés
 
 - **Tous les langages** : valider `N` comme `^[0-9]+$`, par expression régulière ou par une boucle sur les caractères, avant de le convertir. `int()` de Python accepte `+5`, `1_000`, ` 5 ` et des chiffres non ASCII; `Number` et `BigInt` acceptent `+5`, ` 5` et `0x10`, et valent 0 pour la chaîne vide; `parse::<u64>()` de Rust accepte `+5`, tout comme `strconv.Atoi` de Go (mais pas `ParseUint`). Vérifié le 2026-10-10. En Python, `s.isascii() and s.isdigit()` évite l'import de `re`, qui coûte 8 ms au démarrage. Avec une regex, il faut `re.fullmatch`, parce que le `$` de `^[0-9]+$` accepte un saut de ligne final (cas CLI-I16).
-- **Python** : sous Windows, stdout et stderr écrivent `\r\n`, et `PYTHONIOENCODING` change leur encodage (cas CLI-V03). Au point d'entrée, appeler `reconfigure(encoding="ascii", newline="\n")` sur stdout et sur stderr. `str()` d'un terme de plus de 4 300 chiffres lève `ValueError` : appeler `sys.set_int_max_str_digits(0)` au chargement du module. Au-delà d'environ 9 000 chiffres, `str()` importe `_pylong` (environ 10 ms) : écrire le terme par tranches, mais seulement jusqu'à 200 000 bits, au-delà desquels l'écriture par tranches, quadratique, perd. Dès l'indice 170 000, la CLI calcule `fast` ou `matrix` seul (pas `all`) en `decimal.Decimal`, dont `str()` est linéaire (ADR-0004).
+- **Python** : sous Windows, stdout et stderr écrivent `\r\n`, et `PYTHONIOENCODING` change leur encodage (cas CLI-V03). Au point d'entrée, appeler `reconfigure(encoding="ascii", newline="\n")` sur stdout et sur stderr. Un flux standard fermé au lancement (`2>&-`) vaut `None`, et `reconfigure` y lève `AttributeError` avant `main` : la CLI sort en code 1, stdout vide (cas CLI-V04). Lui donner un puits, `open(os.devnull, "w")`, avant `reconfigure`, avec `import os` dans cette seule branche, car il coûte 2,5 ms au démarrage sous `-S` (médiane de 200 lancements, 2026-10-12). `str()` d'un terme de plus de 4 300 chiffres lève `ValueError` : appeler `sys.set_int_max_str_digits(0)` au chargement du module. Au-delà d'environ 9 000 chiffres, `str()` importe `_pylong` (environ 10 ms) : écrire le terme par tranches, mais seulement jusqu'à 200 000 bits, au-delà desquels l'écriture par tranches, quadratique, perd. Dès l'indice 170 000, la CLI calcule `fast` ou `matrix` seul (pas `all`) en `decimal.Decimal`, dont `str()` est linéaire (ADR-0004).
 - **TypeScript** :
   - Le `package.json` racine doit déclarer `"type": "module"`, sans quoi tsc 7 refuse les imports ES.
   - N'utiliser que de la syntaxe effaçable (`erasableSyntaxOnly` : ni `enum` ni `namespace`) et des imports relatifs avec l'extension `.ts` (`allowImportingTsExtensions`).
@@ -183,7 +183,7 @@ FFT, GMP, Strassen, parallélisme, TUI, mode serveur, calibration et seuils rég
 
 ## 9. Démarche d'exploration des skills
 
-L'orchestrateur est la session principale (Opus 5.5 en `ultracode`); le code revient au sous-agent `fib-dev` (Sonnet 5.5). Voir `CLAUDE.md`. Les étapes 0, 1 et 4 à 8 sont faites : les quatre implémentations passent `npm run check`. L'étape 8 a pris la forme d'un audit, puis de quatre chantiers suivis chacun de `/code-review` : la refactorisation, l'optimisation des performances (ADR-0004) et la borne d'un terme à 1 000 000 (2026-10-11), puis les suites de l'épreuve des cas de test (tickets #6 à #14, 2026-10-12). Les étapes 2 et 3 n'ont pas servi. Les étapes 9 à 11 restent à faire. Le bilan par skill, dont `/implement` remplacée par `fib-dev`, est dans `docs/exploration.md`.
+L'orchestrateur est la session principale (Opus 5.5 en `ultracode`); le code revient au sous-agent `fib-dev` (Sonnet 5.5). Voir `CLAUDE.md`. Les étapes 0, 1 et 4 à 9 sont faites : les quatre implémentations passent `npm run check`. L'étape 8 a pris la forme d'un audit, puis de quatre chantiers suivis chacun de `/code-review` : la refactorisation, l'optimisation des performances (ADR-0004) et la borne d'un terme à 1 000 000 (2026-10-11), puis les suites de l'épreuve des cas de test (tickets #6 à #14, 2026-10-12). L'étape 9 a corrigé l'écart du stderr fermé en Python (#16, 2026-10-12). Les étapes 2 et 3 n'ont pas servi. Les étapes 10 et 11 restent à faire. Le bilan par skill, dont `/implement` remplacée par `fib-dev`, est dans `docs/exploration.md`.
 
 | # | Étape | Skill | Livrable |
 |---|---|---|---|
