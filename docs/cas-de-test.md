@@ -19,13 +19,15 @@ Ce catalogue est la source unique des cas qui valident les quatre implémentatio
 | Code | Source | Exemples |
 |---|---|---|
 | **O** | l'oracle : la table F(0) à F(2000) au format du b-file OEIS A000045, générée par la formule de Binet et vérifiée par la définition (ORA) | tout terme d'indice ≤ 2000 |
-| **M** | un fait mathématique indépendant des algorithmes | nombre de chiffres, périodes de Pisano, identité de Cassini, récurrence vérifiée sur une sortie |
+| **M** | un fait mathématique indépendant des algorithmes | nombre de chiffres, périodes de Pisano, F(k) divise F(mk), identité de Cassini, récurrence vérifiée sur une sortie |
 | **C** | le texte du contrat | texte d'usage, préfixe `fib: `, codes de sortie, format des durées |
 
 Faits mathématiques utilisés :
 
 - Pour n ≥ 2, F(n) compte ⌊n·log₁₀ φ − log₁₀ √5⌋ + 1 chiffres. La formule donne 0 pour n = 0 et pour n = 1, et elle est exacte de 2 à 2 000 face à l'oracle. Elle donne 418 pour n = 2 000, 2 090 pour n = 10 000, 20 899 pour n = 100 000, 208 988 pour n = 1 000 000.
 - Les périodes de Pisano valent π(2¹¹) = 3 072 et π(10³) = 1 500. Donc F(100 000) ≡ F(1696) (mod 2048) et F(100 000) ≡ F(1000) (mod 1000), puisque 100 000 mod 3 072 = 1 696 et 100 000 mod 1 500 = 1 000. De même F(1 000 000) ≡ F(1600) (mod 2048) et F(1 000 000) ≡ F(1000) (mod 1000), puisque 1 000 000 mod 3 072 = 1 600 et 1 000 000 mod 1 500 = 1 000.
+- F(k) divise F(mk) pour tous k, m ≥ 1. De l'identité d'addition F(a+b) = F(a)·F(b+1) + F(a−1)·F(b), on tire F((j+1)k) = F(k)·F(jk+1) + F(k−1)·F(jk) : si F(k) divise F(jk), il divise F((j+1)k), et F(k) divise F(k). Comme 2 000 divise 100 000 et 1 000 000, F(2000), lu dans l'oracle, divise F(100 000) et F(1 000 000). Aucune constante de plus : même démarche que les périodes de Pisano.
+  - Ce que le fait détecte : F(2000) est impair et 5³ est la plus grande puissance de 5 qui le divise (vérifié sur l'oracle), donc F(2000) = 5³·q, où q est premier avec 10 et compte 416 chiffres. Altérer un bloc de moins de 416 chiffres ajoute au terme D·10ᵏ avec 0 < |D| < 10⁴¹⁵ ≤ q, qui n'est jamais multiple de q : la sortie cesse d'être divisible par F(2000). La longueur, le premier chiffre et les restes mod 2048 et mod 1000 ne voient pas un chiffre de poids 10¹¹ ou plus, hors le premier. Un bloc de 416 chiffres ou plus peut échapper à la divisibilité.
 - Identité de Cassini : F(n−1)·F(n+1) − F(n)² = (−1)ⁿ.
 - La récurrence F(n) = F(n−1) + F(n−2) sert à vérifier une sortie produite, jamais à produire un attendu.
 
@@ -117,8 +119,8 @@ Les arguments sont passés tels quels au processus, sans shell : `""` désigne u
 | CLI-T09 | `2000` | F(2000) de l'oracle, puis `\n` | O |
 | CLI-T10 | `007` | `13\n` | O |
 | CLI-T11 | `00000000000000000000000000010` | `55\n` | O |
-| CLI-T12 | `100000` | 20 899 chiffres, le premier non nul, puis `\n`; terme ≡ F(1696) (mod 2048) et ≡ F(1000) (mod 1000) | O, M |
-| CLI-T13 | `1000000` | 208 988 chiffres, le premier non nul, puis `\n`; terme ≡ F(1600) (mod 2048) et ≡ F(1000) (mod 1000). La borne d'un terme, atteinte. | O, M |
+| CLI-T12 | `100000` | 20 899 chiffres, le premier non nul, puis `\n`; terme ≡ F(1696) (mod 2048) et ≡ F(1000) (mod 1000); terme divisible par F(2000) | O, M |
+| CLI-T13 | `1000000` | 208 988 chiffres, le premier non nul, puis `\n`; terme ≡ F(1600) (mod 2048) et ≡ F(1000) (mod 1000); terme divisible par F(2000). La borne d'un terme, atteinte. | O, M |
 | CLI-T14 | `0` répété 5 000 fois, puis `5`, dans le même argument | `5\n`. L'indice compte 5 001 chiffres, au-delà de la limite de conversion de Python (4 300) : la CLI doit l'accepter. | O |
 
 ### 5.2 Indice invalide — I (F8, F9, règles 4 et 5)

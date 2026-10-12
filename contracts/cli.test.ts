@@ -77,6 +77,18 @@ function verify(r: ReturnType<typeof run>, want: Want): void {
   want.check?.(r.out);
 }
 
+// Partagé par CLI-T12 et CLI-T13 : F(k) divise F(mk), donc F(2000) divise F(100 000) et F(1 000 000) (catalogue § 2).
+// F(2000) vient de l'oracle. Reste lu par tranches de 18 chiffres, sans la conversion quadratique décimal → BigInt.
+const checkDivisibleByF2000 = (out: string) => {
+  const f = BigInt(terms()[2000]);
+  const digits = out.slice(0, -1);
+  const padded = digits.padStart(Math.ceil(digits.length / 18) * 18, '0');
+  const tranche = 10n ** 18n;
+  let r = 0n;
+  for (let i = 0; i < padded.length; i += 18) r = (r * tranche + BigInt(padded.slice(i, i + 18))) % f;
+  assert.ok(r === 0n, 'la sortie n’est pas divisible par F(2000)');
+};
+
 const T: Case[] = [
   ['CLI-T01', '10 écrit F(10)', ['10'], { out: term(10) }],
   ['CLI-T02', '0 écrit F(0)', ['0'], { out: term(0) }],
@@ -89,16 +101,17 @@ const T: Case[] = [
   ['CLI-T09', '2000 écrit F(2000)', ['2000'], { out: term(2000) }],
   ['CLI-T10', 'des zéros de tête sont permis : 007 vaut 7', ['007'], { out: term(7) }],
   ['CLI-T11', 'de nombreux zéros de tête : …010 vaut 10', ['00000000000000000000000000010'], { out: term(10) }],
-  ['CLI-T12', '100000 écrit un terme de 20 899 chiffres, congru à F(1696) mod 2048 et à F(1000) mod 1000', ['100000'], {
+  ['CLI-T12', '100000 écrit un terme de 20 899 chiffres, congru à F(1696) mod 2048 et à F(1000) mod 1000, divisible par F(2000)', ['100000'], {
     check: (out) => {
       assert.match(out, /^[1-9][0-9]*\n$/);
       assert.equal(out.length - 1, 20899);
       const t = BigInt(out);
       assert.equal(t % 2048n, BigInt(terms()[1696]) % 2048n);
       assert.equal(t % 1000n, BigInt(terms()[1000]) % 1000n);
+      checkDivisibleByF2000(out);
     },
   }],
-  ['CLI-T13', '1000000 écrit un terme de 208 988 chiffres, congru à F(1600) mod 2048 et à F(1000) mod 1000', ['1000000'], {
+  ['CLI-T13', '1000000 écrit un terme de 208 988 chiffres, congru à F(1600) mod 2048 et à F(1000) mod 1000, divisible par F(2000)', ['1000000'], {
     check: (out) => {
       assert.match(out, /^[1-9][0-9]*\n$/);
       assert.equal(out.length - 1, 208988);
@@ -106,6 +119,7 @@ const T: Case[] = [
       const mod = (m: number) => [...out.slice(0, -1)].reduce((r, c) => (r * 10 + Number(c)) % m, 0);
       assert.equal(mod(2048), Number(BigInt(terms()[1600]) % 2048n));
       assert.equal(mod(1000), Number(BigInt(terms()[1000]) % 1000n));
+      checkDivisibleByF2000(out);
     },
   }],
   ['CLI-T14', '5 000 zéros de tête, puis 5, valent 5', ['0'.repeat(5000) + '5'], { out: term(5) }],
