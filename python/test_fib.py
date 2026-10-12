@@ -1,6 +1,7 @@
 """Seam 1 : la bibliothèque. Les attendus viennent de l'oracle (contracts/b000045.txt) ou de faits mathématiques.
 Les gardes PERF-PY-n, hors seams (ADR-0004), protègent les optimisations que les cas BIB et CLI ne visent pas
-(PERF-PY-20 protège le correctif F10). Chaque test porte son identifiant en tête de sa docstring : grep BIB-05 python/."""
+(PERF-PY-20 et 23 protègent les correctifs F10 et CLI-V04). Chaque test porte son identifiant en tête de sa docstring :
+grep BIB-05 python/."""
 import decimal
 import math
 import os
@@ -16,6 +17,7 @@ from fib import DECIMAL_FROM, STR_FROM_BITS, _fib_decimal, _text, compute, fib, 
 ALGOS = ("iterative", "matrix", "fast")
 HERE = Path(__file__).resolve().parent
 ORACLE = HERE.parent / "contracts" / "b000045.txt"
+FIB = HERE / "fib.py"
 # True : bool hérite d'int, donc le type de l'indice l'admet, et `isinstance(n, int)` le laisserait passer.
 REFUSED = ((-1, ValueError), (1.5, TypeError), (float("nan"), TypeError), (0.0, TypeError), (True, TypeError))
 # Les chemins qui calculent en Decimal, chacun appelé avec un indice de 50.
@@ -82,6 +84,32 @@ class WriteCounter:
 
     def flush(self):
         pass
+
+
+def run_main_block(args, absent=()):
+    """Exécute le bloc __main__ de fib.py dans python -I -S -c, après avoir mis à None les flux de `absent` : l'état où
+    CPython laisse sys.stdout ou sys.stderr quand le fd 1 ou 2 est fermé au lancement ou, sous Windows, quand son
+    handle est invalide. Pas de runpy : il importe os lui-même. Une exception du bloc s'écrit sur le vrai stderr."""
+    code = "".join(
+        [
+            "import sys\n",
+            *(f"sys.{name} = None\n" for name in absent),
+            f"path = {str(FIB)!r}\n",
+            "try:\n",
+            "    exec(compile(open(path, 'rb').read(), path, 'exec'), {'__name__': '__main__', '__file__': path})\n",
+            "except Exception:\n",
+            "    import traceback; traceback.print_exc(file=sys.__stderr__); sys.exit(1)\n",
+        ]
+    )
+    return subprocess.run([sys.executable, "-I", "-S", "-c", code, *args], capture_output=True)
+
+
+def importtime_modules(*argv):
+    """Lance python -I -S -X importtime avec argv; rend le processus et les modules de son rapport (dernière colonne,
+    sur stderr)."""
+    run = subprocess.run([sys.executable, "-I", "-S", "-X", "importtime", *argv], capture_output=True)
+    rows = (line for line in run.stderr.splitlines() if line.startswith(b"import time:"))
+    return run, {row.rpartition(b"|")[2].strip().decode("ascii") for row in rows}
 
 
 class TestFib(unittest.TestCase):
@@ -352,6 +380,33 @@ class TestFib(unittest.TestCase):
         terms = [int(line) for line in lines[:-1]]
         self.assertEqual(len(terms), 10001)
         self.assertEqual([i for i in range(2, len(terms)) if terms[i] != terms[i - 1] + terms[i - 2]], [])
+
+    def test_PERF_PY_23_un_flux_standard_absent_au_lancement_ne_change_pas_le_code(self):
+        """PERF-PY-23 : hors catalogue, garde du correctif de CLI-V04 (un flux à None reçoit un puits avant reconfigure),
+        et non d'une optimisation; le contrat saute CLI-V04 sous Windows, où CPython met aussi un flux à None quand son
+        handle est invalide (catalogue § 6). Sans le puits, reconfigure lève AttributeError avant main : code 1.
+        stderr absent : stdout et le code sont ceux de F1 et de F9. stdout absent (hors contrat, effet de bord du
+        correctif) : le code reste 2, avec une seule ligne fib: sur stderr."""
+        for args, out, code in ((["10"], b"55\n", 0), (["--bogus", "5"], b"", 2)):
+            with self.subTest(absent="stderr", args=args):
+                run = run_main_block(args, ["stderr"])
+                self.assertEqual((run.stdout, run.returncode), (out, code), run.stderr)
+        with self.subTest(absent="stdout", args=["--bogus", "5"]):
+            run = run_main_block(["--bogus", "5"], ["stdout"])
+            self.assertEqual(run.returncode, 2, run.stderr)
+            self.assertRegex(run.stderr, rb"\Afib: [^\n]*\n\Z")
+
+    def test_PERF_PY_24_le_lancement_normal_de_la_cli_n_importe_pas_os(self):
+        """PERF-PY-24 : hors catalogue, garde de l'optimisation de l'import os paresseux du bloc __main__ (2,5 ms de
+        démarrage sous -S, PRD § 5) : seul un flux absent le paie. PERF-PY-8 et 17 passent par fib.main via -c et ne
+        voient jamais ce bloc. Lancement du contrat, python -I -S fib.py 10, avec les flux ouverts; dépend de CPython,
+        qui n'importe pas os au démarrage sous -I -S (vérifié en 3.13). Témoin : le même rapport sur `import os` nomme os,
+        sinon un autre format de -X importtime rendrait la garde aveugle."""
+        _, witness = importtime_modules("-c", "import os")
+        self.assertIn("os", witness)
+        run, names = importtime_modules(str(FIB), "10")
+        self.assertEqual(run.stdout, b"55\n")
+        self.assertNotIn("os", names)
 
 
 if __name__ == "__main__":
