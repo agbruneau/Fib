@@ -108,6 +108,7 @@ const T: Case[] = [
       assert.equal(mod(1000), Number(BigInt(terms()[1000]) % 1000n));
     },
   }],
+  ['CLI-T14', '5 000 zéros de tête, puis 5, valent 5', ['0'.repeat(5000) + '5'], { out: term(5) }],
 ];
 
 const I: Case[] = [
@@ -127,6 +128,7 @@ const I: Case[] = [
   ['CLI-I14', 'un indice trop grand pour un entier natif est une erreur, pas une panique', ['99999999999999999999'], 'erreur'],
   ['CLI-I15', 'deux indices sont refusés', ['5', '6'], 'erreur'],
   ['CLI-I16', 'un saut de ligne après l’indice est refusé', ['5\n'], 'erreur'],
+  ['CLI-I17', 'une espace entre deux nombres, dans un seul argument, est refusée', ['5 6'], 'erreur'],
 ];
 
 const A: Case[] = [
@@ -148,7 +150,24 @@ const A: Case[] = [
   ['CLI-A16', 'chaque occurrence de --algo doit être valide, même si une valide suit', ['--algo', 'bogus', '--algo', 'fast', '5'], 'erreur'],
   ['CLI-A17', '--algo avec une valeur vide (forme séparée) est refusé', ['--algo', '', '5'], 'erreur'],
   ['CLI-A18', 'un saut de ligne dans la valeur citée ne produit pas deux lignes sur stderr', ['--algo', 'x\ny', '5'], 'erreur'],
+  ['CLI-A19', 'la casse compte à chaque occurrence de --algo, même si une valide suit', ['--algo', 'FAST', '--algo', 'fast', '5'], 'erreur'],
+  ['CLI-A20', 'une valeur non ASCII de --algo est citée en ASCII', ['--algo', 'fäst', '5'], 'erreur'],
 ];
+
+// Partagé par CLI-L06 et CLI-L16 : la liste de 10 001 termes, quelle que soit l'écriture de l'indice.
+const checkList10000 = (out: string) => {
+  assert.ok(out.endsWith('\n'), 'la dernière ligne se termine par \\n');
+  const rows = out.split('\n');
+  rows.pop();
+  assert.equal(rows.length, 10001);
+  assert.deepEqual(rows.slice(0, 2001), terms());
+  for (let i = 2; i < rows.length; i++) {
+    // BigInt() accepte `007`, ` 12`, `12 `, `+5` et `0x10` : la forme décimale se vérifie avant la somme.
+    assert.match(rows[i], /^(0|[1-9][0-9]*)$/, `ligne ${i}`);
+    assert.equal(BigInt(rows[i]), BigInt(rows[i - 1]) + BigInt(rows[i - 2]), `ligne ${i}`);
+  }
+  assert.equal(rows[10000].length, 2090);
+};
 
 const L: Case[] = [
   ['CLI-L01', '--list 0 écrit seulement F(0)', ['--list', '0'], { out: list(0) }],
@@ -156,17 +175,7 @@ const L: Case[] = [
   ['CLI-L03', '--list 2 écrit trois lignes', ['--list', '2'], { out: list(2) }],
   ['CLI-L04', '--list 20 écrit les 21 premiers termes', ['--list', '20'], { out: list(20) }],
   ['CLI-L05', '--list 2000 écrit les 2 001 termes de l’oracle', ['--list', '2000'], { out: list(2000) }],
-  ['CLI-L06', '--list 10000 écrit 10 001 lignes cohérentes avec l’oracle et la récurrence', ['--list', '10000'], {
-    check: (out) => {
-      assert.ok(out.endsWith('\n'), 'la dernière ligne se termine par \\n');
-      const rows = out.split('\n');
-      rows.pop();
-      assert.equal(rows.length, 10001);
-      assert.deepEqual(rows.slice(0, 2001), terms());
-      for (let i = 2; i < rows.length; i++) assert.equal(BigInt(rows[i]), BigInt(rows[i - 1]) + BigInt(rows[i - 2]), `ligne ${i}`);
-      assert.equal(rows[10000].length, 2090);
-    },
-  }],
+  ['CLI-L06', '--list 10000 écrit 10 001 lignes cohérentes avec l’oracle et la récurrence', ['--list', '10000'], { check: checkList10000 }],
   ['CLI-L07', 'le drapeau peut suivre l’indice', ['5', '--list'], { out: list(5) }],
   ['CLI-L08', 'répéter --list ne change rien', ['--list', '--list', '3'], { out: list(3) }],
   ['CLI-L09', '10001 dépasse la borne d’une liste', ['--list', '10001'], 'erreur'],
@@ -175,6 +184,8 @@ const L: Case[] = [
   ['CLI-L12', '--list et --algo all s’excluent', ['--list', '--algo', 'all', '5'], 'erreur'],
   ['CLI-L13', '--list sans indice est refusé', ['--list'], 'erreur'],
   ['CLI-L14', '--list=5 est refusé : un drapeau ne prend pas de valeur', ['--list=5'], 'erreur'],
+  ['CLI-L15', 'la borne d’une liste s’applique malgré les zéros de tête', ['--list', '00010001'], 'erreur'],
+  ['CLI-L16', 'des zéros de tête sont permis pour une liste : 010000 vaut 10000', ['--list', '010000'], { check: checkList10000 }],
 ];
 
 const D: Case[] = [
@@ -182,7 +193,7 @@ const D: Case[] = [
   ['CLI-D02', '--time avec --algo all chronomètre fast, iterative puis matrix', ['--time', '--algo', 'all', '50'], { out: term(50), times: ['fast', 'iterative', 'matrix'] }],
   ['CLI-D03', '--time avec --algo matrix chronomètre matrix', ['--time', '--algo', 'matrix', '50'], { out: term(50), times: ['matrix'] }],
   ['CLI-D04', 'la dernière occurrence de --algo gagne', ['--time', '--algo', 'fast', '--algo', 'matrix', '50'], { out: term(50), times: ['matrix'] }],
-  ['CLI-D05', 'une occurrence de --algo gagne aussi sur all', ['--algo', 'all', '--algo', 'iterative', '--time', '50'], { out: term(50), times: ['iterative'] }],
+  ['CLI-D05', 'la dernière occurrence de --algo gagne aussi sur all', ['--algo', 'all', '--algo', 'iterative', '--time', '50'], { out: term(50), times: ['iterative'] }],
   ['CLI-D06', '--time avec --list chronomètre iterative', ['--time', '--list', '5'], { out: list(5), times: ['iterative'] }],
   ['CLI-D07', '--time peut suivre l’indice', ['50', '--time'], { out: term(50), times: ['fast'] }],
   ['CLI-D08', 'répéter --time ne donne qu’une ligne', ['--time', '--time', '50'], { out: term(50), times: ['fast'] }],
@@ -200,7 +211,7 @@ const H: Case[] = [
   ['CLI-H06', 'l’aide l’emporte sur une borne dépassée', ['--list', '10001', '--help'], { out: USAGE }],
   ['CLI-H07', 'répéter --help écrit l’usage une fois', ['--help', '--help'], { out: USAGE }],
   ['CLI-H08', '-help est une option inconnue', ['-help'], 'erreur'],
-  ['CLI-H09', '--HELP est sensible à la casse', ['--HELP'], 'erreur'],
+  ['CLI-H09', '--HELP est refusé : le nom de l’option est sensible à la casse', ['--HELP'], 'erreur'],
   ['CLI-H10', '--algo=--help n’est pas l’aide', ['--algo=--help', '5'], 'erreur'],
   ['CLI-H11', 'l’aide l’emporte sur un indice invalide', ['abc', '--help'], { out: USAGE }],
 ];
@@ -210,6 +221,8 @@ const U: Case[] = [
   ['CLI-U02', 'un tiret seul est une option inconnue', ['-', '5'], 'erreur'],
   ['CLI-U03', 'un double tiret est une option inconnue, pas une fin des options', ['--', '5'], 'erreur'],
   ['CLI-U04', 'une option non ASCII est citée en ASCII', ['--bogüs', '5'], 'erreur'],
+  ['CLI-U05', 'chaque caractère non ASCII d’une option est cité en ASCII', ['--bögüs', '5'], 'erreur'],
+  ['CLI-U06', 'deux fautes ne produisent qu’une seule ligne fib:', ['--bogus', 'abc'], 'erreur'],
 ];
 
 const V: Case[] = [
@@ -220,7 +233,8 @@ const V: Case[] = [
 
 // CLI-V02 joue trois exécutions (U01, H01 puis T01) : l'oracle ne sert qu'à la dernière, pour que l'ESC soit cherché partout.
 const V02 = (impl: string) => {
-  const env = { FORCE_COLOR: '1', CLICOLOR_FORCE: '1', PYTHON_COLORS: '1' };
+  // NO_COLOR vide : sous Python 3.14, un NO_COLOR hérité l'emporte sur FORCE_COLOR et viderait le cas de son sens.
+  const env = { FORCE_COLOR: '1', CLICOLOR_FORCE: '1', PYTHON_COLORS: '1', NO_COLOR: '' };
   verify(run(impl, ['--bogus', '5'], env), 'erreur');
   verify(run(impl, ['--help'], env), { out: USAGE });
   verify(run(impl, ['10'], env), { out: term(10) });
