@@ -396,17 +396,22 @@ class TestFib(unittest.TestCase):
             self.assertEqual(run.returncode, 2, run.stderr)
             self.assertRegex(run.stderr, rb"\Afib: [^\n]*\n\Z")
 
-    def test_PERF_PY_24_le_lancement_normal_de_la_cli_n_importe_pas_os(self):
+    def test_PERF_PY_24_le_lancement_normal_de_la_cli_n_ajoute_pas_os_au_demarrage_nu(self):
         """PERF-PY-24 : hors catalogue, garde de l'optimisation de l'import os paresseux du bloc __main__ (2,5 ms de
         démarrage sous -S, PRD § 5) : seul un flux absent le paie. PERF-PY-8 et 17 passent par fib.main via -c et ne
-        voient jamais ce bloc. Lancement du contrat, python -I -S fib.py 10, avec les flux ouverts; dépend de CPython,
-        qui n'importe pas os au démarrage sous -I -S (vérifié en 3.13). Témoin : le même rapport sur `import os` nomme os,
-        sinon un autre format de -X importtime rendrait la garde aveugle."""
+        voient jamais ce bloc. Lancement du contrat, python -I -S fib.py 10, avec les flux ouverts : os ne doit pas
+        figurer parmi les modules que la CLI ajoute à ceux du démarrage nu, python -I -S -c pass. Si une plateforme
+        charge os dès ce démarrage (non vérifié hors de Linux, CPython 3.13), l'import paresseux n'y coûte rien et le
+        test est sauté, non rouge. Témoin : le même rapport sur `import os` nomme os, sinon un autre format de
+        -X importtime rendrait la garde aveugle."""
         _, witness = importtime_modules("-c", "import os")
         self.assertIn("os", witness)
+        _, bare = importtime_modules("-c", "pass")
+        if "os" in bare:
+            self.skipTest("os est chargé au démarrage nu sous -I -S : l'import paresseux n'y coûte rien")
         run, names = importtime_modules(str(FIB), "10")
         self.assertEqual(run.stdout, b"55\n")
-        self.assertNotIn("os", names)
+        self.assertNotIn("os", names - bare)
 
 
 if __name__ == "__main__":
