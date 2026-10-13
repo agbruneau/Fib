@@ -3,11 +3,12 @@
 import { before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import cp, { spawnSync } from 'node:child_process';
+import fs, { existsSync, lstatSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { abRound, measure, pair, paired, parseArgs } from './bench.ts';
+import { abPairs, abRound, main, measure, pair, paired, parseArgs, rounds } from './bench.ts';
 import { build, closeStderr, command, IDS, launch, present, type LaunchOptions } from './lancement.ts';
 import { CHECKS, lines, terms } from './oracle.ts';
 
@@ -268,12 +269,15 @@ describe('harnais', () => {
   // HAR-1 à HAR-3 et HAR-5 remplacent spawnSync par un espion qui note l'appel et rend une exécution factice : rien n'est lancé ni
   // construit, et ils valent sous Windows.
   type Call = { file: string; args: readonly string[]; options: { cwd?: string; env?: NodeJS.ProcessEnv } };
-  const spy = (f: () => unknown): Call[] => {
+  // `reply` change la réponse factice d'un appel (un code non nul, une sortie précise); par défaut, une exécution réussie.
+  type Reply = { stdout: string; stderr: string; status: number | null };
+  const spy = (f: () => unknown, reply?: (call: Call) => Partial<Reply>): Call[] => {
     const real = cp.spawnSync;
     const calls: Call[] = [];
     const fake = (file: string, args: readonly string[], options: Call['options']) => {
-      calls.push({ file, args, options });
-      return { pid: 0, output: [], stdout: '55\n', stderr: 'fast 0.010 ms\n', status: 0, signal: null };
+      const call = { file, args, options };
+      calls.push(call);
+      return { pid: 0, output: [], stdout: '55\n', stderr: 'fast 0.010 ms\n', status: 0, signal: null, ...reply?.(call) };
     };
     Object.assign(cp, { spawnSync: fake });
     syncBuiltinESMExports();
@@ -346,7 +350,7 @@ describe('harnais', () => {
   // HAR-5 : l'A/B apparié du banc (`--contre REF`). L'ordre s'alterne (A puis B aux tours pairs, B puis A aux impairs) et la paire
   // se rend toujours [A, B]. Le résumé est la médiane des différences B − A, non la différence des médianes : la dérive de la machine
   // entre deux tours touche A et B ensemble, et la différence des médianes la rejoue. A part de la racine de la révision, B de ce
-  // dépôt : sinon l'A/B comparerait l'arbre de travail à lui-même, sans écart. L'espion ne lance rien et la racine n'est jamais créée.
+  // dépôt : sinon l'A/B comparerait l'arbre de travail à lui-même, sans écart. L'espion ne lance rien; seuls le nettoyage et l'A/B entier (`main`) écrivent sur le disque, chacun dans un dossier provisoire.
   test('HAR-5 : l’A/B apparié alterne l’ordre, rend la médiane des différences B − A, et lance A depuis la révision, B depuis le dépôt', () => {
     const ordre: string[] = [];
     for (let i = 0; i < 4; i++) pair(i, () => ordre.push(`A${i}`), () => ordre.push(`B${i}`));
@@ -357,6 +361,9 @@ describe('harnais', () => {
     assert.deepEqual(paired([[10, 9.5], [50, 49.5], [12, 11.5], [48, 47.5], [30, 31]]), { a: 30, b: 31, d: -0.5, faster: 4 });
     // Une égalité n'est pas un gain : « B < A » est strict.
     assert.equal(paired([[5, 5], [7, 6]]).faster, 1, 'une paire à égalité compte comme un gain de B');
+    // Un nombre pair de paires : toute médiane du banc (A, B et B − A) est la moyenne des deux éléments centraux, non l'élément haut
+    // ni l'élément bas. A : 10 20 30 40, B : 12 26 38 52, B − A : 2 6 8 12.
+    assert.deepEqual(paired([[10, 12], [20, 26], [30, 38], [40, 52]]), { a: 25, b: 32, d: 7, faster: 0 }, 'la médiane d’un nombre pair n’est pas la moyenne des deux éléments centraux');
 
     const depot = fileURLToPath(new URL('..', import.meta.url));
     const revision = join(tmpdir(), 'fib-har5-revision');
@@ -382,10 +389,209 @@ describe('harnais', () => {
     const [premier, second] = spy(() => abRound(1, 'go', ['10'], revision));
     assert.deepEqual([premier.options.cwd, second.options.cwd], [depot, revision], 'abRound n’alterne pas l’ordre des lancements');
 
+    // Une mesure qui échoue dit de quel côté : le code non nul d'une CLI ne dit pas, seul, si la révision ou l'arbre de travail est en cause.
+    // Aux deux parités du tour, puisque l'ordre des lancements s'inverse.
+    for (const [cwd, cote] of [[revision, /^côté A \(la révision REF, /], [depot, /^côté B \(l’arbre de travail\) : /]] as const) {
+      for (const tour of [0, 1]) {
+        assert.throws(
+          () => spy(() => abRound(tour, 'go', ['10'], revision), (c) => (c.options.cwd === cwd ? { status: 1, stderr: 'boum' } : {})),
+          (e: Error) => cote.test(e.message) && e.message.endsWith('go 10 : code 1, boum'),
+          `tour ${tour} : l’échec d’un lancement depuis ${cwd} ne nomme pas son côté`,
+        );
+      }
+    }
+
+    // La politique de mesure que le banc et l'A/B partagent (`rounds`) : le tour 0 chauffe les caches et s'écarte, les tours suivants se
+    // gardent, et les scénarios s'entrelacent dans chaque tour pour que la dérive de la machine les touche tous.
+    const vus: [i: number, args: string[]][] = [];
+    const gardes = rounds(2, (i, args) => (vus.push([i, args]), i));
+    const S = gardes.length;
+    assert.ok(S > 1, 'rounds ne rend pas un échantillon par scénario');
+    assert.deepEqual(gardes, Array.from({ length: S }, () => [1, 2]), 'le tour 0 est gardé, ou un tour manque');
+    assert.equal(vus.length, 3 * S, 'rounds ne joue pas 1 tour de chauffe et 2 tours gardés pour chaque scénario');
+    assert.equal(new Set(vus.slice(0, S).map(([, args]) => args.join(' '))).size, S, 'deux scénarios ont les mêmes arguments');
+    vus.forEach(([i, args], k) => {
+      assert.equal(i, Math.floor(k / S), `rendez-vous ${k} : les scénarios ne s’entrelacent pas par tour`);
+      assert.deepEqual(args, vus[k % S][1], `rendez-vous ${k} : les scénarios ne se suivent pas dans le même ordre à chaque tour`);
+    });
+
+    // L'A/B joue cette politique par abRound : chaque rendez-vous passe l'indice du tour et la racine de la révision. 3 tours (0, 1 et 2),
+    // donc les deux parités; deux paires gardées par scénario. Un tour pair lance A (la révision) d'abord, un tour impair B d'abord.
+    for (const id of IDS) {
+      let paires: [number, number][][] = [];
+      const lancements = spy(() => void (paires = abPairs(id, 2, revision)));
+      assert.deepEqual(paires.map((p) => p.length), Array.from({ length: S }, () => 2), `${id} : l’A/B ne garde pas les paires des tours 1 et 2 seuls`);
+      assert.equal(lancements.length, 2 * 3 * S, `${id} : l’A/B ne joue pas 3 tours de ${S} scénarios, deux lancements chacun`);
+      for (let r = 0; r < 3; r++) {
+        for (let s = 0; s < S; s++) {
+          const [premier, second] = lancements.slice(2 * (r * S + s), 2 * (r * S + s) + 2);
+          const [a, b] = r % 2 === 0 ? [premier, second] : [second, premier];
+          const ou = `${id}, tour ${r}, scénario ${s}`;
+          assert.deepEqual([a.file, ...a.args], [...command(id, revision), '--time', ...vus[s][1]], `${ou} : A ne lance pas la commande de la révision`);
+          assert.equal(a.options.cwd, revision, `${ou} : A ne part pas de la racine de la révision`);
+          assert.deepEqual([b.file, ...b.args], [...command(id), '--time', ...vus[s][1]], `${ou} : B ne lance pas la commande du dépôt`);
+          assert.equal(b.options.cwd, depot, `${ou} : B ne part pas de la racine du dépôt`);
+        }
+      }
+    }
+
     // --contre REF : la révision se lit après l'option, et une valeur absente ou qui ressemble à une option est une erreur d'usage.
     assert.deepEqual(parseArgs(['py', '--contre', 'HEAD', '--runs', '3']), { runs: 3, ids: ['py'], ref: 'HEAD' });
     for (const mauvais of [[], [''], ['-x'], ['--runs', '3']]) {
       assert.throws(() => parseArgs(['py', '--contre', ...mauvais]), /--contre demande une révision/, `--contre ${JSON.stringify(mauvais)} accepté`);
+    }
+
+    // Le défaut de --runs : 11 pour le banc, 101 sous --contre (au moins 101 paires pour un écart de quelques pour cent, ADR-0004),
+    // quel que soit l'ordre des options; un --runs explicite l'emporte, avant ou après --contre.
+    assert.equal(parseArgs(['py']).runs, 11, 'le défaut du banc a changé');
+    assert.equal(parseArgs(['py', '--contre', 'HEAD']).runs, 101, 'l’A/B n’a pas son défaut de 101 paires');
+    assert.equal(parseArgs(['--contre', 'HEAD', 'py']).runs, 101, 'le défaut de l’A/B dépend de l’ordre des options');
+    assert.equal(parseArgs(['py', '--runs', '5', '--contre', 'HEAD']).runs, 5, 'un --runs avant --contre est écrasé');
+    assert.equal(parseArgs(['py', '--contre', 'HEAD', '--runs', '5']).runs, 5, 'un --runs après --contre est écrasé');
+
+    // Un argument qui n'est ni un identifiant du PRD § 5 ni une option est une erreur d'usage, sans build : sinon `build()` lève une
+    // pile pour un identifiant inconnu, et une option mal écrite (`--run`) passe pour un identifiant.
+    for (const inconnu of ['perl', 'GO', '--run', '--contres', '']) {
+      assert.throws(() => parseArgs(['py', inconnu]), /argument inconnu : /, `${JSON.stringify(inconnu)} accepté`);
+      assert.throws(() => parseArgs([inconnu, '--contre', 'HEAD']), /argument inconnu : /, `${JSON.stringify(inconnu)} accepté sous --contre`);
+    }
+
+    // Le banc entier, `main`, sous l'espion : une erreur d'usage ou de révision s'écrit sur stderr en une ligne `bench: …`, sans pile, avec
+    // son code (2 pour l'usage, 1 pour la révision), et avant tout build et toute extraction. Seuls `git rev-parse` et `git ls-tree`
+    // se lancent, jamais `git read-tree` ni un compilateur : l'espion rendrait ces appels réussis, et ils laisseraient .build/revisions/<sha>.
+    const banc = (argv: string[], reply?: (call: Call) => Partial<Reply>, revisions?: string) => {
+      const sortie: string[] = [];
+      const err: string[] = [];
+      const real = { log: console.log, error: console.error };
+      let code: number | undefined;
+      let calls: Call[] = [];
+      Object.assign(console, { log: (...a: unknown[]) => sortie.push(a.join(' ')), error: (...a: unknown[]) => err.push(a.join(' ')) });
+      try {
+        calls = spy(() => void (code = main(argv, revisions)), reply);
+      } finally {
+        Object.assign(console, real);
+      }
+      return { code, calls, stdout: sortie.join('\n'), stderr: err.join('\n') };
+    };
+    const sansPile = (stderr: string) => assert.doesNotMatch(stderr, /\n\s+at /, 'une pile accompagne l’erreur');
+    const sha = 'a'.repeat(40);
+    const arbre = (...dossiers: string[]) => (c: Call): Partial<Reply> =>
+      c.args[0] === 'rev-parse' ? { stdout: `${sha}\n` } : c.args[0] === 'ls-tree' ? { stdout: dossiers.map((d) => `${d}\0`).join('') } : {};
+    const seulementLecture = (calls: Call[]) =>
+      assert.ok(calls.every((c) => c.file === 'git' && ['rev-parse', 'ls-tree'].includes(c.args[0])), `un appel autre qu’une lecture de révision : ${calls.map((c) => [c.file, ...c.args].join(' ')).join(' ; ')}`);
+
+    const inconnu = banc(['perl']);
+    assert.deepEqual([inconnu.code, inconnu.calls.length, inconnu.stdout], [2, 0, ''], 'un identifiant inconnu doit refuser (code 2) sans rien lancer');
+    assert.match(inconnu.stderr, /^bench: argument inconnu : "perl"[^\n]*\nusage : /);
+    sansPile(inconnu.stderr);
+
+    const introuvable = banc(['go', '--contre', 'nope'], (c) => (c.args[0] === 'rev-parse' ? { status: 1 } : {}));
+    assert.deepEqual([introuvable.code, introuvable.stdout], [1, ''], 'une révision introuvable doit refuser (code 1)');
+    assert.equal(introuvable.stderr, 'bench: révision introuvable : nope');
+    seulementLecture(introuvable.calls);
+
+    // Chaque langage demandé doit être un dossier de REF, avant la moindre extraction : ici REF n'a ni rust ni python.
+    const absent = banc(['go', 'rust', 'py', '--contre', 'HEAD'], arbre('go', 'ts'));
+    assert.deepEqual([absent.code, absent.stdout], [1, ''], 'un langage absent de REF doit refuser (code 1)');
+    assert.equal(absent.stderr, 'bench: rust, py : dossier absent de HEAD');
+    seulementLecture(absent.calls);
+    assert.ok(absent.calls.some((c) => c.args.includes(sha)), 'le dossier se lit dans la révision résolue, non dans le nom donné');
+    // Python se cherche sous son dossier, `python`, non sous son identifiant `py` : ici seul go manque.
+    const dossier = banc(['py', 'go', '--contre', 'HEAD'], arbre('rust', 'ts', 'python'));
+    assert.deepEqual([dossier.code, dossier.stderr], [1, 'bench: go : dossier absent de HEAD'], 'un langage se cherche sous un autre nom que son dossier');
+    seulementLecture(dossier.calls);
+    // Sans identifiant, ce sont les langages présents dans ce dépôt (les quatre ici) qui doivent se trouver dans REF.
+    const defaut = banc(['--contre', 'HEAD'], arbre('go', 'rust', 'ts'));
+    assert.deepEqual([defaut.code, defaut.stderr], [1, 'bench: py : dossier absent de HEAD'], 'les langages par défaut ne sont pas cherchés dans REF');
+    seulementLecture(defaut.calls);
+
+    // Le banc ordinaire, `main` jusqu'au tableau, sous l'espion : `rounds(runs, …)` y joue 1 tour de chauffe et `runs` tours gardés, tous depuis
+    // le dépôt. Sans `--contre`, ni lecture ni extraction de révision. Un `rounds(runs - 1, …)` de `table` ne lance que le tour de chauffe et
+    // rend des médianes vides (NaN), que seul le compte des lancements voit.
+    const ordinaire = banc(['go', '--runs', '1']);
+    assert.deepEqual([ordinaire.code, ordinaire.stderr], [0, ''], 'le banc ordinaire doit réussir sans rien écrire sur stderr');
+    assert.ok(ordinaire.calls.every((c) => c.file !== 'git'), 'le banc ordinaire lit ou extrait une révision');
+    assert.deepEqual(ordinaire.calls.filter((c) => c.file === 'go').map((c) => c.options.cwd), [depot], 'le banc ordinaire ne compile pas Go une fois, depuis le dépôt');
+    const mesuresBanc = ordinaire.calls.filter((c) => c.file !== 'go');
+    assert.equal(mesuresBanc.length, 2 * S, 'le banc ne joue pas 1 tour de chauffe et 1 tour gardé de chaque scénario');
+    for (const c of mesuresBanc) assert.deepEqual([c.file, c.options.cwd], [command('go')[0], depot], 'le banc ordinaire lance autre chose que le binaire du dépôt');
+    const lignesBanc = ordinaire.stdout.split('\n');
+    assert.match(lignesBanc[0], /^médianes sur 1 exécutions /, 'l’en-tête du banc ordinaire a changé');
+    assert.equal(lignesBanc.length, 2 + S, 'le banc ordinaire n’écrit pas son en-tête, ses colonnes et une ligne par scénario');
+    assert.doesNotMatch(ordinaire.stdout, /NaN/, 'le banc ordinaire écrit une médiane vide');
+
+    // L'A/B entier, `main` sous l'espion jusqu'au tableau, avec une révision déjà extraite : `extract` réutilise <revisions>/<sha> sans lancer
+    // git, donc seuls `git rev-parse`, `git ls-tree`, deux builds et les lancements de mesure passent par l'espion. `abPairs` ne garde pas, seul, la
+    // racine que `versus` lui passe : un `abPairs(id, runs, ROOT)` dans `versus` laisserait HAR-5 vert, et l'A/B comparerait le dépôt à lui-même.
+    // Un `build(id, rev)` retiré ou remplacé par `build(id)` y survivrait aussi, et ne se verrait qu'à une extraction neuve.
+    const base = mkdtempSync(join(tmpdir(), 'fib-har5-ab-'));
+    try {
+      const rev = join(base, sha);
+      mkdirSync(rev);
+      const ab = banc(['go', '--runs', '1', '--contre', 'HEAD'], arbre('go', 'rust', 'ts', 'python'), base);
+      assert.deepEqual([ab.code, ab.stderr], [0, ''], 'l’A/B doit réussir sans rien écrire sur stderr');
+      assert.match(ab.stdout, /^A\/B apparié sur 1 paire [^\n]*A = HEAD \(aaaaaaa\), B = /, 'l’en-tête ne nomme pas REF et son SHA court');
+      // Aucun appel git hors la lecture de la révision : la révision déjà extraite est réutilisée.
+      seulementLecture(ab.calls.filter((c) => c.file === 'git'));
+      // Un build part de la racine de la révision, l'autre du dépôt, dans un ordre quelconque.
+      assert.deepEqual(ab.calls.filter((c) => c.file === 'go').map((c) => c.options.cwd).sort(), [depot, rev].sort(), 'les deux builds ne partent pas du dépôt et de la révision');
+      // 1 tour de chauffe et 1 tour gardé : 2 × S rendez-vous, deux lancements chacun; la moitié, A, part de la racine de la révision.
+      const mesures = ab.calls.filter((c) => c.file !== 'git' && c.file !== 'go');
+      assert.equal(mesures.length, 2 * 2 * S, 'l’A/B ne joue pas 1 tour de chauffe et 1 tour gardé de chaque scénario, deux lancements chacun');
+      const de = (racine: string) => mesures.filter((c) => c.options.cwd === racine && c.file === command('go', racine)[0]);
+      assert.equal(de(rev).length, 2 * S, 'la moitié des lancements (A) ne part pas de la racine de la révision, avec son binaire');
+      assert.equal(de(depot).length, 2 * S, 'la moitié des lancements (B) ne part pas du dépôt, avec son binaire');
+      const lignes = ab.stdout.split('\n');
+      assert.equal(lignes.length, 2 + S, 'l’A/B n’écrit pas son en-tête, ses colonnes et une ligne par scénario');
+      for (const ligne of lignes.slice(2)) assert.match(ligne, /\/1$/, `une ligne du tableau ne compte pas 1 paire : ${ligne}`);
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+
+    // Nettoyer .build/revisions/ sans suivre les liens : chaque révision porte un lien (jonction sous Windows) vers le node_modules de ce
+    // dépôt, que `Remove-Item -Recurse` de Windows PowerShell 5.1 peut traverser pour vider sa cible. Le banc détache d'abord le lien,
+    // puis supprime le dossier, et ne touche ni la cible ni le reste de .build/.
+    const tmp = mkdtempSync(join(tmpdir(), 'fib-har5-nettoyage-'));
+    try {
+      const racine = join(tmp, '.build');
+      const revisions = join(racine, 'revisions');
+      const rev = join(revisions, sha);
+      const cible = join(tmp, 'node_modules');
+      const lien = join(rev, 'node_modules');
+      mkdirSync(rev, { recursive: true });
+      mkdirSync(cible);
+      writeFileSync(join(cible, 'precieux.txt'), 'x');
+      writeFileSync(join(rev, 'package.json'), '{}');
+      writeFileSync(join(racine, 'fib'), 'binaire du dépôt');
+      writeFileSync(join(revisions, `${'b'.repeat(40)}.index`), ''); // le reste d'une extraction interrompue
+      symlinkSync(cible, lien, 'junction');
+      assert.ok(lstatSync(lien).isSymbolicLink(), 'le lien de la sonde n’en est pas un');
+
+      const real = fs.rmSync;
+      let lienAuRm: boolean | undefined;
+      Object.assign(fs, { rmSync: (...a: Parameters<typeof real>) => ((lienAuRm ??= lstatSync(lien, { throwIfNoEntry: false }) !== undefined), real(...a)) });
+      syncBuiltinESMExports();
+      let nettoye: ReturnType<typeof banc>;
+      try {
+        nettoye = banc(['--nettoyer'], undefined, revisions);
+      } finally {
+        Object.assign(fs, { rmSync: real });
+        syncBuiltinESMExports();
+      }
+      assert.deepEqual([nettoye.code, nettoye.calls.length, nettoye.stderr], [0, 0, ''], '--nettoyer doit réussir sans rien lancer');
+      assert.equal(lienAuRm, false, 'le lien est encore là quand rmSync supprime le dossier : il pourrait en traverser la cible');
+      assert.ok(!existsSync(revisions), '--nettoyer ne vide pas .build/revisions/');
+      assert.ok(existsSync(join(cible, 'precieux.txt')), '--nettoyer a vidé la cible du lien');
+      assert.ok(existsSync(join(racine, 'fib')), '--nettoyer a touché autre chose que .build/revisions/');
+      assert.equal(banc(['--nettoyer'], undefined, revisions).code, 0, 'rien à nettoyer doit réussir aussi');
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+    // --nettoyer s'emploie seul : combiné, il supprimerait sans que l'appelant l'ait demandé, ou ignorerait le reste.
+    assert.deepEqual(parseArgs(['--nettoyer']), { runs: 11, ids: [], clean: true });
+    for (const avec of [['py'], ['--runs', '3'], ['--contre', 'HEAD']]) {
+      assert.throws(() => parseArgs(['--nettoyer', ...avec]), /--nettoyer s’emploie seul/, `--nettoyer ${avec.join(' ')} accepté`);
+      assert.throws(() => parseArgs([...avec, '--nettoyer']), /--nettoyer s’emploie seul/, `${avec.join(' ')} --nettoyer accepté`);
     }
   });
 });

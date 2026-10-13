@@ -41,6 +41,9 @@ function impl(id: string) {
 // Tous les identifiants du PRD § 5, dans cet ordre, que le dossier existe ou non : l'ensemble de HAR-3, qui n'a pas besoin du disque.
 export const IDS: readonly string[] = Object.keys(IMPLS);
 
+// Le dossier de l'implémentation à la racine du dépôt (`python` pour `py`) : le banc le cherche dans l'arbre d'une révision avant de l'extraire.
+export const dirOf = (id: string): string => impl(id).dir;
+
 // Les identifiants des implémentations dont le dossier existe sous root (par défaut ce dépôt), dans l'ordre du PRD § 5 : ce que le
 // contrat et le banc jouent par défaut. Une révision plus ancienne peut ne pas avoir tous les dossiers.
 export const present = (root = ROOT): string[] => IDS.filter((id) => existsSync(join(root, IMPLS[id].dir)));

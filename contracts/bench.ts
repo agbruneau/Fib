@@ -1,10 +1,11 @@
 // Banc d'essai des CLI (ADR-0004) : médiane du temps total du processus et du calcul rapporté par --time.
-// Usage : node contracts/bench.ts [go|rust|ts|py …] [--runs N] [--contre REF]. Compile puis lance par contracts/lancement.ts, comme le contrat.
+// Usage : node contracts/bench.ts [go|rust|ts|py …] [--runs N] [--contre REF] | --nettoyer. Compile puis lance par contracts/lancement.ts, comme le contrat.
 // --contre REF : A/B apparié, la révision REF (A) contre l'arbre de travail (B), lancés en alternance (le travail d'un démarrage, ADR-0004).
+// --nettoyer : vide .build/revisions/, où l'A/B extrait ses révisions, sans suivre le lien vers node_modules qu'elles portent.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, renameSync, rmSync, symlinkSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readdirSync, renameSync, rmSync, symlinkSync, unlinkSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import { build, launch, present, ROOT } from './lancement.ts';
+import { build, dirOf, IDS, launch, present, ROOT } from './lancement.ts';
 
 const SCENARIOS: [name: string, args: string[]][] = [
   ['petit (10)', ['10']],
@@ -16,7 +17,13 @@ const SCENARIOS: [name: string, args: string[]][] = [
   ['liste 10000', ['--list', '10000']],
 ];
 
-const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[xs.length >> 1];
+// La médiane de toute mesure du banc (A, B et B − A). Un nombre pair : la moyenne des deux éléments centraux, car l'élément haut
+// seul biaiserait chaque résumé vers le haut (HAR-5).
+const median = (xs: readonly number[]) => {
+  const s = [...xs].sort((a, b) => a - b);
+  const h = s.length >> 1;
+  return s.length % 2 === 1 ? s[h] : (s[h - 1] + s[h]) / 2;
+};
 
 // Une exécution avec --time : temps total du processus, et somme des durées qu'il rapporte. Exportée pour le harnais.
 // root : la racine d'une révision extraite (A/B), par défaut ce dépôt.
@@ -47,28 +54,75 @@ export function paired(pairs: readonly (readonly [a: number, b: number])[]): { a
   return { a: median(pairs.map(([a]) => a)), b: median(pairs.map(([, b]) => b)), d: median(d), faster: d.filter((x) => x < 0).length };
 }
 
+// Une mesure d'A/B qui échoue porte son côté : « go 10 : code 1 » ne dit pas, seul, si la révision ou l'arbre de travail est en cause.
+const side = <T>(label: string, f: () => T): T => {
+  try {
+    return f();
+  } catch (e) {
+    throw new Error(`côté ${label} : ${(e as Error).message}`, { cause: e });
+  }
+};
+
 // Un tour d'A/B sur un scénario, en temps total : A depuis la racine de la révision, B depuis ce dépôt. Si A partait aussi de
 // ce dépôt, l'A/B comparerait l'arbre de travail à lui-même. Exportée pour le harnais (HAR-5).
 export const abRound = (i: number, id: string, args: readonly string[], root: string): [a: number, b: number] =>
-  pair(i, () => measure(id, args, root).wall, () => measure(id, args).wall);
+  pair(
+    i,
+    () => side(`A (la révision REF, ${root})`, () => measure(id, args, root).wall),
+    () => side('B (l’arbre de travail)', () => measure(id, args).wall),
+  );
+
+// La politique de mesure que le banc et l'A/B partagent : `one(i, args)` mesure un scénario au tour i, et rounds rend, par scénario, ses
+// mesures des tours 1 à runs. Le tour 0 réchauffe les caches et s'écarte; les scénarios s'entrelacent dans chaque tour pour que la
+// dérive de la machine les touche tous. Exportée pour le harnais (HAR-5).
+export function rounds<T>(runs: number, one: (i: number, args: string[]) => T): T[][] {
+  const kept = SCENARIOS.map((): T[] => []);
+  for (let i = 0; i <= runs; i++) {
+    SCENARIOS.forEach(([, args], s) => {
+      const x = one(i, args);
+      if (i > 0) kept[s].push(x);
+    });
+  }
+  return kept;
+}
+
+// Les paires [A, B] gardées d'un A/B, par scénario : rounds, dont chaque rendez-vous joue abRound avec l'indice du tour (qui règle l'ordre)
+// et la racine de la révision. Exportée pour le harnais (HAR-5), sans build ni extraction.
+export const abPairs = (id: string, runs: number, root: string): [a: number, b: number][][] => rounds(runs, (i, args) => abRound(i, id, args, root));
 
 // Les seuls chemins du build (PRD § 5) : une révision extraite n'emporte ni CLAUDE.md ni .claude/, qu'une session lancée sous
 // .build/ lirait comme des instructions. package.json y reste : son "type": "module" fait de .build/ts/cli.js un module ES.
 const BUILD_PATHS = ['go/', 'rust/', 'ts/', 'python/', 'package.json', ':(glob)tsconfig*.json'];
 
-// Extrait la révision ref sous .build/revisions/<sha> et rend sa racine. Une fois : si le dossier existe, il est réutilisé, avec
+// Où s'extraient les révisions de l'A/B : sous .build/, ignoré par git. `--nettoyer` les supprime.
+const REVISIONS = join(ROOT, '.build', 'revisions');
+
+// Résout ref en SHA, puis vérifie que la révision a le dossier de chaque langage de ids : avant toute extraction et tout build, car un
+// langage absent de ref ne se découvre sinon qu'au milieu de l'A/B, après les langages qui le précèdent. Elle ne lit la révision que par
+// `git rev-parse` et `git ls-tree`. Lève une erreur d'une ligne, que main écrit en `bench: …`.
+function resolve(ref: string, ids: readonly string[]): string {
+  const git = (...args: string[]) => spawnSync('git', args, { cwd: ROOT, encoding: 'utf8' });
+  const resolved = git('rev-parse', '--verify', '--quiet', `${ref}^{commit}`);
+  if (resolved.status !== 0) throw new Error(`révision introuvable : ${ref}`);
+  const sha = resolved.stdout.trim();
+  const tree = git('ls-tree', '-d', '-z', '--name-only', sha);
+  if (tree.status !== 0) throw new Error(`git ls-tree ${sha} a échoué (code ${tree.status}) : ${tree.stderr}${tree.error ?? ''}`);
+  const dirs = tree.stdout.split('\0');
+  const absent = ids.filter((id) => !dirs.includes(dirOf(id)));
+  if (absent.length) throw new Error(`${absent.join(', ')} : dossier absent de ${ref}`);
+  return sha;
+}
+
+// Extrait la révision sha sous revisions/<sha> et rend sa racine. Une fois : si le dossier existe, il est réutilisé, avec
 // ses binaires déjà construits. L'extraction passe par un index à part (GIT_INDEX_FILE) et un dossier provisoire renommé à la fin :
 // ni l'index ni la liste des worktrees ne changent, et une extraction interrompue ne laisse pas un dossier à moitié rempli.
-function extract(ref: string): string {
+function extract(sha: string, revisions: string): string {
   const git = (args: string[], env: Record<string, string> = {}, input?: string) => {
     const r = spawnSync('git', args, { cwd: ROOT, encoding: 'utf8', env: { ...process.env, ...env }, input });
     if (r.status !== 0) throw new Error(`git ${args.join(' ')} a échoué (code ${r.status}) : ${r.stderr}${r.error ?? ''}`);
     return r.stdout;
   };
-  const resolved = spawnSync('git', ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], { cwd: ROOT, encoding: 'utf8' });
-  if (resolved.status !== 0) throw new Error(`révision introuvable : ${ref}`);
-  const sha = resolved.stdout.trim();
-  const dest = join(ROOT, '.build', 'revisions', sha);
+  const dest = join(revisions, sha);
   if (existsSync(dest)) return dest;
   const part = `${dest}.part`;
   const index = `${dest}.index`;
@@ -85,14 +139,45 @@ function extract(ref: string): string {
   return dest;
 }
 
-const USAGE = 'usage : node contracts/bench.ts [go|rust|ts|py …] [--runs N] [--contre REF]';
+// Supprime les révisions extraites et rend le nombre d'entrées supprimées. Chaque révision porte un lien (jonction sous Windows) vers le
+// node_modules de ce dépôt, et `Remove-Item -Recurse` de Windows PowerShell 5.1 peut le traverser et vider sa cible : le lien est donc
+// détaché d'abord (unlink retire le lien, jamais sa cible), puis le dossier tombe sans rien à traverser. Rien d'autre sous .build/ n'est touché.
+function clean(revisions: string): number {
+  if (!existsSync(revisions)) return 0;
+  const entries = readdirSync(revisions);
+  for (const entry of entries) {
+    const link = join(revisions, entry, 'node_modules');
+    try {
+      if (lstatSync(link).isSymbolicLink()) unlinkSync(link);
+    } catch (e) {
+      // Une entrée sans lien (ENOENT), ou un fichier de reste comme <sha>.index (ENOTDIR), n'a rien à détacher.
+      if (!['ENOENT', 'ENOTDIR'].includes((e as NodeJS.ErrnoException).code ?? '')) throw e;
+    }
+  }
+  rmSync(revisions, { recursive: true, force: true });
+  return entries.length;
+}
+
+const USAGE = 'usage : node contracts/bench.ts [go|rust|ts|py …] [--runs N] [--contre REF] | --nettoyer';
+
+// Les exécutions par scénario sans --runs : 11 pour le banc, des médianes qui suffisent à situer un temps. Un A/B en veut 101 paires, soit
+// 202 lancements par scénario, un des 6 tours de 201 lancements qui ont tranché l'horloge de #21 : l'erreur de la médiane des différences
+// décroît en 1/√n, donc d'un facteur 3 environ sur 11 paires, ce qui sépare un écart de quelques pour cent du bruit. ADR-0004.
+const RUNS = 11;
+const RUNS_AB = 101;
 
 // Les identifiants demandés (aucun : les implémentations présentes), le nombre d'exécutions par scénario, et la révision REF d'un A/B
 // (absente sans `--contre`, donc sans clé). Toute erreur levée ici est une erreur d'usage. `--runs` veut des chiffres décimaux
 // seulement : Number() accepte aussi '', ' 3', '1e3' et '0x10', et rend NaN, 0 ou une boucle sans fin pour le reste, que cell()
-// découvre trop tard. `--contre` veut une révision qui ne ressemble pas à une option, que git lirait comme telle.
-export function parseArgs(args: readonly string[]): { runs: number; ids: string[]; ref?: string } {
-  let runs = 11;
+// découvre trop tard. `--contre` veut une révision qui ne ressemble pas à une option, que git lirait comme telle. Tout autre argument
+// est un identifiant du PRD § 5 : un identifiant inconnu ou une option mal écrite sont refusés ici, avant tout build. `--nettoyer`
+// vide `.build/revisions/` et s'emploie seul (`clean: true`, absent sinon).
+export function parseArgs(args: readonly string[]): { runs: number; ids: string[]; ref?: string; clean?: true } {
+  if (args.includes('--nettoyer')) {
+    if (args.length > 1) throw new Error('--nettoyer s’emploie seul');
+    return { runs: RUNS, ids: [], clean: true };
+  }
+  let runs: number | undefined;
   let ref: string | undefined;
   const ids: string[] = [];
   for (let i = 0; i < args.length; i++) {
@@ -105,6 +190,7 @@ export function parseArgs(args: readonly string[]): { runs: number; ids: string[
       continue;
     }
     if (args[i] !== '--runs') {
+      if (!IDS.includes(args[i])) throw new Error(`argument inconnu : ${JSON.stringify(args[i])} (identifiants : ${IDS.join(', ')})`);
       ids.push(args[i]);
       continue;
     }
@@ -115,6 +201,7 @@ export function parseArgs(args: readonly string[]): { runs: number; ids: string[
     }
     runs = n;
   }
+  runs ??= ref === undefined ? RUNS : RUNS_AB;
   return ref === undefined ? { runs, ids } : { runs, ids, ref };
 }
 
@@ -127,14 +214,7 @@ function table(ids: string[], runs: number): void {
   const rows = SCENARIOS.map(([name]) => name.padEnd(22));
   for (const id of ids) {
     build(id);
-    const samples = SCENARIOS.map((): { wall: number; calc: number }[] => []);
-    // Le tour 0 réchauffe les caches; les scénarios s'entrelacent pour que la dérive de la machine les touche tous.
-    for (let i = 0; i <= runs; i++) {
-      SCENARIOS.forEach(([, args], s) => {
-        const x = measure(id, args);
-        if (i > 0) samples[s].push(x);
-      });
-    }
+    const samples = rounds(runs, (_, args) => measure(id, args));
     samples.forEach((xs, s) => {
       rows[s] += `${cell(median(xs.map((x) => x.wall)))} ${cell(median(xs.map((x) => x.calc)))}   `;
     });
@@ -149,16 +229,8 @@ function versus(ids: string[], runs: number, ref: string, rev: string): void {
   console.log(`A/B apparié sur ${runs} paire${runs > 1 ? 's' : ''} (ms, temps total) : A = ${ref} (${basename(rev).slice(0, 7)}), B = l'arbre de travail; ordre alterné, tour 0 écarté`);
   for (const id of ids) {
     build(id);
-    if (!present(rev).includes(id)) throw new Error(`${id} absente de ${ref}`);
     build(id, rev);
-    const pairs = SCENARIOS.map((): [number, number][] => []);
-    // Le tour 0 réchauffe les caches des deux côtés; les scénarios s'entrelacent pour que la dérive de la machine les touche tous.
-    for (let i = 0; i <= runs; i++) {
-      SCENARIOS.forEach(([, args], s) => {
-        const x = abRound(i, id, args, rev);
-        if (i > 0) pairs[s].push(x);
-      });
-    }
+    const pairs = abPairs(id, runs, rev);
     console.log(`${id.padEnd(22)}${'A'.padStart(8)} ${'B'.padStart(8)} ${'B − A'.padStart(8)} ${'%'.padStart(7)}   B < A`);
     pairs.forEach((p, s) => {
       const e = paired(p);
@@ -167,14 +239,20 @@ function versus(ids: string[], runs: number, ref: string, rev: string): void {
   }
 }
 
-function main(argv: readonly string[]): number {
+// Le banc : le code de sortie, 2 pour une erreur d'usage et 1 pour une révision inutilisable, l'une et l'autre écrites en une ligne
+// `bench: …` sur stderr, sans pile, avant tout build et toute extraction. `revisions` : où se rangent les révisions de l'A/B.
+export function main(argv: readonly string[], revisions: string = REVISIONS): number {
   let parsed: ReturnType<typeof parseArgs>;
   try {
     parsed = parseArgs(argv);
   } catch (e) {
-    // Avant tout build : le code 2 des erreurs d'usage de la CLI, sur stderr, sans pile.
     console.error(`bench: ${(e as Error).message}\n${USAGE}`);
     return 2;
+  }
+  if (parsed.clean) {
+    const n = clean(revisions);
+    console.log(n ? `${n} entrée${n > 1 ? 's' : ''} supprimée${n > 1 ? 's' : ''} de ${revisions}` : `rien à supprimer sous ${revisions}`);
+    return 0;
   }
   const { runs, ref } = parsed;
   const ids = parsed.ids.length ? parsed.ids : present();
@@ -182,10 +260,10 @@ function main(argv: readonly string[]): number {
     table(ids, runs);
     return 0;
   }
-  // Avant tout build : une révision introuvable ou une extraction qui échoue n'est pas payée deux fois.
+  // Une révision introuvable, un langage absent de REF ou une extraction qui échoue : avant tout build, pour ne pas le payer deux fois.
   let rev: string;
   try {
-    rev = extract(ref);
+    rev = extract(resolve(ref, ids), revisions);
   } catch (e) {
     console.error(`bench: ${(e as Error).message}`);
     return 1;

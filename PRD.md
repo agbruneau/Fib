@@ -153,7 +153,7 @@ Les quatre implémentations sont indépendantes (ADR-0001) : la seule frontière
 |---|---|
 | `check:go`, `check:rust`, `check:ts`, `check:py` | analyse statique, tests du langage, puis test de contrat pour ce seul langage |
 | `contract` | test de contrat pour les implémentations présentes |
-| `bench` | banc d'essai : médianes du temps total et du temps de calcul, par langage et par scénario, après le même build que le contrat et par le même lancement (`--runs N`, 11 par défaut; ADR-0004). `--contre REF` : A/B apparié de la révision REF, extraite sous `.build/revisions/<sha>`, contre l'arbre de travail, en temps total (médiane des différences par paire), pour un travail de démarrage |
+| `bench` | banc d'essai : médianes du temps total et du temps de calcul, par langage et par scénario, après le même build que le contrat et par le même lancement (`--runs N`, 11 par défaut; ADR-0004). `--contre REF` : A/B apparié de la révision REF, extraite sous `.build/revisions/<sha>`, contre l'arbre de travail, en temps total (médiane des différences par paire; `--runs` vaut alors 101 par défaut, ADR-0004), pour un travail de démarrage. `--nettoyer` vide `.build/revisions/` |
 | `check` | les quatre `check:*` |
 
 `node contracts/cli.test.ts [id…]` vérifie les implémentations nommées par leur identifiant. Un identifiant dont le dossier manque fait échouer le test. Sans argument, le test vérifie les implémentations dont le dossier existe; s'il n'y en a aucune, il ne vérifie que l'oracle. Pour Go, Rust et TypeScript, il compile d'abord (§ 5). Chaque lancement d'une CLI, par le test de contrat comme par le banc d'essai, a un délai de 300 s.
