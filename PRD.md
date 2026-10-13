@@ -100,7 +100,7 @@ La CLI est un adaptateur mince : grammaire, bornes, comparaison, durées, format
 |---|---|---|---|---|
 | Dossier | `go/` | `rust/` | `ts/` | `python/` |
 | Identifiant (scripts, test de contrat) | `go` | `rust` | `ts` | `py` |
-| Version minimale | Go 1.26 | stable, édition 2024 | Node 24, TypeScript 7 | Python 3.12 |
+| Version minimale | Go 1.26 | stable, édition 2024 | Node 24.2, TypeScript 7 | Python 3.12 |
 | Grand entier | `math/big` | crate `num-bigint` 0.5 | `bigint` natif | `int` natif |
 | Liste en décimal | additionneur en base 10^18 | additionneur en base 10^18 | additionneur en base 10^4 | `decimal.Decimal` |
 | Grand terme en décimal | conversion de `math/big` | conversion de `num-bigint` | conversion de V8 | `int` écrit par tranches, ou par `str()` au-delà de 200 000 bits; `fast` ou `matrix` seul calculé en `decimal.Decimal` dès l'indice 170 000 |
@@ -121,6 +121,7 @@ Durée indicative du calcul itératif de F(100 000) sur la machine de développe
   - Le `package.json` racine doit déclarer `"type": "module"`, sans quoi tsc 7 refuse les imports ES.
   - N'utiliser que de la syntaxe effaçable (`erasableSyntaxOnly` : ni `enum` ni `namespace`) et des imports relatifs avec l'extension `.ts` (`allowImportingTsExtensions`).
   - Terminer en posant `process.exitCode`, jamais par `process.exit()` : sur un pipe POSIX, les écritures sont asynchrones et `exit()` peut tronquer la sortie. Ce n'est pas reproduit sous Windows, où elles sont synchrones.
+  - Le point d'entrée est `if (import.meta.main) process.exitCode = run(process.argv.slice(2));`, ce qui laisse `cli.test.ts` importer `run` sans rien lancer. `import.meta.main` exige Node 24.2 (rétroporté en 22.18), d'où la version minimale du tableau.
   - `node --test` prend un glob (`"ts/**/*.test.ts"`), pas un dossier.
 - **Go** : `go run` remplace le code de sortie du programme par 1 et ajoute `exit status N` sur stderr (vérifié le 2026-10-10) : le contrat s'exécute donc sur un binaire compilé par `go build`, dont le premier build à froid prend environ 17 s et les suivants moins d'une seconde.
 - **Commandes de lancement** : Rust et TypeScript passent aussi par un build préalable, non par `cargo run -q` (qui conserve pourtant le code et le stderr) ni par `node ts/src/cli.ts` : le contrat ne paie plus ces surcoûts à chaque cas, soit environ 50 ms pour `cargo run` et 25 ms pour le retrait des types d'un `.ts` (médiane de 9 lancements de `10`, 2026-10-11). Python prend `-I -S`, qui saute l'import de `site` (environ 3 ms). Sous Windows, l'horloge peut afficher `0.000 ms` pour un petit N, ce qui est accepté.
@@ -163,7 +164,7 @@ Les quatre implémentations sont indépendantes (ADR-0001) : la seule frontière
 1. la bibliothèque `fib` / `fibList` de chaque langage;
 2. la CLI, par le test de contrat commun.
 
-Les tests de garde `PERF-<ID>-<n>` (ADR-0004) peuvent viser une fonction privée. Ce ne sont pas des seams.
+Les tests de garde `PERF-<ID>-<n>` (ADR-0004) peuvent viser une fonction privée ou l'interface dans le processus de la CLI. Ce ne sont pas des seams.
 
 **Oracle**
 
@@ -178,7 +179,7 @@ Les tests de garde `PERF-<ID>-<n>` (ADR-0004) peuvent viser une fonction privée
 - BIB-01 à BIB-14 : la bibliothèque, dans chaque langage (seam 1); BIB-14 est sans objet en Rust.
 - les cas CLI : le contrat de la CLI, joué sur chaque implémentation (seam 2). Des assertions communes s'appliquent à chaque cas : code de sortie, stdout octet pour octet, stderr, format ASCII.
 
-Le chemin de la discordance (code 3) dans la CLI n'a pas de test automatique, puisque aucun cas ne peut la provoquer. BIB-08 vérifie que les algorithmes concordent.
+Le chemin de la discordance (code 3) dans la CLI n'a pas de cas de test, puisque aucun cas ne peut la provoquer. BIB-08 vérifie que les algorithmes concordent. En TypeScript, PERF-TS-7 éprouve ce chemin par l'interface dans le processus (`run(args, io)`, avec un `fib` discordant); il reste sans test automatique en Go, Rust et Python.
 
 **Acceptation globale**
 
