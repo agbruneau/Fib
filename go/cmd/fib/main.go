@@ -31,6 +31,9 @@ var comparison = []string{"fast", "iterative", "matrix"}
 
 var errDiscordance = errors.New("discordance entre les algorithmes")
 
+// termFunc calcule un terme : un paramètre de compute et de run, et non une table map du paquet, dont l'init au chargement ferait rougir PERF-GO-7.
+type termFunc func(n int, algo string) (*big.Int, error)
+
 type options struct {
 	algos []string
 	list  bool
@@ -120,7 +123,7 @@ func lap(algo string, start time.Time) string {
 
 // compute rend les lignes à écrire (déjà en décimal pour une liste) et les lignes de durée; avec all, les trois
 // algorithmes doivent concorder. Rien n'est écrit ici : une discordance (F3) laisse stdout vide et sans durée.
-func compute(o options) ([]string, []string, error) {
+func compute(o options, term termFunc) ([]string, []string, error) {
 	if o.list {
 		start := time.Now()
 		list, err := fib.FibList(o.n)
@@ -130,12 +133,12 @@ func compute(o options) ([]string, []string, error) {
 	var durations []string
 	for _, algo := range o.algos {
 		start := time.Now()
-		term, err := fib.Fib(o.n, algo)
+		v, err := term(o.n, algo)
 		durations = append(durations, lap(algo, start))
 		if err != nil {
 			return nil, nil, err
 		}
-		terms = append(terms, term)
+		terms = append(terms, v)
 	}
 	for _, t := range terms[1:] {
 		if t.Cmp(terms[0]) != 0 {
@@ -147,7 +150,7 @@ func compute(o options) ([]string, []string, error) {
 }
 
 // run rend le code de sortie : 0 succès, 2 erreur d'usage, 3 discordance.
-func run(args []string, stdout, stderr io.Writer) int {
+func run(args []string, stdout, stderr io.Writer, term termFunc) int {
 	// L'aide l'emporte sur tout le reste, y compris à la place de la valeur de --algo.
 	if slices.Contains(args, "--help") || slices.Contains(args, "-h") {
 		io.WriteString(stdout, usage)
@@ -156,7 +159,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	o, err := parse(args)
 	var lines, durations []string
 	if err == nil {
-		lines, durations, err = compute(o)
+		lines, durations, err = compute(o, term)
 	}
 	if err != nil {
 		fmt.Fprintf(stderr, "fib: %v\n", err)
@@ -179,5 +182,5 @@ func run(args []string, stdout, stderr io.Writer) int {
 }
 
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr, fib.Fib))
 }
