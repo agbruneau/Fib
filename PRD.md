@@ -109,7 +109,7 @@ La CLI est un adaptateur mince : grammaire, bornes, comparaison, durées, format
 | Analyse statique | `go vet` | `cargo clippy --all-targets -- -D warnings` | `tsc` (sans émission) | — |
 | Exécutable du contrat, depuis la racine | `go -C go build -o ../.build/fib ./cmd/fib`, puis `.build/fib` (`fib.exe` sous Windows, suffixe donné à `-o`) | `cargo build -q --release --manifest-path rust/Cargo.toml`, puis `rust/target/release/fib` (`fib.exe` sous Windows) | `npx tsc -p tsconfig.build.json` (émet dans `.build/ts/`), puis `node .build/ts/cli.js` | `python -I -S python/fib.py` |
 
-Dépendances autorisées : `num-bigint`, avec ses dépendances transitives `num-integer`, `num-traits` et `autocfg`, pour Rust; `typescript` et `@types/node` en `devDependencies` pour TypeScript. Aucune autre.
+Dépendances autorisées : `num-bigint`, avec ses dépendances transitives `num-integer`, `num-traits` et `autocfg`, pour Rust; `typescript` et `@types/node` en `devDependencies` pour TypeScript, avec leurs dépendances transitives (`undici-types`, et le binaire natif `@typescript/typescript-<plateforme>` de tsc 7). Aucune autre.
 
 Durée indicative du calcul itératif de F(100 000) sur la machine de développement, mesurée le 2026-10-11 après optimisation (ADR-0004) : Go 16 ms, Rust 26 ms, Node 42 ms, Python 54 ms. Le temps de réponse complet, démarrage compris, se mesure par `npm run bench`.
 
@@ -132,6 +132,7 @@ Durée indicative du calcul itératif de F(100 000) sur la machine de développe
 ```
 Fib/
 ├── README.md, PRD.md, CLAUDE.md, CONTEXT.md, .gitignore, .gitattributes
+├── .claude/            agents/fib-dev.md (sous-agent) et settings.json (orchestrateur, worktrees), voir CLAUDE.md
 ├── docs/adr/ (0001 à 0004), docs/agents/, docs/cas-de-test.md, docs/exploration.md
 ├── contracts/
 │   ├── b000045.txt      oracle : F(0) … F(2000), au format du b-file OEIS A000045
@@ -152,7 +153,7 @@ Les quatre implémentations sont indépendantes (ADR-0001) : la seule frontière
 
 | Script de `package.json` | Rôle |
 |---|---|
-| `check:go`, `check:rust`, `check:ts`, `check:py` | analyse statique, tests du langage, puis test de contrat pour ce seul langage |
+| `check:go`, `check:rust`, `check:ts`, `check:py` | analyse statique (aucune en Python, § 5), tests du langage, puis test de contrat pour ce seul langage |
 | `contract` | test de contrat pour les implémentations présentes |
 | `bench` | banc d'essai : médianes du temps total et du temps de calcul, par langage et par scénario, après le même build que le contrat et par le même lancement (`--runs N`, 11 par défaut; ADR-0004). `--contre REF` : A/B apparié de la révision REF, extraite sous `.build/revisions/<sha>`, contre l'arbre de travail, en temps total (médiane des différences par paire; `--runs` vaut alors 100 par défaut, et un nombre impair y est arrondi au pair supérieur, que le banc écrit sur stderr : l'ordre alterne, et seul un nombre pair de paires le répartit à égalité, ADR-0004), pour un travail de démarrage. `--nettoyer` vide `.build/revisions/` |
 | `differentiel` | boucle différentielle, un outil de recherche : lance les implémentations présentes sur les mêmes entrées (grammaire, valeurs, environnement, descripteurs) et regroupe celles dont les sorties diffèrent, sans référence ni attendu. Code 1 s'il y a un écart. `--dimension`, `--jetons K`, `--revision REF` (les implémentations de REF entre elles, extraites sous `.build/revisions/<sha>` comme celles de l'A/B). Hors de `check` et de `contract` (ADR-0001, HAR-6) |
@@ -188,7 +189,7 @@ Le chemin de la discordance (code 3) dans la CLI n'a pas de cas de test, puisque
 
 - **A1** — Chaque ticket de langage : les cas ORA, les cas BIB de son langage et tous les cas CLI de son identifiant passent, donc `npm run check:<id>` et `npm run contract` sont verts sur `main`. Le projet : `npm run check` passe sous Windows 11 une fois les quatre implémentations livrées.
 - **A2** — Aucune dépendance hors de celles du § 5.
-- **A3** — Remplacé par l'ADR-0004 : la taille suit la performance. Mesuré le 2026-10-11, après optimisation et borne à 1 000 000 (`wc -l` des sources, hors fichiers de test) : TypeScript 232, Python 261, Rust 359 (dont 34 lignes de tests unitaires dans `lib.rs`), Go 376. Avant les travaux du 2026-10-11 : 151, 158, 205 et 255.
+- **A3** — Remplacé par l'ADR-0004 : la taille suit la performance. Mesuré le 2026-10-13 (`wc -l` des sources, hors fichiers de test) : TypeScript 266, Python 270, Rust 469 (dont 34 lignes de tests unitaires dans `lib.rs` et 102 dans `main.rs`), Go 385. Le 2026-10-11, après optimisation et borne à 1 000 000 : 232, 261, 359 et 376. Avant les travaux du 2026-10-11 : 151, 158, 205 et 255.
 - **A4** — `docs/exploration.md` contient une entrée pour chaque skill du § 9 réellement utilisée.
 
 ## 8. Hors périmètre

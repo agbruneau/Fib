@@ -360,7 +360,7 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
   - Donner au vérificateur de mutants un critère d'arrêt : un mutant compte s'il est une modification plausible du code, pas une condition arbitraire.
   - Demander dès le ticket les deux côtés d'une condition d'optimisation : là où elle doit agir, et là où elle ne doit rien coûter.
 
-## 2026-10-13 — Pistes A, C, D et E de l'étape 10 : conception en workflow, une série de questions, livraison en trois vagues
+## 2026-10-13 — `codebase-design` et `grilling` (pistes A, C, D et E de l'étape 10, #27 à #36), livraison en trois vagues, puis `/code-review`
 
 - **Contexte** : le rapport de l'étape 10 gardait quatre pistes en plus de B, livré par #20. Le propriétaire a demandé de traiter les quatre : A (lancement commun dans `contracts/`), C (discordance testée en Go, Rust et Python), D (texte décimal de Python) et E (entrée Python appelable sans processus).
 - **Conception** : un workflow `ultracode` de 11 agents (environ 3 millions de jetons, 2 h 23).
@@ -374,9 +374,10 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
     - « le code 3 n'est observé nulle part » : faux depuis PERF-TS-7 ;
     - « deux lignes par langage » : il en faut 6 ou 7 en production, et 50 à 80 de gardes ;
     - « PERF-PY-22 en mémoire » : elle l'est déjà.
+  - Pour C, la critique a montré qu'une relance du binaire de test tuerait aussi G9 et G10 en Go (une écriture directe sur `os.Stderr` ou `os.Stdout` depuis `compute`), ce que la variable de paquet ne faisait pas, mais au prix d'un mode caché du binaire de test : le paramètre retenu les laisse à la revue. Elle a aussi trouvé un trou commun aux quatre langages : une durée glissée sur la ligne du message de discordance (T2 en TypeScript, #32). Une assertion qui refuse ` ms` dans ce message le ferme dans PERF-TS-7, PERF-GO-9, PERF-RS-11 et PERF-PY-26.
 - **Décisions** : une seule série de quatre questions, une par piste, avec les options et la recommandation de chaque critique. Le propriétaire a suivi les quatre recommandations :
   - A en trois tickets ;
-  - C par paramètre en Go et Rust, et par substitution dans `_ALGOS` en Python, avec les espions de l'algorithme exécuté ;
+  - C dans l'idiome de chaque langage, sur le modèle d'`Io.fib` en TypeScript : un paramètre `termFunc` en Go, un paramètre générique `impl Fn` en Rust, une substitution dans `_ALGOS` par `mock.patch.dict` en Python, avec les espions de l'algorithme exécuté ;
   - D réduite à une garde ;
   - E réduite à un ticket de test.
   
@@ -418,7 +419,7 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
 - **Friction** :
   - Les numéros de garde se télescopent quand des tickets écrits ensemble sont livrés dans un autre ordre : HAR-4 et HAR-5 visés deux fois, PERF-PY-26 visé par trois conceptions.
   - Les tickets de documentation sont livrés avec des numéros de ligne déjà périmés.
-  - Les fichiers partagés (`README.md`, catalogue § 6, `contracts/bench.ts`) produisent des conflits dès que des tickets parallèles les touchent : un en vague 2, sept en vague 3.
+  - Les fichiers partagés (le catalogue, trois fois, puis `PRD.md`, `CONTEXT.md`, `contracts/README.md`, `contracts/bench.ts` et `contracts/cli.test.ts`) produisent des conflits dès que des tickets parallèles les touchent : un en vague 2, sept en vague 3.
   - Le plafond de concurrence des workflows dépend du nombre de cœurs : sur 4 cœurs, un workflow ne lance que 2 agents à la fois. « Tout en parallèle » demande un workflow par ticket.
   - L'orchestrateur a été pris à corriger lui-même du code (un commentaire). La revue l'a vu, mais la règle de `CLAUDE.md` se perd facilement en fin de vague.
 - **À changer** :
@@ -440,7 +441,7 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
 | `/implement` | remplacée par l'agent `fib-dev`, qui applique `tdd` directement |
 | `resolving-merge-conflicts` | introuvable dans la session infonuagique : les conflits des vagues parallèles du 2026-10-13 (huit, dans six fichiers) ont été résolus à la main, par l'orchestrateur pour la documentation et par un `fib-dev` pour le code |
 | `research`, `prototype` | non utilisées; un `prototype` aurait détecté plus tôt le piège de `go run` |
-| `/code-review` | utilisée trois fois le 2026-10-11, axes Standards et Spec : après la refactorisation, après l'optimisation, après la borne à 1 000 000; puis le 2026-10-12, sur les tickets #6 à #14 et sur #16; puis le 2026-10-13, sur #20, #21 et #25, puis une fois par vague des pistes A, C, D et E (#27 à #36), soit cinq passes de plus |
+| `/code-review` | utilisée trois fois le 2026-10-11, axes Standards et Spec : après la refactorisation, après l'optimisation, après la borne à 1 000 000; puis le 2026-10-12, sur les tickets #6 à #14 et sur #16; puis le 2026-10-13, sur #20, #21 et #25, puis quatre fois sur les pistes A, C, D et E (#27 à #36), une par vague et une dernière sur la fusion de #29, soit sept passes ce jour-là |
 | `diagnosing-bugs` | utilisée à l'étape 9 (#16), lue dans `mattpocock/skills` faute de plugin; précédée d'une boucle différentielle pour trouver l'écart |
 | `/improve-codebase-architecture`, `codebase-design`, `grilling` | utilisées à l'étape 10 (#20), lues dans `mattpocock/skills` : rapport de 5 candidats, *design it twice* à 4 prototypes, 2 tours de *grilling*; puis pour les pistes A, C, D et E : deux conceptions prototypées par piste, un critique adverse, une série de questions |
 | `/handoff` | utilisée à l'étape 11, lue dans `mattpocock/skills` : document de reprise hors dépôt, envoyé au propriétaire |
