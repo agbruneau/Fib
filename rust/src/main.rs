@@ -205,16 +205,18 @@ mod tests {
     // Survivants connus, laissés à la revue : R7, un `eprint!` des durées avant l'erreur (stderr n'est pas dans le
     // résultat); R8b, `ExitCode::from(code.min(2))` dans `main`; RW, `main` passe une closure qui fait tout par `fast`.
     #[test]
-    fn perf_rs_11_si_un_algorithme_diverge_des_deux_autres_run_rend_3_sans_duree() {
+    fn perf_rs_11_si_un_algorithme_differe_des_deux_autres_run_rend_3_sans_duree() {
         for bad in [Algo::Fast, Algo::Iterative, Algo::Matrix] {
             let name = bad.name();
             let result =
                 run(&args(&["--time", "--algo", "all", "10"]), |n, algo| fib(n, algo) + u32::from(algo == bad));
-            let Err(CliError(code, msg)) = result else { panic!("{name} diverge : run devait échouer") };
-            assert_eq!(code, 3, "{name} diverge");
-            assert!(!msg.is_empty(), "{name} diverge : message vide");
-            assert!(!msg.contains('\n'), "{name} diverge : plusieurs lignes dans le message {msg:?}");
-            assert!(!msg.contains(" ms"), "{name} diverge : une durée (F6) dans le message {msg:?}");
+            let Err(CliError(code, msg)) = result else {
+                panic!("{name} diffère des deux autres : run devait échouer")
+            };
+            assert_eq!(code, 3, "{name} diffère des deux autres");
+            assert!(!msg.is_empty(), "{name} diffère des deux autres : message vide");
+            assert!(!msg.contains('\n'), "{name} diffère des deux autres : plusieurs lignes dans le message {msg:?}");
+            assert!(!msg.contains(" ms"), "{name} diffère des deux autres : une durée (F6) dans le message {msg:?}");
         }
     }
 
