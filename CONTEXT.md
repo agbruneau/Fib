@@ -69,7 +69,7 @@ L'une des quatre réalisations de Fib, une par langage.
 _Avoid_ : port, version, variante
 
 **Test de garde** :
-Un test propre à une implémentation, hors du catalogue de cas, qui protège une optimisation que les cas du catalogue ne visent pas directement.
+Un test propre à une implémentation, hors du catalogue de cas, qui protège ce que les cas du catalogue ne peuvent pas éprouver : une optimisation (ADR-0004), un correctif, ou une exigence que le contrat ne sait pas provoquer.
 _Avoid_ : test de performance
 
 **Banc d'essai** :

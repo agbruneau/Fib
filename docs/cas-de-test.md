@@ -262,8 +262,8 @@ Chacun de ces cas attend une erreur (source C).
   - l'ordre relatif des octets de stdout et de stderr quand ils partagent une même destination : tube (`2>&1`), fichier ou terminal. Le contrat juge chaque flux séparément.
   - Dans ces cas, ni F9 ni F10 ne s'appliquent : le code, le texte et les traces sont libres.
   - En revanche, un stderr fermé au lancement (`2>&-`) est dans le contrat : il ne change ni stdout ni le code (cas CLI-V04, § 5.8). C'est la seule exception : un stdout fermé, au lancement ou en cours d'écriture, et un flux ouvert dont l'écriture échoue, stderr compris, sont hors contrat.
-- **Lacune connue** : aucun cas CLI ne peut provoquer une discordance, donc le chemin du code 3 dans la CLI n'a pas de test automatique, et pas davantage la règle qui le restreint à une seule ligne `fib:` sans durée, même avec `--time`. BIB-08 vérifie que les algorithmes concordent; la revue de code vérifie ce chemin.
-- **Lacune connue** : le contrat vérifie le nom et le format des lignes de durée, mais ni que l'algorithme nommé s'exécute vraiment, ni que la durée est mesurée (`0.000 ms` passe). La revue de code couvre ce point.
+- **Lacune connue** : aucun cas CLI ne peut provoquer une discordance, donc le chemin du code 3 dans la CLI n'a pas de cas de test, et pas davantage la règle qui le restreint à une seule ligne `fib:` sans durée, même avec `--time`. BIB-08 vérifie que les algorithmes concordent. En TypeScript, PERF-TS-7 comble la lacune par l'interface dans le processus (`run(args, io)`, avec un `fib` discordant). Elle reste ouverte en Go, Rust et Python : la revue de code vérifie ce chemin.
+- **Lacune connue** : le contrat vérifie le nom et le format des lignes de durée, mais ni que l'algorithme nommé s'exécute vraiment, ni que la durée est mesurée (`0.000 ms` passe). En TypeScript, PERF-TS-8 comble la lacune (un `fib` espion et une horloge factice). Elle reste ouverte en Go, Rust et Python : la revue de code couvre ce point.
 
 ## 7. Traçabilité
 
