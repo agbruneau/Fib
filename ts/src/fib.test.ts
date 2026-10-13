@@ -129,8 +129,9 @@ for (const n of BAD_INDEXES) {
 // fonction rangée derrière lui). Les trois algorithmes rendent les mêmes valeurs : aucun cas de valeur ne voit un nom
 // aiguillé ailleurs. Ni valeur calculée ni durée : le nom de la fonction rangée sous chaque clé, puis le début de sa source
 // (une déclaration), puis l'entrée que `fib` appelle, par des espions dans la table. L'export `algos` a deux usages : les
-// tests du nom la lisent, les espions y écrivent. Un `Object.freeze` de la table ferait donc rougir les espions à tort,
-// leur affectation lèverait une TypeError, sans que `fib` ait changé.
+// tests du nom la lisent, les espions y écrivent. Il est en lecture seule par le type, et seuls les espions le convertissent
+// en `Record` pour écrire. Un `Object.freeze` de la table les ferait rougir à tort, leur affectation lèverait une
+// TypeError, sans que `fib` ait changé.
 // Rougit, par le test du nom aiguillé ailleurs, les six échanges de la table : `{ iterative: matrix, matrix, fast }`,
 // `{ iterative: fast, matrix, fast }`, `{ iterative, matrix: iterative, fast }`, `{ iterative, matrix: fast, fast }`,
 // `{ iterative, matrix, fast: iterative }` et `{ iterative, matrix, fast: matrix }`. Le nom seul laisse passer une
@@ -148,18 +149,20 @@ for (const algo of ALGOS) {
 // `algos.matrix(n)` ou `algos.iterative(n)`. Le 0n des espions n'est comparé à rien.
 for (const algo of ALGOS) {
   test(`PERF-TS-10 : fib(3, ${algo}) appelle l’entrée ${algo} de la table, et elle seule`, () => {
-    const original = { ...algos };
+    // Conversion explicite : `algos` est en lecture seule par le type, et ces espions sont les seuls à y écrire.
+    const table = algos as Record<Algo, (n: number) => bigint>;
+    const original = { ...table };
     const called: Algo[] = [];
-    for (const name of ALGOS) {
-      algos[name] = () => {
-        called.push(name);
-        return 0n;
-      };
-    }
     try {
+      for (const name of ALGOS) {
+        table[name] = () => {
+          called.push(name);
+          return 0n;
+        };
+      }
       fib(3, algo);
     } finally {
-      Object.assign(algos, original);
+      Object.assign(table, original);
     }
     assert.deepEqual(called, [algo]);
   });
