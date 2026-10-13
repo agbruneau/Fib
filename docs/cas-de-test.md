@@ -253,7 +253,7 @@ Chacun de ces cas attend une erreur (source C).
 
 ## 6. Hors catalogue
 
-- **Tests de garde des optimisations** (ADR-0004) : `PERF-GO-<n>`, `PERF-RS-<n>`, `PERF-TS-<n>` et `PERF-PY-<n>`, propres à chaque langage et hors seams, numérotés à la suite dans chaque langage. Ils protègent ce que les cas BIB et CLI ne visent pas directement : la retenue de l'additionneur décimal, la dernière étape de `matrix` et de `fast`, l'écriture par tranches (Go, Rust, Python; TypeScript écrit en un seul appel), les seuils de Python (`Decimal` dès 170 000, `str()` au-delà de 200 000 bits), l'absence d'allocation ou d'import. Un test de garde peut aussi protéger un correctif que le contrat ne peut pas éprouver, comme `encoding="ascii"` de Python, que `-I` neutralise sous CLI-V03 (`PERF-PY-20`), ou le puits donné à un flux standard absent, que CLI-V04 ne joue pas sous Windows (`PERF-PY-23`). Leur liste est dans les fichiers de test.
+- **Tests de garde des optimisations** (ADR-0004) : `PERF-GO-<n>`, `PERF-RS-<n>`, `PERF-TS-<n>` et `PERF-PY-<n>`, propres à chaque langage et hors seams, numérotés à la suite dans chaque langage. Ils peuvent viser une fonction privée ou l'interface dans le processus de la CLI. Ils protègent ce que les cas BIB et CLI ne visent pas directement : la retenue de l'additionneur décimal, la dernière étape de `matrix` et de `fast`, l'écriture par tranches (Go, Rust, Python; TypeScript écrit en un seul appel, gardé par `PERF-TS-6`), les seuils de Python (`Decimal` dès 170 000, `str()` au-delà de 200 000 bits), l'absence d'allocation ou d'import. Un test de garde peut aussi protéger un correctif ou une exigence que le contrat ne sait pas provoquer, comme `encoding="ascii"` de Python, que `-I` neutralise sous CLI-V03 (`PERF-PY-20`), le puits donné à un flux standard absent, que CLI-V04 ne joue pas sous Windows (`PERF-PY-23`), ou, en TypeScript, le code 3 et les durées de F6, éprouvés par l'interface de la CLI dans le processus (`run(args, io)`, `PERF-TS-7` et `PERF-TS-8`). Leur liste est dans les fichiers de test.
 - **Hors contrat, donc non testé** (PRD § 4; constat à l'entrée « 2026-10-12 — `diagnosing-bugs` (étape 9, #16) » de `docs/exploration.md`, puce « À arbitrer ») :
   - un stdout fermé, au lancement ou en cours d'écriture.
   - un argument qui n'est pas de l'Unicode valide.
@@ -263,7 +263,7 @@ Chacun de ces cas attend une erreur (source C).
   - Dans ces cas, ni F9 ni F10 ne s'appliquent : le code, le texte et les traces sont libres.
   - En revanche, un stderr fermé au lancement (`2>&-`) est dans le contrat : il ne change ni stdout ni le code (cas CLI-V04, § 5.8). C'est la seule exception : un stdout fermé, au lancement ou en cours d'écriture, et un flux ouvert dont l'écriture échoue, stderr compris, sont hors contrat.
 - **Lacune connue** : aucun cas CLI ne peut provoquer une discordance, donc le chemin du code 3 dans la CLI n'a pas de cas de test, et pas davantage la règle qui le restreint à une seule ligne `fib:` sans durée, même avec `--time`. BIB-08 vérifie que les algorithmes concordent. En TypeScript, PERF-TS-7 comble la lacune par l'interface dans le processus (`run(args, io)`, avec un `fib` discordant). Elle reste ouverte en Go, Rust et Python : la revue de code vérifie ce chemin.
-- **Lacune connue** : le contrat vérifie le nom et le format des lignes de durée, mais ni que l'algorithme nommé s'exécute vraiment, ni que la durée est mesurée (`0.000 ms` passe). En TypeScript, PERF-TS-8 comble la lacune (un `fib` espion et une horloge factice). Elle reste ouverte en Go, Rust et Python : la revue de code couvre ce point.
+- **Lacune connue** : le contrat vérifie le nom et le format des lignes de durée, mais ni que l'algorithme nommé s'exécute vraiment, ni que la durée est mesurée (`0.000 ms` passe). En TypeScript, PERF-TS-8 comble la lacune (un `fib` espion et une horloge factice), sauf l'étendue exacte de la fenêtre du chronomètre, que la revue de code garde. La lacune reste ouverte en Go, Rust et Python : la revue de code couvre ce point.
 
 ## 7. Traçabilité
 
@@ -273,10 +273,10 @@ Le § 7 fait foi : les titres du § 5 ne nomment que les exigences principales d
 |---|---|
 | F1 — terme | T01–T14, D01, D07, D08, V04 |
 | F2 — choix de l'algorithme | A01–A03, A06–A08, D03–D05 |
-| F3 — comparaison | A04, A05, D02; code 3 : voir § 6 |
+| F3 — comparaison | A04, A05, D02; code 3 : voir § 6, et PERF-TS-7 (TypeScript) |
 | F4 — liste | L01–L08, L16 |
 | F5 — exclusion `--list` / `--algo` | L10–L12 |
-| F6 — durées | D01–D08, X-3 sur chaque succès sans `--time`, V01, V04 |
+| F6 — durées | D01–D08, X-3 sur chaque succès sans `--time`, V01, V04; PERF-TS-8 (TypeScript) |
 | F7 — aide | H01–H07, H11 |
 | F8 — bornes | T13, I12–I14, L06, L09, L15, L16 |
 | F9 — erreurs d'usage | I01–I17, A09–A20, L09–L15, D09–D11, H08–H10, U01–U06, V04 |
