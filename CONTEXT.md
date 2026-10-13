@@ -81,7 +81,7 @@ La mesure du temps de réponse de chaque implémentation sur des scénarios fixe
 _Avoid_ : benchmark
 
 **A/B apparié** :
-Le banc d'essai joué contre une révision (`--contre REF`) : la révision et l'arbre de travail se lancent en alternance, et l'écart retenu est la médiane des différences par paire, sur le seul temps total. Il tranche des écarts que les médianes de deux passes séparées noient dans leur bruit.
+Le banc d'essai joué contre une révision (`--contre REF`) : la révision et l'arbre de travail se lancent en alternance, et l'écart retenu est la médiane des différences par paire, sur le seul temps total, 101 paires par défaut (la médiane d'un nombre pair de valeurs est la moyenne des deux éléments centraux). Il tranche des écarts que les médianes de deux passes séparées noient dans leur bruit.
 _Avoid_ : benchmark comparatif, deux passes du banc
 
 **Travail de démarrage** :
