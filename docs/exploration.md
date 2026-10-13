@@ -478,6 +478,39 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
   - Respecter la règle « un ticket et un langage par `fib-dev` » jusque dans les retouches. La dernière `/code-review` a relevé deux invocations qui mêlaient #41 et #43, ou ts/, contracts/ et python/.
   - Écrire dans un ticket le compte attendu par la formule, par exemple 6 ORA, plus le groupe du harnais, plus 99 cas, plutôt que par un nombre.
 
+## 2026-10-13 — Seconde `/handoff`, file d'instructions et fermeture pour la version v1.0.0
+
+- **Contexte** : après #25, le propriétaire a mis en file une quinzaine de consignes enchaînées par « ensuite » :
+  - les pistes ;
+  - le journal, le README et le PRD ;
+  - la fermeture des PR et des tickets ;
+  - le handoff et le résumé ;
+  - le nettoyage et `CLAUDE.md` ;
+  - la revue finale, la version v1.0.0, puis la poussée sur `main`.
+  
+  Quatre demandes « en parallèle » sont venues s'y ajouter pendant l'exécution. L'orchestrateur les a suivies dans l'ordre, sauf sur deux points : l'étiquette `v1.0.0` vient en dernier, après la poussée et le nettoyage, et le résumé suit l'étiquette, pour que l'étiquette marque le dernier commit et que le résumé la cite.
+- **Seconde `/handoff`** : le document de l'étape 11 a été réécrit, pas complété, pour la fermeture du dépôt. Il garde la même règle, « renvoyer, ne pas redire » :
+  - l'état vérifié sur `main` ;
+  - les points ouverts sans ticket, chacun avec l'endroit où il est consigné et ce qu'il faudrait ;
+  - les pièges de l'environnement ;
+  - les skills suggérées.
+  
+  Rédigé avant le lot final, il a dû être repris après : 409 tests au lieu de 413, la garde d'identité encore ouverte, Windows non signalé. C'est la friction de l'étape 11, un instantané vite périmé, que la fermeture rend plus visible encore.
+- **Parallélisme** :
+  - un workflow par ticket, à cause du plafond de deux agents par workflow sur quatre cœurs ;
+  - des `fib-dev` en arrière-plan, chacun dans son worktree, pour les retouches de la dernière `/code-review`.
+  
+  Pendant ce temps, l'orchestrateur tenait les documents, et la session a été résumée au moins une fois. Les brouillons laissés dans le dossier de travail de la session ont porté l'état d'un contexte à l'autre : le handoff, les notes de version et l'entrée du journal des pistes.
+- **A aidé** :
+  - L'ordre explicite de la file, qui a permis de repousser l'étiquette et le résumé sans redemander.
+  - Les brouillons hors dépôt, relus au lieu d'être réécrits de mémoire.
+- **Friction** :
+  - Une consigne envoyée pendant un tour peut interrompre un workflow en arrière-plan (#25), et chaque « en parallèle » est arrivé pendant qu'un lot tournait.
+  - Le handoff et les notes de version dépendent des derniers comptes. Les écrire avant le dernier lot oblige à les reprendre.
+- **À changer** :
+  - Recevoir une file d'instructions comme une liste de tâches, posée dès la réception.
+  - Écrire le handoff et les notes de version en dernier, après la vérification finale de `main`, et y laisser des marqueurs pour les comptes plutôt que des chiffres provisoires.
+
 ## Bilan au 2026-10-13
 
 | Skill | Usage |
@@ -490,10 +523,10 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
 | `/implement` | remplacée par l'agent `fib-dev`, qui applique `tdd` directement |
 | `resolving-merge-conflicts` | introuvable dans la session infonuagique : les conflits des vagues parallèles du 2026-10-13 (huit, dans six fichiers) ont été résolus à la main : par un `fib-dev` pour la fusion de #29 (cinq fichiers, code et documentation), par l'orchestrateur pour les trois autres (`docs/cas-de-test.md` deux fois, `CONTEXT.md`) |
 | `research`, `prototype` | non utilisées; un `prototype` aurait détecté plus tôt le piège de `go run` |
-| `/code-review` | utilisée trois fois le 2026-10-11, axes Standards et Spec : après la refactorisation, après l'optimisation, après la borne à 1 000 000; puis le 2026-10-12, sur les tickets #6 à #14 et sur #16; puis le 2026-10-13, sur #20, #21 et #25, puis quatre fois sur les pistes A, C, D et E (#27 à #36), une par vague et une dernière sur la fusion de #29, soit sept passes ce jour-là |
+| `/code-review` | utilisée trois fois le 2026-10-11, axes Standards et Spec : après la refactorisation, après l'optimisation, après la borne à 1 000 000; puis le 2026-10-12, sur les tickets #6 à #14 et sur #16; puis le 2026-10-13, sur #20, #21 et #25, puis quatre fois sur les pistes A, C, D et E (#27 à #36), une par vague et une dernière sur la fusion de #29, puis une sur le lot final (#39 à #43), soit huit passes ce jour-là |
 | `diagnosing-bugs` | utilisée à l'étape 9 (#16), lue dans `mattpocock/skills` faute de plugin; précédée d'une boucle différentielle pour trouver l'écart |
 | `/improve-codebase-architecture`, `codebase-design`, `grilling` | utilisées à l'étape 10 (#20), lues dans `mattpocock/skills` : rapport de 5 candidats, *design it twice* à 4 prototypes, 2 tours de *grilling*; puis pour les pistes A, C, D et E : deux conceptions prototypées par piste, un critique adverse, une série de questions |
-| `/handoff` | utilisée à l'étape 11, lue dans `mattpocock/skills` : document de reprise hors dépôt, envoyé au propriétaire |
+| `/handoff` | utilisée deux fois, lue dans `mattpocock/skills` : à l'étape 11, puis à la fermeture du dépôt pour la version v1.0.0; chaque fois un document de reprise hors dépôt, envoyé au propriétaire |
 
 Hors skill : l'audit du PRD (2026-10-10), l'audit en workflow du 2026-10-11 (auditeurs en lecture seule), puis l'optimisation des performances et la borne à 1 000 000, confiées à des sous-agents `fib-dev`, l'épreuve des cas de test en workflow, et, le 2026-10-13, les workflows `ultracode` de livraison : un `fib-dev`, un vérificateur adverse par exécution et un tour de correction par ticket.
 
