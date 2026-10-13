@@ -816,9 +816,10 @@ describe('harnais', () => {
   // table, et HAR-3 n'exige que des commandes distinctes : aucune garde ne fixait ce que la table lance. Le retour de ts au `.ts` non compilé
   // (`ts/src/cli.ts`) et le retrait de `-I -S` pour Python passaient donc le contrat, alors que le banc aurait mesuré le retrait des types
   // de Node, ou `site` et PYTHON*, au lieu du programme (ADR-0004). Go par `go run` et Rust par `cargo run` mesureraient la chaîne d'outils.
-  // Le contrôle ne lance rien et n'espionne rien : il compare `command(id)` à l'attendu, écrit ici sans la table, pour les quatre
-  // identifiants, un test chacun. Les attendus sont ceux du PRD § 5 : les binaires de Go et de Rust (suffixe `.exe` sous Windows, comme dans
-  // la table) vus depuis la racine de ce dépôt, le JavaScript que tsc émet sous `.build/ts/`, et Python isolé (`-I`) sans `site` (`-S`).
+  // Le contrôle ne lance rien et n'espionne rien : il compare `command(id)` à l'attendu, écrit ici sans la table, pour chaque identifiant de
+  // `IDS` (les quatre du PRD § 5), un test chacun. Les attendus sont ceux du PRD § 5 : les binaires de Go et de Rust (suffixe `.exe` sous Windows,
+  // comme dans la table) vus depuis la racine de ce dépôt, le JavaScript que tsc émet sous `.build/ts/`, et Python isolé (`-I`) sans `site` (`-S`).
+  // La boucle court sur `IDS`, non sur ces attendus : un identifiant ajouté à la table sans attendu ici échoue sous son propre nom.
   const exe = process.platform === 'win32' ? '.exe' : '';
   const LANCEMENT: Record<string, { quoi: string; argv: string[] }> = {
     go: { quoi: 'le binaire de go build', argv: [join(ROOT, '.build', `fib${exe}`)] },
@@ -826,11 +827,11 @@ describe('harnais', () => {
     ts: { quoi: 'le JavaScript compilé par tsc, non la source', argv: [process.execPath, '.build/ts/cli.js'] },
     py: { quoi: 'python/fib.py sous -I -S', argv: ['python', '-I', '-S', 'python/fib.py'] },
   };
-  for (const [id, { quoi, argv }] of Object.entries(LANCEMENT)) {
-    test(`HAR-7 : ${id} se lance par ${quoi}`, () => {
-      // La table de HAR-7 couvre exactement les identifiants du PRD § 5 : un cinquième ou un manquant rougit ici, avant la comparaison.
-      assert.deepEqual(Object.keys(LANCEMENT), [...IDS], 'HAR-7 ne couvre pas les identifiants de lancement.ts');
-      assert.deepEqual(command(id), argv, `${id} : la table de lancement ne lance pas ${quoi}`);
+  for (const id of IDS) {
+    const attendu: { quoi: string; argv: string[] } | undefined = LANCEMENT[id];
+    test(`HAR-7 : ${id} se lance par ${attendu?.quoi ?? 'une commande sans attendu'}`, () => {
+      assert.ok(attendu, `${id} : HAR-7 n’a pas d’attendu pour cet identifiant de lancement.ts`);
+      assert.deepEqual(command(id), attendu.argv, `${id} : la table de lancement ne lance pas ${attendu.quoi}`);
     });
   }
 });
