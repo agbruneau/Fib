@@ -17,12 +17,15 @@ type Run = ReturnType<typeof launch>;
 // Une entrée : les arguments de la CLI, et l'état dans lequel la lancer.
 type Entry = { args: string[]; env?: LaunchOptions['env']; stderrClosed?: boolean };
 
-// Ce que F10 interdit à stdout et à stderr : un octet de plus de 127 (hors ASCII), ESC (une séquence ANSI) et le retour chariot (des fins de
-// ligne `\n` partout). Le reste de l'ASCII est permis, la tabulation comprise. Les flux se lisent en latin1 : un octet égale un caractère.
-const BREACHES_F10 = /[^\x00-\x7f]|[\x1b\r]/;
+// Ce que F10 interdit à stdout et à stderr, tel que le contrat l'applique : F10 se lit par X-4 (catalogue, ligne de traçabilité de F10), qui
+// n'admet que l'ASCII imprimable (0x20 à 0x7E) et `\n`, que le découpage par ligne a déjà retiré. Tout autre caractère enfreint F10 : un octet
+// de plus de 127, ESC (une séquence ANSI), le retour chariot (des fins de ligne `\n` partout), mais aussi la tabulation, DEL et les autres
+// caractères de contrôle. Plus permissif que X-4, le motif cacherait l'écart d'une implémentation qui en écrit un. Les flux se lisent en latin1 :
+// un octet égale un caractère.
+const BREACHES_F10 = /[^\x20-\x7e]/;
 
 // Ce que le contrat fixe d'une exécution : le code, stdout à l'octet et stderr ligne à ligne. Le texte qui suit `fib: ` est libre
-// (F9), mais marqué s'il enfreint F10. La valeur d'une durée varie par nature : elle est masquée, et l'algorithme chronométré reste
+// (F9), mais marqué s'il enfreint F10 (X-4). La valeur d'une durée varie par nature : elle est masquée, et l'algorithme chronométré reste
 // (F6). Toute autre ligne se compare au texte.
 function project({ code, out, err }: Pick<Run, 'code' | 'out' | 'err'>): string {
   const line = (l: string) => {
@@ -56,9 +59,16 @@ function witness(): void {
   assert.notEqual(p(2, '', 'fib: a\n'), p(2, '', 'fib: \xe9\n'), 'un octet de plus de 127');
   assert.notEqual(p(2, '', 'fib: a\n'), p(2, '', 'fib: a\r\n'), 'un retour chariot');
   assert.equal(p(2, '', 'fib: \xe9\n'), p(2, '', 'fib: \xe8\n'), 'le marqueur tient lieu de texte');
-  assert.equal(p(2, '', 'fib: a\n'), p(2, '', 'fib: a\tb\n'), 'une tabulation est de l’ASCII : F10 ne l’interdit pas, elle reste du texte libre');
-  assert.equal(p(2, '', 'fib: a\n'), p(2, '', 'fib: a\x7f\x01\n'), 'DEL et les autres caractères de contrôle ASCII non plus');
+  // F10 se lit par X-4 (catalogue, ligne de traçabilité de F10) : rien que de l'ASCII imprimable, de 0x20 à 0x7E, et `\n`, que le découpage a retiré.
+  assert.notEqual(p(2, '', 'fib: a\n'), p(2, '', 'fib: a\tb\n'), 'une tabulation : X-4 la refuse, elle est marquée');
+  assert.notEqual(p(2, '', 'fib: a\n'), p(2, '', 'fib: a\x07\n'), 'BEL, un caractère de contrôle');
+  assert.notEqual(p(2, '', 'fib: a\n'), p(2, '', 'fib: a\x7f\n'), 'DEL, que 0x7E borne');
+  assert.notEqual(p(2, '', 'fib: a\n'), p(2, '', 'fib: a\x00\n'), 'NUL, le premier caractère de contrôle');
+  assert.notEqual(p(2, '', 'fib: a\n'), p(2, '', 'fib: a\x01\n'), 'SOH, juste après NUL');
+  assert.notEqual(p(2, '', 'fib: a\n'), p(2, '', 'fib: a\x1f\n'), 'US, le dernier avant l’espace (0x20)');
+  assert.equal(p(2, '', 'fib: a\n'), p(2, '', 'fib:  ~\n'), 'les bornes de X-4, l’espace (0x20) et le tilde (0x7E), restent du texte libre');
   assert.equal(p(2, '', 'fib: \xe9\n'), p(2, '', 'fib: \x1b[0m\r\xe8\xe8\n'), 'une infraction à F10 vaut une autre : le marqueur est le même');
+  assert.equal(p(2, '', 'fib: \xe9\n'), p(2, '', 'fib: a\tb\x7f\x01\n'), 'la tabulation, DEL et les autres caractères de contrôle comme un octet de plus de 127');
   assert.equal(p(0, '55\n', 'fast 0.010 ms\n'), p(0, '55\n', 'fast 1.250 ms\n'), 'la valeur d’une durée varie (F6)');
   assert.notEqual(p(0, '55\n', 'fast 0.010 ms\n'), p(0, '55\n', 'matrix 0.010 ms\n'), 'mais l’algorithme chronométré compte');
   assert.notEqual(p(0, '55\n', 'fast 0.010 ms\n'), p(0, '55\n', 'fast 0.01 ms\n'), 'et le format : trois décimales');
