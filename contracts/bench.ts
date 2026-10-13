@@ -1,6 +1,7 @@
 // Banc d'essai des CLI (ADR-0004) : médiane du temps total du processus et du calcul rapporté par --time.
 // Usage : node contracts/bench.ts [go|rust|ts|py …] [--runs N] [--contre REF] | --nettoyer. Compile puis lance par contracts/lancement.ts, comme le contrat.
 // --contre REF : A/B apparié, la révision REF (A) contre l'arbre de travail (B), lancés en alternance (le travail d'un démarrage, ADR-0004).
+// Un nombre pair de paires seulement (100 par défaut) : un --runs impair est arrondi au pair supérieur, et dit sur stderr.
 // --nettoyer : vide .build/revisions/, où l'A/B extrait ses révisions, sans suivre le lien vers node_modules qu'elles portent.
 import { existsSync, lstatSync, readdirSync, rmSync, unlinkSync } from 'node:fs';
 import { basename, join } from 'node:path';
@@ -110,11 +111,13 @@ function clean(revisions: string): number {
 
 const USAGE = 'usage : node contracts/bench.ts [go|rust|ts|py …] [--runs N] [--contre REF] | --nettoyer';
 
-// Les exécutions par scénario sans --runs : 11 pour le banc, des médianes qui suffisent à situer un temps. Un A/B en veut 101 paires, soit
-// 202 lancements par scénario, un des 6 tours de 201 lancements qui ont tranché l'horloge de #21 : l'erreur de la médiane des différences
-// décroît en 1/√n, donc d'un facteur 3 environ sur 11 paires, ce qui sépare un écart de quelques pour cent du bruit. ADR-0004.
+// Les exécutions par scénario sans --runs : 11 pour le banc, des médianes qui suffisent à situer un temps. Un A/B en veut 100 paires, soit
+// 200 lancements par scénario, l'ordre de grandeur des 6 tours de 201 lancements qui ont tranché l'horloge de #21 : l'erreur de la médiane
+// des différences décroît en 1/√n, donc d'un facteur 3 environ sur 11 paires, ce qui sépare un écart de quelques pour cent du bruit.
+// Un nombre PAIR : l'ordre alterne, et sur un nombre impair de paires un côté part le premier une fois de plus, la médiane retombe dans ce
+// groupe et l'effet d'ordre que l'alternance annule revient (+0,27 ms sur 101 paires, 0,00 sur 100, en simulation). ADR-0004.
 const RUNS = 11;
-const RUNS_AB = 101;
+const RUNS_AB = 100;
 
 // Les identifiants demandés (aucun : les implémentations présentes), le nombre d'exécutions par scénario, et la révision REF d'un A/B
 // (absente sans `--contre`, donc sans clé). Toute erreur levée ici est une erreur d'usage. `--runs` veut des chiffres décimaux
@@ -218,7 +221,11 @@ export function main(argv: readonly string[], revisions: string = REVISIONS): nu
     console.error(`bench: ${(e as Error).message}`);
     return 1;
   }
-  versus(ids, runs, ref, rev);
+  // Un --runs impair est arrondi au pair supérieur, et dit : sur un nombre impair de paires, un côté part le premier une fois de plus et la
+  // médiane des différences garde cet effet d'ordre. Après la lecture de la révision (une erreur reste seule sur stderr), avant tout build.
+  const pairs = runs + (runs % 2);
+  if (pairs !== runs) console.error(`bench: --runs ${runs} est impair sous --contre, arrondi à ${pairs} paires : A et B doivent partir le premier à égalité`);
+  versus(ids, pairs, ref, rev);
   return 0;
 }
 

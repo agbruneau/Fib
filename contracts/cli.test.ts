@@ -441,11 +441,12 @@ describe('harnais', () => {
       assert.throws(() => parseArgs(['py', '--contre', ...mauvais]), /--contre demande une révision/, `--contre ${JSON.stringify(mauvais)} accepté`);
     }
 
-    // Le défaut de --runs : 11 pour le banc, 101 sous --contre (au moins 101 paires pour un écart de quelques pour cent, ADR-0004),
-    // quel que soit l'ordre des options; un --runs explicite l'emporte, avant ou après --contre.
+    // Le défaut de --runs : 11 pour le banc, 100 sous --contre (une centaine de paires pour un écart de quelques pour cent, ADR-0004, et un
+    // nombre pair : l'ordre alterne, donc un nombre impair de paires donne à un côté une paire de plus qui part le premier, et la médiane
+    // retombe dans ce groupe), quel que soit l'ordre des options; un --runs explicite l'emporte, avant ou après --contre.
     assert.equal(parseArgs(['py']).runs, 11, 'le défaut du banc a changé');
-    assert.equal(parseArgs(['py', '--contre', 'HEAD']).runs, 101, 'l’A/B n’a pas son défaut de 101 paires');
-    assert.equal(parseArgs(['--contre', 'HEAD', 'py']).runs, 101, 'le défaut de l’A/B dépend de l’ordre des options');
+    assert.equal(parseArgs(['py', '--contre', 'HEAD']).runs, 100, 'l’A/B n’a pas son défaut de 100 paires');
+    assert.equal(parseArgs(['--contre', 'HEAD', 'py']).runs, 100, 'le défaut de l’A/B dépend de l’ordre des options');
     assert.equal(parseArgs(['py', '--runs', '5', '--contre', 'HEAD']).runs, 5, 'un --runs avant --contre est écrasé');
     assert.equal(parseArgs(['py', '--contre', 'HEAD', '--runs', '5']).runs, 5, 'un --runs après --contre est écrasé');
 
@@ -524,26 +525,40 @@ describe('harnais', () => {
     // git, donc seuls `git rev-parse`, `git ls-tree`, deux builds et les lancements de mesure passent par l'espion. `abPairs` ne garde pas, seul, la
     // racine que `versus` lui passe : un `abPairs(id, runs, ROOT)` dans `versus` laisserait HAR-5 vert, et l'A/B comparerait le dépôt à lui-même.
     // Un `build(id, rev)` retiré ou remplacé par `build(id)` y survivrait aussi, et ne se verrait qu'à une extraction neuve.
+    // L'ordre alterne (A part le premier aux tours pairs), donc seul un nombre pair de paires le répartit à égalité : sur un nombre impair,
+    // un côté part le premier dans une paire de plus, et la médiane des différences retombe dans ce groupe avec son effet d'ordre. Un --runs
+    // impair est arrondi au pair supérieur, et le banc le dit sur stderr (`--runs 1` : 2 paires, `--runs 3` : 4; `--runs 2` : 2, sans mot).
     const base = mkdtempSync(join(tmpdir(), 'fib-har5-ab-'));
     try {
       const rev = join(base, sha);
       mkdirSync(rev);
-      const ab = banc(['go', '--runs', '1', '--contre', 'HEAD'], arbre('go', 'rust', 'ts', 'python'), base);
-      assert.deepEqual([ab.code, ab.stderr], [0, ''], 'l’A/B doit réussir sans rien écrire sur stderr');
-      assert.match(ab.stdout, /^A\/B apparié sur 1 paire [^\n]*A = HEAD \(aaaaaaa\), B = /, 'l’en-tête ne nomme pas REF et son SHA court');
-      // Aucun appel git hors la lecture de la révision : la révision déjà extraite est réutilisée.
-      seulementLecture(ab.calls.filter((c) => c.file === 'git'));
-      // Un build part de la racine de la révision, l'autre du dépôt, dans un ordre quelconque.
-      assert.deepEqual(ab.calls.filter((c) => c.file === 'go').map((c) => c.options.cwd).sort(), [depot, rev].sort(), 'les deux builds ne partent pas du dépôt et de la révision');
-      // 1 tour de chauffe et 1 tour gardé : 2 × S rendez-vous, deux lancements chacun; la moitié, A, part de la racine de la révision.
-      const mesures = ab.calls.filter((c) => c.file !== 'git' && c.file !== 'go');
-      assert.equal(mesures.length, 2 * 2 * S, 'l’A/B ne joue pas 1 tour de chauffe et 1 tour gardé de chaque scénario, deux lancements chacun');
-      const de = (racine: string) => mesures.filter((c) => c.options.cwd === racine && c.file === command('go', racine)[0]);
-      assert.equal(de(rev).length, 2 * S, 'la moitié des lancements (A) ne part pas de la racine de la révision, avec son binaire');
-      assert.equal(de(depot).length, 2 * S, 'la moitié des lancements (B) ne part pas du dépôt, avec son binaire');
-      const lignes = ab.stdout.split('\n');
-      assert.equal(lignes.length, 2 + S, 'l’A/B n’écrit pas son en-tête, ses colonnes et une ligne par scénario');
-      for (const ligne of lignes.slice(2)) assert.match(ligne, /\/1$/, `une ligne du tableau ne compte pas 1 paire : ${ligne}`);
+      for (const [demande, paires] of [[1, 2], [2, 2], [3, 4]]) {
+        const ou = `--runs ${demande}`;
+        const ab = banc(['go', '--runs', String(demande), '--contre', 'HEAD'], arbre('go', 'rust', 'ts', 'python'), base);
+        const dit = demande === paires ? '' : `bench: --runs ${demande} est impair sous --contre, arrondi à ${paires} paires : A et B doivent partir le premier à égalité`;
+        assert.deepEqual([ab.code, ab.stderr], [0, dit], `${ou} : l’A/B doit réussir, et ne dire l’arrondi que pour un nombre impair`);
+        assert.match(ab.stdout, new RegExp(`^A/B apparié sur ${paires} paires [^\\n]*A = HEAD \\(aaaaaaa\\), B = `), `${ou} : l’en-tête ne nomme pas ${paires} paires, REF et son SHA court`);
+        // Aucun appel git hors la lecture de la révision : la révision déjà extraite est réutilisée.
+        seulementLecture(ab.calls.filter((c) => c.file === 'git'));
+        // Un build part de la racine de la révision, l'autre du dépôt, dans un ordre quelconque.
+        assert.deepEqual(ab.calls.filter((c) => c.file === 'go').map((c) => c.options.cwd).sort(), [depot, rev].sort(), `${ou} : les deux builds ne partent pas du dépôt et de la révision`);
+        // 1 tour de chauffe et `paires` tours gardés : (paires + 1) × S rendez-vous, deux lancements chacun; la moitié, A, part de la racine de la révision.
+        const mesures = ab.calls.filter((c) => c.file !== 'git' && c.file !== 'go');
+        assert.equal(mesures.length, 2 * (paires + 1) * S, `${ou} : l’A/B ne joue pas 1 tour de chauffe et ${paires} tours gardés de chaque scénario, deux lancements chacun`);
+        const de = (racine: string) => mesures.filter((c) => c.options.cwd === racine && c.file === command('go', racine)[0]);
+        assert.equal(de(rev).length, (paires + 1) * S, `${ou} : la moitié des lancements (A) ne part pas de la racine de la révision, avec son binaire`);
+        assert.equal(de(depot).length, (paires + 1) * S, `${ou} : la moitié des lancements (B) ne part pas du dépôt, avec son binaire`);
+        // Dans les tours gardés (1 à paires), chaque côté part le premier dans la moitié des paires de chaque scénario : le rendez-vous r × S + s
+        // est la paire de lancements 2k et 2k + 1, et le tour 0, écarté, ne compte pas.
+        for (let s = 0; s < S; s++) {
+          let aDabord = 0;
+          for (let r = 1; r <= paires; r++) if (mesures[2 * (r * S + s)].options.cwd === rev) aDabord++;
+          assert.equal(aDabord, paires / 2, `${ou}, scénario ${s} : A ne part pas le premier dans la moitié des paires`);
+        }
+        const lignes = ab.stdout.split('\n');
+        assert.equal(lignes.length, 2 + S, `${ou} : l’A/B n’écrit pas son en-tête, ses colonnes et une ligne par scénario`);
+        for (const ligne of lignes.slice(2)) assert.match(ligne, new RegExp(`/${paires}$`), `${ou} : une ligne du tableau ne compte pas ${paires} paires : ${ligne}`);
+      }
     } finally {
       fs.rmSync(base, { recursive: true, force: true });
     }
