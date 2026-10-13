@@ -147,7 +147,7 @@ npm run bench -- py --contre main
 - `contract` compile Go, Rust et TypeScript, puis joue le contrat sur les implémentations présentes.
 - `check` vérifie les quatre langages.
 - `bench` compile, puis mesure le temps total et le temps de calcul de chaque langage sur sept scénarios, dont un terme à 1 000 000. Il prend aussi des identifiants de langage; sans `--runs`, il fait 11 exécutions.
-- `bench -- <id> --contre REF` mesure un travail de démarrage par un A/B apparié : la révision REF, extraite sous `.build/revisions/` (à vider à la main), contre l'arbre de travail, lancées en alternance, avec la médiane des différences par paire (ADR-0004).
+- `bench -- <id> --contre REF` mesure un travail de démarrage par un A/B apparié : la révision REF, extraite sous `.build/revisions/` (à vider par `npm run bench -- --nettoyer`, jamais par `Remove-Item -Recurse` : chaque révision porte un lien vers `node_modules`), contre l'arbre de travail, lancées en alternance, avec la médiane des différences par paire (ADR-0004). Sans `--runs`, l'A/B fait 101 paires.
 
 ## Prérequis
 
