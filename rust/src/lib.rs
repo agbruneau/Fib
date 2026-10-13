@@ -35,10 +35,16 @@ impl FromStr for Algo {
 
 /// Rend F(n) par l'algorithme algo; l'enum et le u64 excluent un nom inconnu et n < 0 (refus dans FromStr).
 pub fn fib(n: u64, algo: Algo) -> BigUint {
+    algorithm(algo)(n)
+}
+
+/// L'aiguillage seul, séparé de `fib` pour qu'un test compare les adresses (PERF-RS-13) : les trois fonctions rendent
+/// les mêmes valeurs, et aucun test de valeur ne trahit une coquille ici.
+fn algorithm(algo: Algo) -> fn(u64) -> BigUint {
     match algo {
-        Algo::Iterative => iterative(n),
-        Algo::Matrix => matrix(n),
-        Algo::Fast => fast(n),
+        Algo::Iterative => iterative,
+        Algo::Matrix => matrix,
+        Algo::Fast => fast,
     }
 }
 
@@ -214,5 +220,31 @@ mod tests {
     #[test]
     fn perf_rs_7_une_somme_de_limbes_au_dessus_de_10_puissance_18_garde_son_reste() {
         assert_eq!(sum(&[BASE - 1], &[BASE - 1]), [BASE - 2, 1]);
+    }
+
+    // PERF-RS-13 (F2 et F6), hors catalogue : chaque algorithme est aiguillé vers sa propre fonction. Les trois rendent
+    // les mêmes valeurs, et PERF-RS-12 espionne le nom demandé, non la fonction qui calcule derrière : seule l'adresse
+    // de la fonction distingue une coquille d'aiguillage. La garde ne compare donc ni valeur calculée ni durée, et
+    // vérifie d'abord que les trois adresses diffèrent, sans quoi l'égalité passerait à vide. Rouge sous les six
+    // échanges d'une branche de `algorithm` : chacun des trois noms vers l'une des deux autres fonctions, dont
+    // `Algo::Matrix => fast`. `fib` qui contourne `algorithm` (`iterative(n)` en dur) ne rougit aucun test, mais clippy
+    // `-D warnings` le refuse (`algo` inutilisé ; `algorithm`, `matrix` et `fast` morts) ; `matrix(n)` ou `fast(n)` en
+    // dur rougissent en plus PERF-RS-9, qui compte les allocations d'`iterative`.
+    #[test]
+    fn perf_rs_13_chaque_algorithme_est_aiguille_vers_sa_propre_fonction() {
+        type Term = fn(u64) -> BigUint;
+        let routes: [(Algo, Term); 3] = [(Algo::Iterative, iterative), (Algo::Matrix, matrix), (Algo::Fast, fast)];
+        for (i, (a, own_a)) in routes.iter().enumerate() {
+            for (b, own_b) in &routes[i + 1..] {
+                assert!(!std::ptr::fn_addr_eq(*own_a, *own_b), "{} et {} ont la même adresse", a.name(), b.name());
+            }
+        }
+        for (algo, own) in routes {
+            assert!(
+                std::ptr::fn_addr_eq(algorithm(algo), own),
+                "{} n'est pas aiguillé vers sa propre fonction",
+                algo.name()
+            );
+        }
     }
 }
