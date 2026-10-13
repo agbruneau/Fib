@@ -189,7 +189,7 @@ Le chemin de la discordance (code 3) dans la CLI n'a pas de cas de test, puisque
 
 - **A1** — Chaque ticket de langage : les cas ORA, les cas BIB de son langage et tous les cas CLI de son identifiant passent, donc `npm run check:<id>` et `npm run contract` sont verts sur `main`. Le projet : `npm run check` passe sous Windows 11 une fois les quatre implémentations livrées.
 - **A2** — Aucune dépendance hors de celles du § 5.
-- **A3** — Remplacé par l'ADR-0004 : la taille suit la performance. Mesuré le 2026-10-13 (`wc -l` des sources, hors fichiers de test) : TypeScript 266, Python 270, Rust 469 (dont 34 lignes de tests unitaires dans `lib.rs` et 102 dans `main.rs`), Go 385. Le 2026-10-11, après optimisation et borne à 1 000 000 : 232, 261, 359 et 376. Avant les travaux du 2026-10-11 : 151, 158, 205 et 255.
+- **A3** — Remplacé par l'ADR-0004 : la taille suit la performance. Mesuré le 2026-10-13 (`wc -l` des sources, hors fichiers de test) : TypeScript 268, Python 270, Rust 501 (dont 60 lignes de tests unitaires dans `lib.rs` et 102 dans `main.rs`), Go 385. Le 2026-10-11, après optimisation et borne à 1 000 000 : 232, 261, 359 et 376. Avant les travaux du 2026-10-11 : 151, 158, 205 et 255.
 - **A4** — `docs/exploration.md` contient une entrée pour chaque skill du § 9 réellement utilisée.
 
 ## 8. Hors périmètre
