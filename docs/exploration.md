@@ -429,6 +429,41 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
   - Ne pas paralléliser deux tickets qui réécrivent la même fonction (ici `extract`) : les enchaîner, ou les confier au même `fib-dev`.
   - Lancer un workflow par ticket quand le nombre de cœurs plafonne la concurrence.
 
+## 2026-10-13 — Revue finale de cohérence en workflow, puis gardes d'identité de l'aiguillage (#39 à #43), avant la version v1.0.0
+
+- **Contexte** : avant la version finale, le propriétaire a demandé une revue de cohérence de tout le dépôt et sa fermeture. Il a ensuite demandé de lancer en parallèle la garde d'identité de la table des algorithmes, une lacune que la vérification de #36 avait trouvée.
+- **Démarche** : quatre workflows de revue, un par angle (chiffres et commandes, cohérence entre documents, tickets et traçabilité, code et gardes). Chacun a un réviseur qui vérifie par exécution, puis un vérificateur adverse qui tente de réfuter chaque constat.
+  - 46 constats en sont sortis : 40 confirmés et 6 réfutés.
+  - L'orchestrateur a corrigé les constats de documentation. Ceux de code ont fait le ticket #43, livré par un `fib-dev`.
+  - Les gardes d'identité ont fait quatre tickets, un par langage (#39 à #42), dans quatre workflows parallèles.
+- **Ce que la revue a trouvé** :
+  - des chiffres périmés : A3 du PRD au 2026-10-11, « 402 cas verts » au lieu de 398, « cinq chantiers » ;
+  - une ADR qui décrivait une refonte que le propriétaire avait annulée ;
+  - un PRD qui disait le harnais facultatif ;
+  - un piège `process.exit()` déclaré « à vérifier », pourtant reproductible sous Linux ;
+  - une procédure de tickets fondée sur des commandes `gh issue`, refusées en session infonuagique ;
+  - deux optimisations sans garde : les accesseurs paresseux de stdout en TypeScript, devenus PERF-TS-11, et le contenu de la table de lancement, devenu HAR-7 ;
+  - trois lacunes non nommées au catalogue : le code de sortie, le `fib` de `processIo` et le `forget` de Rust.
+- **Gardes d'identité** : chaque langage a sa forme.
+  - Go (PERF-GO-11) : une empreinte d'allocations, sans changer la production (4, 67 et 52 allocations à n = 1023).
+  - Rust (PERF-RS-13) : des adresses de fonction, par une fonction privée `algorithm`.
+  - TypeScript (PERF-TS-10) : le nom et des espions, sur la table exportée pour les seules gardes.
+  - Python (PERF-PY-30) : l'identité de chaque entrée de `_ALGOS`.
+  
+  Les six échanges d'aiguillage les rougissent toutes.
+- **Mesure** : le code généré par Rust change (un appel indirect au lieu de l'inlining), et TypeScript gagne un export. `npm run bench -- rust ts --contre de075bf`, au repos :
+  - TypeScript : de −2,5 à +0,8 %, avec des signes alternés.
+  - Rust : un premier tour de 100 paires a montré +4,7 % sur `petit (10)`. Deux tours de 200 paires l'ont démenti (−1,9 %, puis +1,0 %), sans qu'aucun scénario ne garde son signe : c'est du bruit.
+- **A aidé** :
+  - Le vérificateur adverse a réfuté 6 constats sur 46, dont deux affirmations fausses sur l'A/B et sur A3, et a resserré plusieurs correctifs avant leur application.
+  - L'A/B apparié du dépôt a servi sur la mesure même qui l'avait motivé, et sa répétition a départagé un écart que la première passe faisait croire réel.
+- **Friction** :
+  - L'orchestrateur a deux fois mal lancé un workflow : un SHA de base inventé, puis un chemin de script provisoire envoyé en parallèle de sa création. Le premier a dû être arrêté et relancé.
+  - Les tickets écrits ensemble se recoupent encore : #43 visait 113 tests par langage, alors que HAR-7, à un test par commande, en donne 116.
+- **À changer** :
+  - Toujours lire la tête (`git rev-parse`) au moment de lancer un workflow, jamais la recopier de mémoire.
+  - Écrire dans un ticket le compte attendu par la formule, par exemple 6 ORA, plus le groupe du harnais, plus 99 cas, plutôt que par un nombre.
+
 ## Bilan au 2026-10-13
 
 | Skill | Usage |
