@@ -232,7 +232,52 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
   - Garder la boucle différentielle comme outil de recherche, avant `diagnosing-bugs`, quand aucun bug n'est signalé.
   - Faire écrire au `fib-dev`, dans tout test qui manipule le harnais, le mutant du harnais qui doit le faire rougir.
 
-## Bilan au 2026-10-12
+## 2026-10-13 — `/improve-codebase-architecture` et `codebase-design` (étape 10, #20)
+
+- **Contexte** :
+  - Les deux skills manquent à la session infonuagique : leurs `SKILL.md` (et `HTML-REPORT.md`, `DEEPENING.md`, `DESIGN-IT-TWICE.md`, `grilling`) ont été lus dans `mattpocock/skills` et suivis à la main.
+  - Le dépôt n'a pas de `GLOSSARY.md` : `CONTEXT.md` en tient lieu.
+  - Les points chauds de l'historique sont `contracts/cli.test.ts`, Python et `rust/src/main.rs`.
+- **Exploration** : un workflow de six explorateurs, un par zone (contrat, Python, Go, Rust, TypeScript, transverse), puis six vérificateurs sceptiques. Chaque vérificateur applique le test de suppression, confronte le candidat aux ADR et relit les lignes citées. Résultat :
+  - 19 candidats, dont 8 gardés et fondus en 5 :
+    - A, le lancement d'une implémentation en un seul module de `contracts/` (Strong) ;
+    - B, la CLI TypeScript appelable dans le processus (Strong) ;
+    - C, un seam pour tester la discordance dans chaque langage (Worth exploring) ;
+    - D, le texte décimal de Python (Worth exploring) ;
+    - E, le point d'entrée de Python (Speculative).
+  - Le rapport HTML (Tailwind, Mermaid) est écrit hors du dépôt, son rendu vérifié par un navigateur sans tête, puis envoyé au propriétaire.
+- ***Design it twice*** : le propriétaire a retenu B. Quatre conceptions ont été prototypées et mesurées hors du dépôt : minimale, flexible, appelant courant, ports et adaptateurs.
+  - Les quatre tuent M1 à M4. Le démarrage ne bouge qu'au-delà d'un module interne, `import.meta`, pour environ 0,2 ms.
+  - La conception minimale a été retenue : `run(args, io?)` rend le code, avec un `Io` à quatre membres.
+- ***Grilling*** : deux tours, sept décisions.
+  - La conception 1.
+  - Le statut des tests de garde plutôt qu'un troisième seam.
+  - Le `fib` discordant, réservé au test de F3.
+  - Node 24.2 avec `import.meta.main`.
+  - Les noms PERF-TS-6 à 8, avec le glossaire élargi.
+  - TypeScript seulement.
+  - `performance.now()` gardé, et la piste `process.hrtime` versée à #21.
+- **Livraison (#20)** :
+  - un `fib-dev`, test d'abord. M1 à M4 font rougir PERF-TS-6 à 8, alors que le contrat reste à 106 sur 106 sous chacun d'eux ;
+  - le seul module ajouté au démarrage est `initialize_import_meta` ;
+  - banc apparié au repos sur `petit (10)` : +0,4 % à +2,9 % (+0,16 à +1,29 ms), sous le seuil de 3 % ;
+  - `/code-review` : 7 constats, tous traités (voir la PR).
+- **A aidé** :
+  - Le vérificateur sceptique a rabattu 6 forces sur 8, corrigé des citations fausses et écarté 11 candidats que la suppression ne concentrait pas.
+  - Les prototypes mesurés ont tranché les questions au lieu de les débattre : le coût de `import.meta` contre celui d'un second fichier, les mutants vus rouges sur chaque conception.
+  - L'exploration a sorti deux constats hors approfondissement :
+    - une garde manque au préchargement de `decimal` en Python : le mutant reste vert, pour 5,5 → 9,4 ms ;
+    - `performance` coûte 11 modules internes au démarrage de TypeScript, ce qui a donné #21.
+- **Friction** :
+  - Les skills ne sont pas installées. Le rapport « ouvert dans le navigateur » ne s'applique pas à une session infonuagique : il a été envoyé comme fichier.
+  - Le vocabulaire imposé par `codebase-design` (interface, adaptateur, port) heurte les « _Avoid_ » de `CONTEXT.md` (« Contrat : _Avoid_ interface », « Implémentation : _Avoid_ port »). Le rapport a dû tenir deux lexiques à la fois.
+  - La skill s'arrête au *grilling* ; la livraison (ticket, `fib-dev`, revue) vient de la boucle du dépôt.
+  - Coût : environ 1,8 million de jetons pour l'exploration et 0,6 million pour les quatre prototypes.
+- **À changer** :
+  - Distinguer, dans `CONTEXT.md`, l'interface au sens de `codebase-design` du contrat, pour que les deux vocabulaires cohabitent.
+  - Garder les candidats A, C et D comme pistes d'architecture, et décider de la garde manquante du préchargement de `decimal`.
+
+## Bilan au 2026-10-13
 
 | Skill | Usage |
 |---|---|
@@ -246,7 +291,8 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
 | `research`, `prototype` | non utilisées; un `prototype` aurait détecté plus tôt le piège de `go run` |
 | `/code-review` | utilisée trois fois le 2026-10-11, axes Standards et Spec : après la refactorisation, après l'optimisation, après la borne à 1 000 000; puis une fois le 2026-10-12, sur les tickets #6 à #14 |
 | `diagnosing-bugs` | utilisée à l'étape 9 (#16), lue dans `mattpocock/skills` faute de plugin; précédée d'une boucle différentielle pour trouver l'écart |
-| `/improve-codebase-architecture`, `/handoff` | à venir (étapes 10 et 11 du PRD) |
+| `/improve-codebase-architecture`, `codebase-design`, `grilling` | utilisées à l'étape 10 (#20), lues dans `mattpocock/skills` : rapport de 5 candidats, *design it twice* à 4 prototypes, 2 tours de *grilling* |
+| `/handoff` | à venir (étape 11 du PRD) |
 
 Hors skill : l'audit du PRD (2026-10-10), l'audit en workflow du 2026-10-11 (auditeurs en lecture seule), puis l'optimisation des performances et la borne à 1 000 000, confiées à des sous-agents `fib-dev`, et enfin l'épreuve des cas de test en workflow.
 
