@@ -303,6 +303,30 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
   - En session infonuagique, consigner les pistes orphelines dans un artefact durable (ticket de suivi ou page publiée) dès l'étape qui les produit, pour que la reprise n'en dépende pas.
   - Faire de la section « Pièges de l'environnement » une page de `docs/agents/`, puisqu'elle vaut pour toute session.
 
+## 2026-10-13 — Horloge `process.hrtime` en TypeScript (#21), puis `/code-review`
+
+- **Contexte** : #21 est né de l'étape 10. Le premier accès au global `performance` charge des modules internes, et `timed` lit l'horloge même sans `--time`. Le gain annoncé, environ 2,5 ms, avait été mesuré sur une machine partagée.
+- **Mesure** : `npm run bench -- ts --runs 15`, trois tours au repos, sur `petit (10)`.
+  - `main` donne de 46,3 à 55,8 ms selon le tour, et la branche de 44,9 à 47,8 ms. Les plages se recouvrent : le banc non apparié ne tranche pas un gain de 2 ms sur 50.
+  - L'A/B apparié tranche : 6 tours de 201 lancements de `cli.js 10` et `--time 10` donnent de −1,8 à −2,6 ms (−4,0 à −5,7 %), tous dans le même sens. Le changement est retenu.
+- **`/code-review`** : 13 constats, 9 retenus en tout ou en partie.
+  - L'unité de l'horloge réelle n'était gardée par rien. `performance.now()` rendait des millisecondes nativement ; la conversion des nanosecondes est un risque créé par le changement lui-même. Un test borne maintenant une vraie durée entre le vingtième du temps mural et ce temps.
+  - La garde interdisait tout `internal/perf/…` sauf trois exceptions mesurées sous un seul Node et un seul système. Elle n'interdit plus que les deux modules que seul le global charge.
+  - La garde compilait la CLI à chaque `node --test`. Elle lance maintenant la source, dont Node retire les types.
+  - Le décompte du commentaire était faux : 11 modules avec stdout vers un fichier ou un terminal, 9 dans un tube, où `net` en charge 2 de toute façon. L'orchestrateur a départagé l'auteur et le réviseur par une mesure.
+  - Retenus aussi : `--list` et `--algo all` couverts ; `NODE_OPTIONS` retiré de l'environnement des sous-processus, avec un délai maximal ; la mesure en ms dans le commentaire d'une ligne ; le catalogue § 6.
+  - Écartés : sauter le chronomètre sans `--time` (décision de #20), retirer l'origine de l'horloge (plus exacte pour un coût égal), et couvrir l'aide et les erreurs, qui ne lisent pas l'horloge.
+  - Corrigé par l'orchestrateur : le compte de lignes TypeScript du README, périmé depuis #20 (234 → 266).
+- **A aidé** :
+  - L'A/B apparié, avec les deux builds côte à côte, a rendu mesurable un gain que le banc du dépôt noyait dans le bruit.
+  - La revue a vu que le changement retirait une propriété gratuite, l'unité native de `performance.now()`, sans la remplacer par une garde.
+- **Friction** :
+  - La première garde codait l'état d'une plateforme, une liste d'exceptions, au lieu de la propriété voulue, l'absence de `performance`.
+  - La skill `tdd` reste introuvable chez le `fib-dev` (`Unknown skill: tdd`), qui suit son cycle à la main.
+- **À changer** :
+  - Ajouter au banc un mode apparié entre deux builds, puisqu'un gain de démarrage de quelques pour cent est sous son bruit.
+  - Demander au `fib-dev`, pour toute garde de modules chargés, un prédicat positif sur ce que l'optimisation évite.
+
 ## Bilan au 2026-10-13
 
 | Skill | Usage |
@@ -315,7 +339,7 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
 | `/implement` | remplacée par l'agent `fib-dev`, qui applique `tdd` directement |
 | `resolving-merge-conflicts` | non nécessaire : aucune des 41 fusions n'a conflicté |
 | `research`, `prototype` | non utilisées; un `prototype` aurait détecté plus tôt le piège de `go run` |
-| `/code-review` | utilisée trois fois le 2026-10-11, axes Standards et Spec : après la refactorisation, après l'optimisation, après la borne à 1 000 000; puis une fois le 2026-10-12, sur les tickets #6 à #14 |
+| `/code-review` | utilisée trois fois le 2026-10-11, axes Standards et Spec : après la refactorisation, après l'optimisation, après la borne à 1 000 000; puis le 2026-10-12, sur les tickets #6 à #14 et sur #16; puis le 2026-10-13, sur #20 et #21 |
 | `diagnosing-bugs` | utilisée à l'étape 9 (#16), lue dans `mattpocock/skills` faute de plugin; précédée d'une boucle différentielle pour trouver l'écart |
 | `/improve-codebase-architecture`, `codebase-design`, `grilling` | utilisées à l'étape 10 (#20), lues dans `mattpocock/skills` : rapport de 5 candidats, *design it twice* à 4 prototypes, 2 tours de *grilling* |
 | `/handoff` | utilisée à l'étape 11, lue dans `mattpocock/skills` : document de reprise hors dépôt, envoyé au propriétaire |

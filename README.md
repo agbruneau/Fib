@@ -46,20 +46,21 @@ Temps total du processus, en millisecondes, médianes de 15 exécutions (`npm ru
 | `--list 10000` | 78,6 → 23,2 | 107,2 → 25,2 | 206,3 → 71,8 | 229,2 → 65,3 |
 
 - Go et Rust sont au plancher du démarrage, environ 5 à 7 ms, sur les scénarios petit, terme `100000` et `matrix` : les différences y sont du bruit. Le plancher est d'environ 36 ms pour Node et 15 ms pour Python.
+- Le 2026-10-13, l'horloge `process.hrtime` ([agbruneau/Fib#21](https://github.com/agbruneau/Fib/issues/21)) a retiré de 1,8 à 2,6 ms au démarrage de TypeScript : le premier accès à `performance` chargeait jusqu'à 11 modules internes. C'est un A/B apparié sous Linux et Node 22.22, postérieur au tableau.
 - La colonne « avant » de Rust lance déjà le binaire. L'ancienne commande, `cargo run`, ajoutait environ 50 ms par lancement.
 - « Refusé » : l'ancienne borne d'un terme était 100 000. F(1 000 000) compte 208 988 chiffres; avec la seule borne relevée, Python mettait 288 ms.
 
 **Qualité.**
 
 - L'audit, en 8 dimensions (les quatre langages, contrat, cohérence, test différentiel, documentation), a rendu 233 constats, dont 36 réfutés par un vérificateur sceptique. Il n'a trouvé aucune erreur de calcul et un seul écart au contrat : Python laissait `PYTHONIOENCODING` changer l'encodage de sa sortie. L'écart est corrigé et gardé par PERF-PY-20 : CLI-V03 ne peut pas le voir, car `python -I` ignore la variable. Un test différentiel de 121 vecteurs hors catalogue n'a trouvé aucun écart entre les quatre implémentations. Le 2026-10-12, une boucle différentielle d'environ 170 000 entrées en a trouvé un : avec stderr fermé, Python sortait en code 1, stdout vide. Il est corrigé et gardé par CLI-V04 et PERF-PY-23. Elle a aussi relevé des comportements que le contrat ne tranchait pas, comme un stdout qui refuse l'écriture : ils sont désormais hors contrat (PRD § 4, [agbruneau/Fib#18](https://github.com/agbruneau/Fib/issues/18)).
-- Chaque langage passe les 99 cas CLI du contrat (CLI-V04 se saute sous Windows), ORA-01 à ORA-06 sur l'oracle et le contrôle du harnais (106 tests par langage), BIB-01 à BIB-14 sur sa bibliothèque (BIB-14 est sans objet en Rust), et des tests de garde de ses optimisations : 8 en Go, 10 en Rust, 8 en TypeScript, 24 en Python. En TypeScript, PERF-TS-7 et PERF-TS-8 gardent aussi deux exigences que le contrat ne sait pas provoquer : la discordance (F3) et des durées réellement mesurées (F6).
+- Chaque langage passe les 99 cas CLI du contrat (CLI-V04 se saute sous Windows), ORA-01 à ORA-06 sur l'oracle et le contrôle du harnais (106 tests par langage), BIB-01 à BIB-14 sur sa bibliothèque (BIB-14 est sans objet en Rust), et des tests de garde de ses optimisations : 8 en Go, 10 en Rust, 9 en TypeScript, 24 en Python. En TypeScript, PERF-TS-7 et PERF-TS-8 gardent aussi deux exigences que le contrat ne sait pas provoquer : la discordance (F3) et des durées réellement mesurées (F6).
 - Une revue `/code-review` a suivi chacun des cinq chantiers. Ces revues ont trouvé, entre autres, une violation du PRD § 7 en Rust (lignes vides de l'oracle) et un `matrix` TypeScript qui refaisait l'ancien `fast`. Les constats sont corrigés.
 
 **Coût.**
 
 | Lignes de code (`wc -l`, hors fichiers de test) | Go | Rust | TypeScript | Python |
 |---|---|---|---|---|
-| avant → final | 255 → 382 | 205 → 409 | 151 → 234 | 158 → 268 |
+| avant → final | 255 → 382 | 205 → 409 | 151 → 266 | 158 → 268 |
 
 - Rust compte aussi ses tests unitaires : 34 lignes dans `lib.rs` et 44 dans `main.rs` (PERF-RS-8). La cible d'environ 200 lignes (PRD, A3) est remplacée par l'ADR-0004.
 - `iterative` reste en O(n²) opérations sur les mots : à 1 000 000, il prend environ 1,6 s en Go et 5 s en Python, ce que F8 accepte.

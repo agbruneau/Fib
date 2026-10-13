@@ -95,10 +95,14 @@ function compute({ algos, list, n }: Options, io: Pick<Io, 'fib' | 'clock'>): { 
   return { lines: [String(terms[0])], durations };
 }
 
+// Origine de l'horloge : une durée relative reste exacte, alors que Number() d'un compteur brut perd la nanoseconde dès 2^53 ns (104 jours).
+const ORIGIN = process.hrtime.bigint();
+
 // L'Io du processus. Accesseurs paresseux : le chemin d'erreur n'ouvre pas process.stdout (0,25 ms mesuré à l'étape 10; 0,09 ms sous Linux).
 const processIo: Io = {
   fib,
-  clock: () => performance.now(),
+  // process.hrtime plutôt que performance, dont le premier accès charge jusqu'à 11 modules, même sans --time : −1,8 à −2,6 ms au démarrage (ADR-0004, #21; Node 22.22).
+  clock: () => Number(process.hrtime.bigint() - ORIGIN) / 1e6,
   get stdout() {
     return process.stdout;
   },
