@@ -12,7 +12,20 @@ from functools import cache
 from pathlib import Path
 from unittest import mock
 
-from fib import DECIMAL_FROM, MAX_LIST, MAX_TERM, STR_FROM_BITS, _fib_decimal, _text, compute, fib, fib_list, main
+from fib import (
+    _ALGOS,
+    COMPARISON,
+    DECIMAL_FROM,
+    MAX_LIST,
+    MAX_TERM,
+    STR_FROM_BITS,
+    _fib_decimal,
+    _text,
+    compute,
+    fib,
+    fib_list,
+    main,
+)
 
 ALGOS = ("iterative", "matrix", "fast")
 HERE = Path(__file__).resolve().parent
@@ -25,6 +38,16 @@ DECIMAL_PATHS = (
     ("fib_list", lambda: fib_list(50)),
     ("fast", lambda: _fib_decimal(50, "fast")),
     ("matrix", lambda: _fib_decimal(50, "matrix")),
+)
+# PERF-PY-27 : (arguments après --time, algorithmes exécutés dans l'ordre). 10 et DECIMAL_FROM tiennent de part et d'autre
+# du seuil : en int, puis en Decimal, où seuls fast et matrix calculent (avec iterative, int : PERF-PY-13).
+EXECUTED = (
+    (["10"], ["fast"]),
+    (["--algo", "iterative", "10"], ["iterative"]),
+    (["--algo", "matrix", "10"], ["matrix"]),
+    (["--algo", "all", "10"], ["fast", "iterative", "matrix"]),
+    ([str(DECIMAL_FROM)], ["fast"]),
+    (["--algo", "matrix", str(DECIMAL_FROM)], ["matrix"]),
 )
 
 
@@ -84,6 +107,38 @@ class WriteCounter:
 
     def flush(self):
         pass
+
+
+def algorithms(wrap):
+    """Un with qui substitue chaque entrée de _ALGOS par wrap(nom, calcul) : fib() et le chemin Decimal lisent la table à
+    chaque appel, donc la substitution vaut en int comme en Decimal. Elle suppose que _ALGOS reste le seul aiguillage
+    des algorithmes (PERF-PY-26 et 27)."""
+    return mock.patch.dict(_ALGOS, {name: wrap(name, calc) for name, calc in _ALGOS.items()})
+
+
+def main_captured(args):
+    """main(args) avec deux WriteCounter à la place de sys.stdout et de sys.stderr; rend le code, puis ces deux flux."""
+    out, err = WriteCounter(), WriteCounter()
+    with mock.patch("sys.stdout", out), mock.patch("sys.stderr", err):
+        return main(args), out, err
+
+
+def one_more(bad):
+    """Le wrap de PERF-PY-26 : l'algorithme bad rend le vrai terme plus 1, les deux autres le vrai terme."""
+    return lambda name, calc: lambda n, *kind: calc(n, *kind) + int(name == bad)
+
+
+def spying(noted):
+    """Le wrap de PERF-PY-27 : chaque entrée note son nom dans noted, puis délègue au vrai calcul."""
+
+    def wrap(name, calc):
+        def call(n, *kind):
+            noted.append(name)
+            return calc(n, *kind)
+
+        return call
+
+    return wrap
 
 
 def run_main_block(args, absent=()):
@@ -505,6 +560,45 @@ class TestFib(unittest.TestCase):
         ):
             with self.subTest(sans_decimal=args):
                 self.assert_no_heavy_import(args)
+
+    def test_PERF_PY_26_si_un_algorithme_discorde_all_rend_3_sans_stdout_ni_duree(self):
+        """PERF-PY-26 : hors catalogue, garde de F3 (code 3, stdout vide, une seule ligne fib: sans durée même avec
+        --time). Aucun cas CLI ne peut provoquer une discordance (catalogue § 6) : _ALGOS reçoit, tour à tour pour
+        chacun des trois algorithmes de COMPARISON, une entrée qui rend le vrai terme plus 1, et le test ne recalcule
+        aucun terme. Mutants rouges : prédicat aveugle, any(t != t ...) (P1), ou partiel, terms[:2] (P2); CliError sans
+        le code 3 (P3); return 2 en dur dans main (P4); des durées dans le message, une par ligne (P5) ou sur sa ligne
+        (P5b); compute qui écrit les durées sur stderr (P6) ou le terme sur stdout (P7) avant l'erreur; un seul
+        algorithme calculé par fast (P9). Elle suppose que _ALGOS reste le seul aiguillage des algorithmes : P8n, une
+        fib() qui aiguille sans la table, la rougit à tort (bruyant, jamais silencieux)."""
+        for bad in COMPARISON:
+            with self.subTest(bad=bad), algorithms(one_more(bad)):
+                code, out, err = main_captured(["--time", "--algo", "all", "10"])
+                self.assertEqual(code, 3)
+                self.assertEqual(out.calls, 0, f"stdout a reçu {out.chunks!r}")
+                self.assertEqual(err.calls, 1, f"stderr a reçu {err.chunks!r}")
+                self.assertRegex(err.chunks[0], r"\Afib: [^\n]*\n\Z")
+                self.assertNotRegex(err.chunks[0], r"\d\.\d{3} ms")
+
+    def test_PERF_PY_27_l_algorithme_nomme_s_execute_et_porte_sa_ligne_de_duree_en_int_comme_en_decimal(self):
+        """PERF-PY-27 : hors catalogue, garde de F2 et de F6 : l'algorithme nommé s'exécute, et chaque ligne --time
+        porte le nom de l'algorithme qu'elle a chronométré, dans l'ordre. Le contrat ne voit pas l'un sans l'autre :
+        les trois algorithmes rendent le même terme. Un espion dans _ALGOS note le nom puis délègue; les noms notés
+        sont ceux des lignes de durée, qui sont ceux de EXECUTED, en int (10 : défaut, iterative, matrix, all) puis sur
+        le chemin Decimal (DECIMAL_FROM : défaut, matrix). Mutants rouges : un seul algorithme calculé par fast (P9);
+        sur le chemin Decimal, matrix calculé par fast, dans compute (P10) puis dans _fib_decimal (P11). Elle suppose
+        que _ALGOS reste le seul aiguillage des algorithmes : deux refactorisations neutres la rougissent à tort
+        (bruyant, jamais silencieux), P8n, fib() qui aiguille sans la table, et P12n, le chemin Decimal sans la
+        table."""
+        for args, algos in EXECUTED:
+            noted = []
+            with self.subTest(args=args), algorithms(spying(noted)):
+                code, _, err = main_captured(["--time", *args])
+                self.assertEqual(code, 0, f"stderr a reçu {err.chunks!r}")
+                durations = "".join(err.chunks)
+                self.assertRegex(durations, r"\A(?:\w+ \d+\.\d{3} ms\n)+\Z")
+                lines = [line.split()[0] for line in durations.splitlines()]
+                self.assertEqual(lines, algos, "les lignes de durée")
+                self.assertEqual(noted, lines, "les algorithmes exécutés")
 
 
 if __name__ == "__main__":

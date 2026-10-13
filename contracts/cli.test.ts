@@ -2,31 +2,12 @@
 // Usage : node contracts/cli.test.ts [go|rust|ts|py …]
 import { before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import cp, { spawnSync } from 'node:child_process';
+import { syncBuiltinESMExports } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { measure, parseArgs } from './bench.ts';
+import { build, closeStderr, command, IDS, launch, present, type LaunchOptions } from './lancement.ts';
 import { CHECKS, lines, terms } from './oracle.ts';
-
-const root = fileURLToPath(new URL('..', import.meta.url));
-const exe = process.platform === 'win32' ? '.exe' : '';
-
-// Lancement depuis la racine (PRD § 5). Go, Rust et TS passent par un build fait une fois (BUILDS), pour mesurer le
-// programme et non son démarrage. Python : `-I -S` saute `site` et PYTHON*, sans changer la sortie de la CLI.
-const IMPLS: Record<string, { dir: string; cmd: string[] }> = {
-  go: { dir: 'go', cmd: [join(root, '.build', `fib${exe}`)] },
-  rust: { dir: 'rust', cmd: [join(root, 'rust', 'target', 'release', `fib${exe}`)] },
-  ts: { dir: 'ts', cmd: [process.execPath, '.build/ts/cli.js'] },
-  py: { dir: 'python', cmd: ['python', '-I', '-S', 'python/fib.py'] },
-};
-
-// Compilation préalable, jouée une fois par groupe. tsc 7 est lancé par le point d'entrée JS du paquet :
-// `.bin/tsc` n'est pas exécutable sans shell sous Windows.
-const BUILDS: Record<string, string[]> = {
-  go: ['go', '-C', 'go', 'build', '-o', `../.build/fib${exe}`, './cmd/fib'],
-  rust: ['cargo', 'build', '-q', '--release', '--manifest-path', 'rust/Cargo.toml'],
-  ts: [process.execPath, 'node_modules/typescript/bin/tsc', '-p', 'tsconfig.build.json'],
-};
 
 const USAGE = `usage: fib [--algo iterative|matrix|fast|all] [--time] N
        fib --list [--time] N
@@ -35,37 +16,19 @@ const USAGE = `usage: fib [--algo iterative|matrix|fast|all] [--time] N
 
 // 'erreur' : code 2, stdout vide, une seule ligne `fib: …`. Sinon code 0 : `out` exact et/ou `check`, `times` = algos chronométrés.
 type Want = 'erreur' | { out?: string | (() => string); check?: (out: string) => void; times?: string[] };
-type Case = [id: string, title: string, args: string[], want: Want, env?: Record<string, string>];
+type Case = [id: string, title: string, args: string[], want: Want, env?: LaunchOptions['env']];
 
 // term et list sont paresseux : un oracle absent ne fait échouer que les cas qui en tirent leur attendu (catalogue § 3).
 const term = (k: number) => () => `${terms()[k]}\n`;
 const list = (n: number) => () => terms().slice(0, n + 1).map((t) => `${t}\n`).join('');
 
-// POSIX : `sh` ferme le descripteur 2, puis exécute la commande avec ses arguments inchangés ($0 la commande, $@ le reste).
-// spawnSync ne sait pas fermer un fd : stdio 'ignore' ouvre /dev/null, ce qui n'est pas la même chose (vérifié).
-const closeStderr = (argv: string[]): [string, string[]] => ['/bin/sh', ['-c', 'exec "$0" "$@" 2>&-', ...argv]];
+type Run = ReturnType<typeof launch>;
 
-function run(id: string, args: string[], env: Record<string, string | undefined> = {}, stderrClosed = false) {
-  const [cmd, ...head] = IMPLS[id].cmd;
-  const [file, argv] = stderrClosed ? closeStderr([cmd, ...head, ...args]) : [cmd, [...head, ...args]];
-  const r = spawnSync(file, argv, {
-    cwd: root, env: { ...process.env, ...env },
-    // latin1 : un octet égale un caractère, donc X-2, X-4 et les longueurs voient les octets bruts.
-    encoding: 'latin1',
-    // `--list 10000` écrit environ 10,5 Mo, au-delà du défaut.
-    maxBuffer: 1 << 28,
-    // Filet contre une CLI qui boucle.
-    timeout: 300_000,
-  });
-  assert.ifError(r.error);
-  return { code: r.status, out: r.stdout, err: r.stderr };
-}
-
-const assertAscii = (r: ReturnType<typeof run>) =>
+const assertAscii = (r: Run) =>
   assert.ok(/^[\n\x20-\x7e]*$/.test(r.out + r.err), 'X-4 : sortie non ASCII, ou avec \\r ou ESC');
 
 // Assertions communes X-1 à X-4.
-function verify(r: ReturnType<typeof run>, want: Want): void {
+function verify(r: Run, want: Want): void {
   const ctx = `code ${r.code}, stderr ${JSON.stringify(r.err.slice(0, 200))}`;
   if (want === 'erreur') {
     assert.equal(r.code, 2, `X-1 : ${ctx}`);
@@ -257,9 +220,9 @@ const V02 = (impl: string) => {
   // NO_COLOR retiré (undefined : spawnSync l'omet), non vidé. Hérité du parent, il l'emporterait sur FORCE_COLOR sous Python 3.14 et viderait le cas de son sens.
   // Vidé, il ferait écrire à Node 22 un avertissement sur stderr dès qu'un console.* tourne avec FORCE_COLOR, et rougir X-3 pour une raison du harnais.
   const env = { FORCE_COLOR: '1', CLICOLOR_FORCE: '1', PYTHON_COLORS: '1', NO_COLOR: undefined };
-  verify(run(impl, ['--bogus', '5'], env), 'erreur');
-  verify(run(impl, ['--help'], env), { out: USAGE });
-  verify(run(impl, ['10'], env), { out: term(10) });
+  verify(launch(impl, ['--bogus', '5'], { env }), 'erreur');
+  verify(launch(impl, ['--help'], { env }), { out: USAGE });
+  verify(launch(impl, ['10'], { env }), { out: term(10) });
 };
 
 // Sous Windows, ni Node ni le contrat ne savent lancer un processus sans stderr : la raison s'affiche à la place du test.
@@ -275,8 +238,8 @@ const V04 = (impl: string) => {
     [['10'], 0, term(10)],
   ];
   for (const [args, code, out] of runs) {
-    const r = run(impl, args, {}, true);
-    // Si le fd 2 restait ouvert, la ligne `fib: …` ou la durée s'y lirait : stderr vide prouve que `run` a fermé le fd 2 pour la CLI.
+    const r = launch(impl, args, { stderrClosed: true });
+    // Si le fd 2 restait ouvert, la ligne `fib: …` ou la durée s'y lirait : stderr vide prouve que `launch` a fermé le fd 2 pour la CLI.
     assert.equal(r.err, '', `le fd 2 n'est pas fermé : fib ${args.join(' ')}, stderr ${JSON.stringify(r.err.slice(0, 200))}`);
     assert.equal(r.code, code, `X-1 : fib ${args.join(' ')}, code ${r.code}`);
     assert.equal(r.out, out(), `X-2 : fib ${args.join(' ')}`);
@@ -289,35 +252,108 @@ describe('oracle', () => {
   for (const [id, title, check] of CHECKS) test(`${id} : ${title}`, () => check(lines()));
 });
 
-// Le harnais de CLI-V04, joué une fois pour les quatre CLI : si `2>&-` cessait de fermer le fd 2, le cas passerait à vide.
-// Une redirection vers un fd fermé échoue (code non nul).
+// Les contrôles du harnais, joués une fois pour les quatre CLI : ils éprouvent le test de contrat lui-même et rougissent
+// quand il ferait passer un cas à vide. La sonde du fd 2 lance un vrai processus; HAR-1 à HAR-3 n'en lancent aucun.
 describe('harnais', () => {
+  // Si `2>&-` cessait de fermer le fd 2, CLI-V04 passerait à vide. Une redirection vers un fd fermé échoue (code non nul).
   test('CLI-V04 : le harnais ferme le fd 2', { skip: noShell }, () => {
     const [shell, shellArgs] = closeStderr(['/bin/sh', '-c', 'echo x >&2; echo $?']);
     const probe = spawnSync(shell, shellArgs, { encoding: 'latin1' });
     assert.ifError(probe.error);
     assert.match(probe.stdout, /^[1-9][0-9]*\n$/, 'le harnais ne ferme pas le fd 2');
   });
+
+  // HAR-1 à HAR-3 remplacent spawnSync par un espion qui note l'appel et rend une exécution factice : rien n'est lancé ni
+  // construit, et ils valent sous Windows.
+  type Call = { file: string; args: readonly string[]; options: { env?: NodeJS.ProcessEnv } };
+  const spy = (f: () => unknown): Call[] => {
+    const real = cp.spawnSync;
+    const calls: Call[] = [];
+    const fake = (file: string, args: readonly string[], options: Call['options']) => {
+      calls.push({ file, args, options });
+      return { pid: 0, output: [], stdout: '55\n', stderr: 'fast 0.010 ms\n', status: 0, signal: null };
+    };
+    Object.assign(cp, { spawnSync: fake });
+    syncBuiltinESMExports();
+    try {
+      f();
+    } finally {
+      Object.assign(cp, { spawnSync: real });
+      syncBuiltinESMExports();
+    }
+    return calls;
+  };
+
+  // HAR-1 : le banc lance exactement la commande de l'implémentation, suivie de --time et des arguments : une propriété, non une
+  // liste noire de shells. Tout enveloppeur (sh, env, ksh -c, nice, time…) ajouterait son démarrage à chaque mesure sans changer
+  // aucune sortie. `command(id)` vient du tableau de lancement, non de `launch` : un défaut de `launch` ne fausse pas l'attendu.
+  // Le second contrôle ajoute les options (cwd, env, tampon, délai), identiques à celles d'un lancement du contrat.
+  // Ensemble : present(), les implémentations que le contrat et le banc jouent par défaut (HAR-3 prend tous les identifiants).
+  test('HAR-1 : le banc lance la commande de chaque CLI, suivie de --time et des arguments, sans enveloppeur', () => {
+    for (const id of present()) {
+      const bench = spy(() => measure(id, ['10']));
+      assert.equal(bench.length, 1, `${id} : une mesure, un lancement`);
+      assert.deepEqual([bench[0].file, ...bench[0].args], [...command(id), '--time', '10'], `${id} : le banc ne lance pas la commande de l'implémentation`);
+      assert.deepEqual(bench, spy(() => launch(id, ['--time', '10'])), `${id} : le banc ne lance pas l'appel du contrat`);
+    }
+  });
+
+  // HAR-2 : l'env d'un cas s'ajoute à celui du processus, et undefined retire la variable (NO_COLOR de CLI-V02). Les CLI
+  // ignorent ces variables par contrat : sur a906e27, un env perdu, substitué ou écrasé laissait le contrat vert (403/403).
+  // La seule variable que le contrôle écrit dans process.env est FIB_RETIREE : il la rend telle qu'il l'a trouvée, absente ou non.
+  test('HAR-2 : l’env d’un cas s’ajoute à celui du processus, et undefined retire la variable', () => {
+    const avant = process.env.FIB_RETIREE;
+    process.env.FIB_RETIREE = 'r';
+    try {
+      const [{ options }] = spy(() => launch('py', ['10'], { env: { FIB_SONDE: 'x', FIB_RETIREE: undefined } }));
+      assert.equal(options.env?.FIB_SONDE, 'x', 'l’env du cas ne parvient pas au fils');
+      assert.equal(options.env?.FIB_RETIREE, undefined, 'une variable mise à undefined reste dans l’env du fils');
+      for (const k of Object.keys(process.env)) if (k !== 'FIB_RETIREE') assert.equal(options.env?.[k], process.env[k], `${k} n’est pas hérité`);
+    } finally {
+      if (avant === undefined) delete process.env.FIB_RETIREE;
+      else process.env.FIB_RETIREE = avant;
+    }
+  });
+
+  // HAR-3 : les CLI passent les mêmes cas, donc le contrat ne voit pas laquelle il lance. Sur a906e27, un `run` qui lançait
+  // toujours Python laissait 403/403 : chaque identifiant doit lancer sa propre commande.
+  // Ensemble : IDS, tous les identifiants du PRD § 5, présents ou non : `launch` ne lit pas le disque et l'espion ne lance rien.
+  test('HAR-3 : chaque identifiant lance sa propre commande', () => {
+    const cmds = IDS.map((id) => spy(() => launch(id, ['10'])).map((c) => [c.file, ...c.args].join(' ')).join());
+    assert.equal(new Set(cmds).size, IDS.length, `commandes confondues : ${cmds.join(' | ')}`);
+  });
+
+  // HAR-4 : --runs demande un entier d'au moins 1. Absent, nul ou non numérique, il donnait NaN ou 0 lancement, puis un TypeError
+  // dans cell() : le banc refuse maintenant par une erreur d'usage (code 2, sur stderr), avant tout build. Le processus du banc
+  // lancé ici ne construit ni ne lance aucune implémentation.
+  test('HAR-4 : --runs demande un entier d’au moins 1', () => {
+    for (const mauvais of [[], [''], ['0'], ['-1'], ['2.5'], ['1e3'], ['0x10'], [' 3'], ['abc'], ['go']]) {
+      assert.throws(() => parseArgs(['py', '--runs', ...mauvais]), /--runs demande un entier/, `--runs ${JSON.stringify(mauvais)} accepté`);
+    }
+    assert.deepEqual(parseArgs([]), { runs: 11, ids: [] });
+    assert.deepEqual(parseArgs(['py', '--runs', '3', 'go']), { runs: 3, ids: ['py', 'go'] });
+    assert.deepEqual(parseArgs(['--runs', '1']), { runs: 1, ids: [] });
+    const banc = fileURLToPath(new URL('./bench.ts', import.meta.url));
+    const r = spawnSync(process.execPath, [banc, 'py', '--runs', '0'], { encoding: 'utf8' });
+    assert.ifError(r.error);
+    assert.equal(r.status, 2, `code ${r.status}, stderr ${r.stderr.slice(0, 200)}`);
+    assert.equal(r.stdout, '', 'une erreur d’usage n’écrit rien sur stdout');
+    assert.match(r.stderr, /^bench: --runs demande un entier d’au moins 1 \(reçu : "0"\)\nusage : /);
+  });
 });
 
 const requested = process.argv.slice(2);
-const ids = requested.length ? requested : Object.keys(IMPLS).filter((id) => existsSync(join(root, IMPLS[id].dir)));
+const here = present();
+const ids = requested.length ? requested : here;
 
 for (const id of ids) {
   describe(id, () => {
-    if (!Object.hasOwn(IMPLS, id) || !existsSync(join(root, IMPLS[id].dir))) {
+    if (!here.includes(id)) {
       test(`${id} : l’implémentation existe`, () => assert.fail(`implémentation absente : ${id}`));
       return;
     }
-    if (BUILDS[id]) {
-      before(() => {
-        const [cmd, ...args] = BUILDS[id];
-        const r = spawnSync(cmd, args, { cwd: root, encoding: 'utf8' });
-        const out = `${r.stdout}${r.stderr}${r.error ?? ''}`;
-        assert.equal(r.status, 0, `${BUILDS[id].join(' ')} a échoué (code ${r.status}) : ${out}`);
-      });
-    }
-    for (const [cid, title, args, want, env] of CASES) test(`${cid} : ${title}`, () => verify(run(id, args, env), want));
+    before(() => build(id));
+    for (const [cid, title, args, want, env] of CASES) test(`${cid} : ${title}`, () => verify(launch(id, args, { env }), want));
     test('CLI-V02 : forcer la couleur ne produit aucun octet ESC', () => V02(id));
     test('CLI-V04 : un stderr fermé ne change ni stdout ni le code', { skip: noShell }, () => V04(id));
   });

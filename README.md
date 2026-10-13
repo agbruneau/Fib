@@ -53,7 +53,7 @@ Temps total du processus, en millisecondes, médianes de 15 exécutions (`npm ru
 **Qualité.**
 
 - L'audit, en 8 dimensions (les quatre langages, contrat, cohérence, test différentiel, documentation), a rendu 233 constats, dont 36 réfutés par un vérificateur sceptique. Il n'a trouvé aucune erreur de calcul et un seul écart au contrat : Python laissait `PYTHONIOENCODING` changer l'encodage de sa sortie. L'écart est corrigé et gardé par PERF-PY-20 : CLI-V03 ne peut pas le voir, car `python -I` ignore la variable. Un test différentiel de 121 vecteurs hors catalogue n'a trouvé aucun écart entre les quatre implémentations. Le 2026-10-12, une boucle différentielle d'environ 170 000 entrées en a trouvé un : avec stderr fermé, Python sortait en code 1, stdout vide. Il est corrigé et gardé par CLI-V04 et PERF-PY-23. Elle a aussi relevé des comportements que le contrat ne tranchait pas, comme un stdout qui refuse l'écriture : ils sont désormais hors contrat (PRD § 4, [agbruneau/Fib#18](https://github.com/agbruneau/Fib/issues/18)).
-- Chaque langage passe les 99 cas CLI du contrat (CLI-V04 se saute sous Windows), ORA-01 à ORA-06 sur l'oracle et le contrôle du harnais (106 tests par langage), BIB-01 à BIB-14 sur sa bibliothèque (BIB-14 est sans objet en Rust), et des tests de garde de ses optimisations : 8 en Go, 10 en Rust, 9 en TypeScript, 25 en Python, dont PERF-PY-20 et PERF-PY-23, qui gardent des correctifs (F10 et CLI-V04). En TypeScript, PERF-TS-7 et PERF-TS-8 gardent aussi deux exigences que le contrat ne sait pas provoquer : la discordance (F3) et des durées réellement mesurées (F6).
+- Chaque langage passe les 99 cas CLI du contrat (CLI-V04 se saute sous Windows), ORA-01 à ORA-06 sur l'oracle et cinq contrôles du harnais, la sonde du fd 2 et HAR-1 à HAR-4 (110 tests par langage), BIB-01 à BIB-14 sur sa bibliothèque (BIB-14 est sans objet en Rust), et des tests de garde de ses optimisations : 10 en Go, 12 en Rust, 9 en TypeScript, 27 en Python, dont PERF-PY-20 et PERF-PY-23, qui gardent des correctifs (F10 et CLI-V04). D'autres gardes tiennent des exigences que le contrat ne sait pas provoquer. La discordance (F3) est gardée dans les quatre langages (PERF-TS-7, PERF-GO-9, PERF-RS-11, PERF-PY-26), ainsi que l'algorithme réellement exécuté (F2, F6 : PERF-TS-8, PERF-GO-10, PERF-RS-12, PERF-PY-27). La durée réellement mesurée ne l'est qu'en TypeScript (PERF-TS-8).
 - Une revue `/code-review` a suivi chacun des cinq chantiers. Ces revues ont trouvé, entre autres, une violation du PRD § 7 en Rust (lignes vides de l'oracle) et un `matrix` TypeScript qui refaisait l'ancien `fast`. Les constats sont corrigés.
 
 **Coût.**
@@ -172,7 +172,7 @@ Fib/
 │   ├── agents/          configuration des skills de Matt Pocock
 │   ├── cas-de-test.md   catalogue des cas de test (TDD)
 │   └── exploration.md   journal des skills utilisées
-├── contracts/           oracle, test de contrat commun et banc d'essai (bench.ts)
+├── contracts/           oracle, lancement commun des CLI (lancement.ts), test de contrat et banc d'essai (bench.ts)
 ├── go/  rust/  ts/  python/
 ├── .build/              Go et TypeScript compilés (ignoré par git)
 ├── package.json         point d'entrée des vérifications

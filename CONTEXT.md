@@ -72,6 +72,10 @@ _Avoid_ : port, version, variante
 Un test propre à une implémentation, hors du catalogue de cas, qui protège ce que les cas du catalogue ne peuvent pas éprouver : une optimisation (ADR-0004), un correctif, ou une exigence que le contrat ne sait pas provoquer.
 _Avoid_ : test de performance
 
+**Contrôle du harnais** :
+Un test du harnais lui-même, qui ne lance aucune implémentation et rougit quand le harnais ferait passer un cas à vide ou fausserait une mesure. Le harnais est le code qui compile et lance les quatre CLI, pour le contrat comme pour le banc d'essai.
+_Avoid_ : test de garde, test du runner
+
 **Banc d'essai** :
 La mesure du temps de réponse de chaque implémentation sur des scénarios fixes : temps total du processus et durée de calcul rapportée par `--time`, en médianes.
 _Avoid_ : benchmark

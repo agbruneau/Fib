@@ -5,20 +5,32 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"os"
 	"os/exec"
 	"slices"
 	"strings"
 	"testing"
+
+	"fib"
 )
 
-// writeCounter n'implémente que Write : il compte les appels et les octets reçus, ce qu'un appel système coûterait.
-type writeCounter struct{ calls, bytes int }
+// writeCounter, le puits d'écriture de PERF-GO-6, 9 et 10, n'implémente que Write : il garde le texte de chaque appel,
+// dans l'ordre. len(chunks) est le nombre d'appels, ce qu'un appel système coûterait; size, le total des octets reçus.
+type writeCounter struct{ chunks []string }
 
 func (w *writeCounter) Write(p []byte) (int, error) {
-	w.calls++
-	w.bytes += len(p)
+	// string(p) copie : l'appelant, bufio.Writer en tête, réutilise p dès le retour.
+	w.chunks = append(w.chunks, string(p))
 	return len(p), nil
+}
+
+func (w *writeCounter) size() int {
+	n := 0
+	for _, chunk := range w.chunks {
+		n += len(chunk)
+	}
+	return n
 }
 
 // minBlock : la moitié du tampon de 64 Kio de run, soit un facteur 2 de marge sur ses appels à Write.
@@ -27,16 +39,17 @@ const minBlock = 32 << 10
 // PERF-GO-6, hors catalogue : garde de l'optimisation de run (écriture tamponnée) : aucun appel à Write par terme.
 func TestPERFGO6_ListeEcriteParBlocs(t *testing.T) {
 	var w writeCounter
-	if code := run([]string{"--list", "10000"}, &w, io.Discard); code != 0 {
+	if code := run([]string{"--list", "10000"}, &w, io.Discard, fib.Fib); code != 0 {
 		t.Fatalf("run --list 10000 rend le code %d, attendu 0", code)
 	}
-	if w.bytes == 0 {
+	size := w.size()
+	if size == 0 {
 		t.Fatal("run --list 10000 n'écrit aucun octet sur stdout")
 	}
-	maxCalls := (w.bytes + minBlock - 1) / minBlock
+	maxCalls := (size + minBlock - 1) / minBlock
 	t.Run(fmt.Sprintf("PERF-GO-6 : --list 10000 écrit sur stdout par blocs d'au moins %d octets", minBlock), func(t *testing.T) {
-		if w.calls > maxCalls {
-			t.Errorf("--list 10000 fait %d appels à Write pour %d octets, attendu %d au plus", w.calls, w.bytes, maxCalls)
+		if calls := len(w.chunks); calls > maxCalls {
+			t.Errorf("--list 10000 fait %d appels à Write pour %d octets, attendu %d au plus", calls, size, maxCalls)
 		}
 	})
 }
@@ -93,4 +106,89 @@ func TestPERFGO8_LaCommandeNImporteAucuneRegexp(t *testing.T) {
 			}
 		}
 	})
+}
+
+// PERF-GO-9, hors catalogue : garde de F3 (catalogue § 6). Aucun cas du contrat ne peut provoquer une discordance : seul un
+// calcul substitué, le vrai terme plus 1 pour un algorithme, tour à tour à chacune des trois places, la provoque. run rend
+// alors 3, stdout ne reçoit aucun appel à Write, et stderr un seul : une ligne « fib: », sans durée, même avec --time. Le
+// test ne recalcule aucun terme. Rouge sous : un prédicat aveugle (t.Cmp(t)) ou partiel (terms[1:2]), `return 2` pour le 3,
+// des durées ajoutées au message (une par ligne, ou sur sa ligne), le terme écrit sur le stdout de run avant l'erreur, ou
+// fib.Fib en dur dans compute.
+// Survivants connus, laissés à la revue de code : une écriture directe sur os.Stderr ou os.Stdout depuis compute (G9 et
+// G10, que le Writer d'essai ne voit pas); main qui borne le code à 2 (GM); main qui passe un calcul qui fait tout par
+// fast (GW).
+func TestPERFGO9_UneDiscordanceRend3SansStdoutNiDuree(t *testing.T) {
+	for _, bad := range comparison {
+		t.Run(fmt.Sprintf("PERF-GO-9 : si %s diffère des deux autres, --time --algo all 10 rend 3, sans stdout et sans durée", bad), func(t *testing.T) {
+			term := func(n int, algo string) (*big.Int, error) {
+				v, err := fib.Fib(n, algo)
+				if err != nil || algo != bad {
+					return v, err
+				}
+				return new(big.Int).Add(v, big.NewInt(1)), nil
+			}
+			var stdout, stderr writeCounter
+			if code := run([]string{"--time", "--algo", "all", "10"}, &stdout, &stderr, term); code != 3 {
+				t.Errorf("run --time --algo all 10 rend le code %d, attendu 3", code)
+			}
+			if len(stdout.chunks) != 0 {
+				t.Errorf("stdout reçoit %d appels à Write, attendu aucun : %q", len(stdout.chunks), stdout.chunks)
+			}
+			if len(stderr.chunks) != 1 {
+				t.Fatalf("stderr reçoit %d appels à Write, attendu un seul : %q", len(stderr.chunks), stderr.chunks)
+			}
+			line := stderr.chunks[0]
+			if !strings.HasPrefix(line, "fib: ") {
+				t.Errorf("stderr ne commence pas par « fib: » : %q", line)
+			}
+			if strings.Count(line, "\n") != 1 || !strings.HasSuffix(line, "\n") {
+				t.Errorf("stderr n'est pas une seule ligne, terminée par son seul \\n : %q", line)
+			}
+			if strings.Contains(line, " ms") {
+				t.Errorf("stderr contient une durée : %q", line)
+			}
+		})
+	}
+}
+
+// PERF-GO-10, hors catalogue : garde de F2 et de F6 (catalogue § 6), pendant de PERF-TS-8 : l'algorithme que nomme une ligne
+// de durée est celui qui a calculé. Le calcul espion note l'algorithme qu'on lui demande, puis délègue à fib.Fib : les
+// algorithmes appelés doivent être ceux que nomment les lignes de durée, dans l'ordre, un appel chacun. Rouge sous : un
+// algorithme calculé par un autre (fast pour iterative, par exemple) que la ligne nomme quand même.
+func TestPERFGO10_LAlgorithmeNommeEstCeluiQuiCalcule(t *testing.T) {
+	for _, c := range []struct {
+		args  []string
+		algos []string
+	}{
+		{[]string{"10"}, []string{"fast"}},
+		{[]string{"--algo", "iterative", "10"}, []string{"iterative"}},
+		{[]string{"--algo", "matrix", "10"}, []string{"matrix"}},
+		{[]string{"--algo", "all", "10"}, []string{"fast", "iterative", "matrix"}},
+	} {
+		args := append([]string{"--time"}, c.args...)
+		t.Run(fmt.Sprintf("PERF-GO-10 : %s exécute %s", strings.Join(args, " "), strings.Join(c.algos, " puis ")), func(t *testing.T) {
+			var called []string
+			term := func(n int, algo string) (*big.Int, error) {
+				called = append(called, algo)
+				return fib.Fib(n, algo)
+			}
+			var stdout, stderr writeCounter
+			if code := run(args, &stdout, &stderr, term); code != 0 {
+				t.Fatalf("run %s rend le code %d, attendu 0", strings.Join(args, " "), code)
+			}
+			var named []string
+			for _, chunk := range stderr.chunks {
+				for line := range strings.Lines(chunk) {
+					algo, _, _ := strings.Cut(line, " ")
+					named = append(named, algo)
+				}
+			}
+			if !slices.Equal(named, c.algos) {
+				t.Errorf("les lignes de durée nomment %q, attendu %q", named, c.algos)
+			}
+			if !slices.Equal(called, named) {
+				t.Errorf("les algorithmes appelés sont %q, les lignes de durée nomment %q", called, named)
+			}
+		})
+	}
 }
