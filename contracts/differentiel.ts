@@ -51,7 +51,7 @@ const diverges = (groups: readonly string[][]) => groups.length > 1;
 
 // Le témoin, joué avant chaque recherche. Une projection trop large rendrait la boucle aveugle, une trop étroite la noierait sous
 // le texte libre et les durées, et un regroupement qui prendrait une implémentation pour référence en ferait un oracle. Il ne lance
-// rien, et le contrat ne le joue pas : HAR-6 interdit au contrat d'importer la boucle. Il se contrôle en le mutant à la main (HAR-6).
+// rien, et le contrat ne le joue pas : HAR-6 interdit au contrat d'importer la boucle. Il se contrôle en le mutant à la main (catalogue § 6, « Le témoin de la boucle différentielle »).
 function witness(): void {
   const p = (code: number | null, out: string, err: string) => project({ code, out, err });
   assert.equal(p(2, '', 'fib: a\n'), p(2, '', 'fib: b\n'), 'le texte qui suit fib: est libre (F9)');
