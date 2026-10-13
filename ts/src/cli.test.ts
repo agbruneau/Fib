@@ -46,6 +46,7 @@ for (const bad of ['fast', 'iterative', 'matrix'] as const) {
     assert.deepEqual(stdout, [], 'aucune écriture sur stdout');
     assert.equal(stderr.length, 1, 'un seul appel à stderr');
     assert.match(stderr[0], /^fib: [^\n]*\n$/);
+    assert.doesNotMatch(stderr[0], /\d\.\d{3} ms/, 'une durée (F6) glissée dans le message, même sur sa ligne');
   });
 }
 
