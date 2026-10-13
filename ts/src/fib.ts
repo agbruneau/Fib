@@ -114,7 +114,8 @@ export function fibList(n: number): string[] {
   return terms;
 }
 
-const algos: Record<Algo, (n: number) => bigint> = { iterative, matrix, fast };
+// Exportée pour les seules gardes (PERF-TS-10), qui lisent l'aiguillage : la seam du PRD § 5 reste fib et fibList.
+export const algos: Record<Algo, (n: number) => bigint> = { iterative, matrix, fast };
 
 /** Rend F(n) par l'algorithme algo.
  * Lève TypeError pour un algorithme inconnu, RangeError pour un indice qui n'est pas un entier >= 0. */

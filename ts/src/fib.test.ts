@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { terms } from '../../contracts/oracle.ts';
-import { fib, fibList, type Algo } from './fib.ts';
+import { algos, fib, fibList, type Algo } from './fib.ts';
 
 const oracle = (n: number) => BigInt(terms()[n]);
 
@@ -122,5 +122,39 @@ for (const algo of ALGOS) {
 for (const n of BAD_INDEXES) {
   test(`BIB-14 : fibList refuse ${n}`, () => {
     assert.throws(() => fibList(n), { name: 'RangeError', message: /indice invalide/ });
+  });
+}
+
+// hors catalogue : garde d'identité de la table `algos` (F2, F6; lacune de PERF-TS-8, qui espionne le nom demandé, pas la
+// fonction rangée derrière lui). Les trois algorithmes rendent les mêmes valeurs : aucun cas de valeur ne voit un nom
+// aiguillé ailleurs. Ni valeur calculée ni durée : le nom de la fonction rangée sous chaque clé (une déclaration porte
+// son identifiant), puis l'entrée que `fib` appelle, par des espions dans la table (le seul usage de l'export `algos`).
+// Rougit, par le test du nom aiguillé ailleurs, les six échanges de la table : `{ iterative: matrix, matrix, fast }`,
+// `{ iterative: fast, matrix, fast }`, `{ iterative, matrix: iterative, fast }`, `{ iterative, matrix: fast, fast }`,
+// `{ iterative, matrix, fast: iterative }` et `{ iterative, matrix, fast: matrix }`.
+for (const algo of ALGOS) {
+  test(`PERF-TS-10 : la table algos range la fonction ${algo} sous le nom ${algo}`, () => {
+    assert.equal(algos[algo].name, algo);
+  });
+}
+
+// Rougit, par le test des deux autres noms, l'aiguillage de `fib` fixé à un nom : `algos[algo](n)` → `algos.fast(n)`,
+// `algos.matrix(n)` ou `algos.iterative(n)`. Le 0n des espions n'est comparé à rien.
+for (const algo of ALGOS) {
+  test(`PERF-TS-10 : fib(3, ${algo}) appelle l’entrée ${algo} de la table, et elle seule`, () => {
+    const original = { ...algos };
+    const called: Algo[] = [];
+    for (const name of ALGOS) {
+      algos[name] = () => {
+        called.push(name);
+        return 0n;
+      };
+    }
+    try {
+      fib(3, algo);
+    } finally {
+      Object.assign(algos, original);
+    }
+    assert.deepEqual(called, [algo]);
   });
 }
