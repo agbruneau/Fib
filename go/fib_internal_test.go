@@ -40,6 +40,9 @@ var identitySink *big.Int
 // n = 1023 : tous ses bits valent 1, donc matrix ajoute à chaque bit son produit par Q, que fast n'a pas; les trois comptes
 // valent 4, 67 et 52 sous Go 1.26. La garde vérifie d'abord qu'ils diffèrent deux à deux : si une évolution de math/big ou
 // d'un algorithme les confondait, elle échouerait sur ce constat au lieu de ne plus rien garder.
+//
+// Limite : la garde ne vérifie l'aiguillage qu'à n = 1023. Un aiguillage qui dépend de n (`if n > 10_000 { return fast(n) }`)
+// lui échappe et reste à la revue de code.
 func TestPERFGO11_ChaqueNomAiguilleVersSaFonction(t *testing.T) {
 	const n = 1023
 	algos := []struct {
@@ -53,8 +56,8 @@ func TestPERFGO11_ChaqueNomAiguilleVersSaFonction(t *testing.T) {
 	for i := range algos {
 		for j := i + 1; j < len(algos); j++ {
 			if own[i] == own[j] {
-				t.Fatalf("%s(%d) et %s(%d) allouent tous deux %v fois : la garde ne les distingue plus, choisir un autre n",
-					algos[i].name, n, algos[j].name, n, own[i])
+				t.Fatalf("%s(%d) et %s(%d) allouent tous deux %v fois : l'un délègue-t-il à l'autre (identité perdue, ADR-0004) ? "+
+					"Sinon, choisir un autre n ou une autre empreinte", algos[i].name, n, algos[j].name, n, own[i])
 			}
 		}
 	}
