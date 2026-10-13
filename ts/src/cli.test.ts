@@ -1,7 +1,10 @@
-// Tests de garde de la CLI, joués dans le processus par run(args, io) (hors seams, catalogue § 6).
+// Tests de garde de la CLI, joués dans le processus par run(args, io) (hors seams, catalogue § 6), sauf PERF-TS-9, qui lance la CLI compilée.
 // Ils protègent ce que le test de contrat ne peut pas éprouver; la grammaire, les bornes et les octets de sortie lui restent.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { terms } from '../../contracts/oracle.ts';
 import { fib, type Algo } from './fib.ts';
 import { run, type Io } from './cli.ts';
@@ -104,4 +107,67 @@ test('PERF-TS-8 : l’horloge est appelée en méthode de l’Io, this compris',
   });
   assert.equal(run(['--time', '10'], stateful), 0);
   assert.deepEqual(stderr, ['fast 0.500 ms\n']);
+});
+
+// PERF-TS-9 : la CLI ne charge pas `performance` (ADR-0004, #21). Son premier accès charge neuf modules (perf_hooks, sept
+// internal/perf/… et internal/histogram), et timed lit l'horloge même sans --time : la garde éprouve donc `10` comme `--time 10`.
+// Elle joue la CLI compilée dans un sous-processus : celui de test a pu charger perf_hooks lui-même. Un module de `--import`
+// y écrit process.moduleLoadList sur stderr à la sortie; stdout, le code et la ligne de durée restent ceux de la CLI.
+// Trois internal/perf/… ne viennent pas du global : utils au démarrage de Node, performance_entry et observe par net dès
+// que stdout est un tube (mesuré sous Node 22.22, avec la CLI corrigée). Toute autre entrée perf, perf_hooks compris, est interdite.
+// Le témoin vérifie que le crochet et le filtre voient bien performance se charger.
+// Rouge sous le mutant `clock: () => performance.now()` dans processIo (cli.ts), ou sous un import de node:perf_hooks.
+const root = fileURLToPath(new URL('../..', import.meta.url));
+// Dossier à part de .build/ts : une exécution du contrat ou du banc en parallèle ne lit jamais un cli.js en cours d'écriture.
+const outDir = join(root, '.build', 'ts-garde');
+const MARK = 'moduleLoadList:';
+const HOOK =
+  'data:text/javascript,' +
+  encodeURIComponent(
+    `import{writeSync}from'node:fs';process.on('exit',()=>writeSync(2,${JSON.stringify(MARK)}+JSON.stringify(process.moduleLoadList)+'\\n'))`,
+  );
+const NOT_FROM_PERFORMANCE = ['internal/perf/utils', 'internal/perf/performance_entry', 'internal/perf/observe'];
+const perfModules = (modules: string[]) =>
+  modules.filter((m) => /\bperf_hooks$|\binternal\/perf\//.test(m) && !NOT_FROM_PERFORMANCE.some((ok) => m.endsWith(ok)));
+
+let compiled = false;
+function compile() {
+  if (compiled) return;
+  // Même commande que le contrat (PRD § 5), vers outDir.
+  const tsc = join(root, 'node_modules', 'typescript', 'bin', 'tsc');
+  const r = spawnSync(process.execPath, [tsc, '-p', 'tsconfig.build.json', '--outDir', outDir], { cwd: root, encoding: 'latin1' });
+  assert.ifError(r.error);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  compiled = true;
+}
+
+// Lance node avec le crochet; rend stdout, stderr sans la liste du crochet, et la liste.
+function launch(args: string[]) {
+  const r = spawnSync(process.execPath, ['--import', HOOK, ...args], { cwd: root, encoding: 'latin1' });
+  assert.ifError(r.error);
+  assert.equal(r.status, 0, r.stderr);
+  const at = r.stderr.lastIndexOf(MARK);
+  assert.notEqual(at, -1, 'le crochet n’a rien écrit sur stderr');
+  return { stdout: r.stdout, stderr: r.stderr.slice(0, at), modules: JSON.parse(r.stderr.slice(at + MARK.length)) as string[] };
+}
+
+const NO_PERF: [args: string[], stderr: RegExp][] = [
+  [['--time', '10'], /^fast \d+\.\d{3} ms\n$/],
+  [['10'], /^$/],
+];
+
+for (const [args, stderr] of NO_PERF) {
+  test(`PERF-TS-9 : ${args.join(' ')} ne charge ni perf_hooks ni internal/perf/…, et la sortie reste celle de la CLI`, () => {
+    compile();
+    const r = launch([join(outDir, 'cli.js'), ...args]);
+    assert.equal(r.stdout, '55\n');
+    assert.match(r.stderr, stderr);
+    assert.deepEqual(perfModules(r.modules), []);
+  });
+}
+
+test('PERF-TS-9 : témoin, le crochet voit performance charger perf_hooks', () => {
+  const loaded = perfModules(launch(['-e', 'performance.now()']).modules);
+  assert.ok(loaded.some((m) => m.endsWith('perf_hooks')), `perf_hooks absent de ${loaded.join(', ')}`);
+  assert.ok(loaded.some((m) => m.includes('internal/perf/performance')), `internal/perf/performance absent de ${loaded.join(', ')}`);
 });
