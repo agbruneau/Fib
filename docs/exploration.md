@@ -507,9 +507,11 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
 - **Friction** :
   - Une consigne envoyée pendant un tour peut interrompre un workflow en arrière-plan (#25), et chaque « en parallèle » est arrivé pendant qu'un lot tournait.
   - Le handoff et les notes de version dépendent des derniers comptes. Les écrire avant le dernier lot oblige à les reprendre.
+  - L'étiquette `v1.0.0` n'a pas pu être publiée. La session infonuagique ne pousse que des branches : `git push origin v1.0.0` et l'écriture des objets git par l'API (`git/tags`, `git/refs`) rendent HTTP 403, et aucun outil MCP ne crée de release. L'étiquette et la release reviennent donc au propriétaire, sur le commit qui porte cette entrée, avec les notes de version préparées par l'orchestrateur.
 - **À changer** :
   - Recevoir une file d'instructions comme une liste de tâches, posée dès la réception.
   - Écrire le handoff et les notes de version en dernier, après la vérification finale de `main`, et y laisser des marqueurs pour les comptes plutôt que des chiffres provisoires.
+  - Vérifier dès le début de la file que la session peut publier ce qu'on lui demande en dernier (une étiquette, une release), pour annoncer tôt ce qui reviendra au propriétaire.
 
 ## Bilan au 2026-10-13
 
