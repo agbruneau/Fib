@@ -46,9 +46,12 @@ for (const bad of ['fast', 'iterative', 'matrix'] as const) {
   });
 }
 
-// PERF-TS-8 : F6. L'algorithme nommé s'exécute, et chaque durée est celle de son seul calcul (catalogue § 6).
-// Le fib d'essai délègue au vrai et fait avancer l'horloge de son coût : rien d'autre ne la fait avancer.
-// Des coûts en fractions binaires, donc des différences exactes; l'horloge ne part pas de 0, pour qu'une lecture absolue se voie.
+// PERF-TS-8 : F6 (catalogue § 6). L'algorithme nommé s'exécute, une ligne par algorithme exécuté, dans l'ordre, en un seul appel
+// à stderr, et chaque durée est l'écart de deux lectures de l'horloge autour de son calcul.
+// Le test ne vérifie pas l'étendue exacte de cette fenêtre : l'horloge d'essai n'avance que dans fib, donc une fenêtre qui
+// engloberait aussi la mise en forme du terme passerait.
+// Le fib d'essai délègue au vrai et fait avancer l'horloge de son coût. Des coûts en fractions binaires, donc des différences
+// exactes; l'horloge ne part pas de 0, pour qu'une lecture absolue se voie.
 const COST: Record<Algo, [ms: number, line: string]> = {
   fast: [0.5, 'fast 0.500 ms\n'],
   iterative: [1.25, 'iterative 1.250 ms\n'],
@@ -79,3 +82,26 @@ for (const [args, algos] of EXECUTED) {
     assert.deepEqual(stderr, [algos.map((a) => COST[a][1]).join('')]);
   });
 }
+
+// --list n'appelle pas fib : sa durée vient de l'horloge seule. Elle avance de 0,5 ms à chaque lecture, donc la durée est
+// exactement l'écart de deux lectures, et la ligne ne peut pas être écrite en dur.
+test('PERF-TS-8 : --time --list 10 rapporte iterative, et sa durée est l’écart de deux lectures de l’horloge', () => {
+  let now = 100;
+  const { io, stderr } = harness({ clock: () => (now += 0.5) });
+  assert.equal(run(['--time', '--list', '10'], io), 0);
+  assert.equal(now, 101, 'deux lectures');
+  assert.deepEqual(stderr, ['iterative 0.500 ms\n']);
+});
+
+// L'horloge est appelée en méthode de l'Io : une horloge à état, qui lit this, fonctionne. Détachée, elle lèverait.
+test('PERF-TS-8 : l’horloge est appelée en méthode de l’Io, this compris', () => {
+  const { io, stderr } = harness();
+  const stateful = Object.assign(io, {
+    now: 100,
+    clock(this: { now: number }) {
+      return (this.now += 0.5);
+    },
+  });
+  assert.equal(run(['--time', '10'], stateful), 0);
+  assert.deepEqual(stderr, ['fast 0.500 ms\n']);
+});

@@ -74,10 +74,11 @@ function parse(args: readonly string[]): Options {
 }
 
 // Une ligne « <algo> <durée> ms » par calcul : le chronomètre ne couvre que le calcul, et le format ignore la locale.
-function timed<T>(durations: string[], clock: Io['clock'], name: Algo, calc: () => T): T {
-  const start = clock();
+// L'horloge s'appelle en méthode de l'Io, jamais détachée : un clock qui lit this (une horloge d'essai à état) fonctionne.
+function timed<T>(durations: string[], io: Pick<Io, 'clock'>, name: Algo, calc: () => T): T {
+  const start = io.clock();
   const result = calc();
-  durations.push(`${name} ${(clock() - start).toFixed(3)} ms\n`);
+  durations.push(`${name} ${(io.clock() - start).toFixed(3)} ms\n`);
   return result;
 }
 
@@ -86,8 +87,8 @@ function timed<T>(durations: string[], clock: Io['clock'], name: Algo, calc: () 
 function compute({ algos, list, n }: Options, io: Pick<Io, 'fib' | 'clock'>): { lines: string[]; durations: string[] } {
   const durations: string[] = [];
   // fibList rend déjà le texte décimal : la durée mesurée le comprend.
-  if (list) return { lines: timed(durations, io.clock, 'iterative', () => fibList(n)), durations };
-  const terms = algos.map((algo) => timed(durations, io.clock, algo, () => io.fib(n, algo)));
+  if (list) return { lines: timed(durations, io, 'iterative', () => fibList(n)), durations };
+  const terms = algos.map((algo) => timed(durations, io, algo, () => io.fib(n, algo)));
   if (terms.some((term) => term !== terms[0])) {
     throw new CliError(`discordance entre les algorithmes pour l'indice ${n}`, 3);
   }
@@ -130,5 +131,7 @@ export function run(args: readonly string[], io: Io = processIo): number {
   }
 }
 
+// Un Node sans import.meta.main (< 22.18, 23.x, 24.0 et 24.1) laisserait la CLI sans effet, en code 0 : échouer, en nommant la version.
+if (import.meta.main === undefined) throw new Error('fib demande Node ^22.18 ou >=24.2 (import.meta.main est absent)');
 // Point d'entrée seulement : importer ce module (un test) ne lance rien. Jamais process.exit(), qui tronquerait un tube.
 if (import.meta.main) process.exitCode = run(process.argv.slice(2));
