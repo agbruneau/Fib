@@ -9,7 +9,8 @@
     "check:py": "python -m unittest discover -s python && node contracts/cli.test.ts py",
     "contract": "node contracts/cli.test.ts",
     "check": "npm run check:go && npm run check:rust && npm run check:ts && npm run check:py",
-    "bench": "node contracts/bench.ts"
+    "bench": "node contracts/bench.ts",
+    "differentiel": "node contracts/differentiel.ts"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
