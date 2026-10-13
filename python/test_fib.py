@@ -12,7 +12,7 @@ from functools import cache
 from pathlib import Path
 from unittest import mock
 
-from fib import DECIMAL_FROM, STR_FROM_BITS, _fib_decimal, _text, compute, fib, fib_list, main
+from fib import DECIMAL_FROM, MAX_LIST, MAX_TERM, STR_FROM_BITS, _fib_decimal, _text, compute, fib, fib_list, main
 
 ALGOS = ("iterative", "matrix", "fast")
 HERE = Path(__file__).resolve().parent
@@ -110,6 +110,48 @@ def importtime_modules(*argv):
     run = subprocess.run([sys.executable, "-I", "-S", "-X", "importtime", *argv], capture_output=True)
     rows = (line for line in run.stderr.splitlines() if line.startswith(b"import time:"))
     return run, {row.rpartition(b"|")[2].strip().decode("ascii") for row in rows}
+
+
+# Sondes de PERF-PY-25 : time.perf_counter, que compute lit pour chronométrer, note à chaque lecture si decimal est déjà
+# dans sys.modules et combien de modules s'y trouvent. report() écrit sur stderr une marque par fenêtre (une paire de
+# lectures, départ puis arrivée) : 1 si decimal est chargé au départ et que sys.modules n'a pas grandi jusqu'à
+# l'arrivée, 0 sinon, et 0 pour une lecture orpheline. La sonde ne lit aucun attribut du module : un module paresseux
+# ne se charge pas à cause d'elle.
+SPY_PRELUDE = (
+    "import sys, time\n"
+    "clock, seen = time.perf_counter, []\n"
+    "def spy():\n"
+    "    seen.append(('decimal' in sys.modules, len(sys.modules)))\n"
+    "    return clock()\n"
+    "def report():\n"
+    "    marks = ['1' if d0 and n0 == n1 else '0' for (d0, n0), (_, n1) in zip(seen[::2], seen[1::2])]\n"
+    "    sys.stderr.write(''.join(marks) + '0' * (len(seen) % 2))\n"
+    "time.perf_counter = spy\n"
+    "sys.path.insert(0, sys.argv[1]); import fib\n"
+)
+# La CLI sur les arguments de la sonde, puis son rapport.
+SPY_CLI = "code = fib.main(sys.argv[2:])\nreport()\nsys.exit(code)\n"
+# Le témoin joue quatre fenêtres, dont une seule vaut 1. (A) decimal absent, rien ne se charge. (B) decimal absent :
+# _fib_decimal le charge dans la fenêtre, faute de préchargement. (C) decimal chargé, mais sys.modules grandit dans la
+# fenêtre, comme sous un module paresseux ou un import en cours. (D) decimal chargé, sys.modules stable.
+SPY_WITNESS = (
+    "spy(); spy()\n"
+    "spy(); fib._fib_decimal(fib.DECIMAL_FROM, 'fast'); spy()\n"
+    "spy(); sys.modules['probe'] = sys; spy()\n"
+    "spy(); spy()\n"
+    "report()\n"
+)
+
+
+def clock_reads_with_decimal(body, *args):
+    """Lance SPY_PRELUDE puis body dans python -I -S -c (comme le contrat lance la CLI); rend le processus et son
+    rapport, les caractères qui suivent le dernier saut de ligne de stderr (les lignes --time le précèdent). Sans
+    variable PYTHON* (-I les ignore déjà : la garde ne doit pas en dépendre), avec un délai maximal, et stdout au
+    puits : --list 10000 écrit 10 Mo."""
+    env = {name: value for name, value in os.environ.items() if not name.startswith("PYTHON")}
+    command = [sys.executable, "-I", "-S", "-c", SPY_PRELUDE + body, str(HERE), *args]
+    run = subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, env=env, timeout=60)
+    return run, run.stderr.decode("ascii", "replace").rpartition("\n")[2]
 
 
 class TestFib(unittest.TestCase):
@@ -412,6 +454,51 @@ class TestFib(unittest.TestCase):
         run, names = importtime_modules(str(FIB), "10")
         self.assertEqual(run.stdout, b"55\n")
         self.assertNotIn("os", names - bare)
+
+    def test_PERF_PY_25_decimal_est_deja_charge_quand_le_chronometre_demarre_par_list_fast_et_matrix(self):
+        """PERF-PY-25 : hors catalogue, garde de l'optimisation du préchargement de decimal par compute, hors du
+        chronomètre (sans lui, la ligne --time de fast à 170 000 passe de 6 à 9,5 ms : médianes de 21 lancements de
+        python -I, deux séries, 6,6 → 9,5 et 5,8 → 9,6 ms, 2026-10-13); les autres tests et le contrat restent verts
+        sans lui. Déterministe, sans seuil de durée : un interpréteur neuf (python -I -S, comme le contrat) espionne
+        time.perf_counter; dans chaque fenêtre du chronomètre (deux lectures), decimal doit être chargé au départ et
+        sys.modules ne doit pas grandir jusqu'à l'arrivée : ni module paresseux, ni import en cours, ni autre module.
+        Couvre les bornes des deux chemins, avec --time, la ligne que le préchargement protège : --list 0 et MAX_LIST;
+        un terme en Decimal à DECIMAL_FROM et à MAX_TERM, sans iterative, par fast puis matrix. Puis trois points
+        impairs et intérieurs, car les bornes sont toutes paires et multiples de 10 : --list 1, DECIMAL_FROM + 1 par
+        fast, MAX_TERM - 1 par matrix. Puis, sans --time, les trois cas d'origine : compute chronomètre aussi sans lui.
+        Mutants qui la rougissent : `import decimal` retiré de compute; déplacé dans la fenêtre du chronomètre (dans
+        timed après start, ou dans la lambda); limité à as_list; limité à use_decimal; remplacé par un module paresseux
+        (importlib.util.LazyLoader) ou par un fil (threading.Thread(target=__import__, args=('decimal',))); sauté sous
+        --time (compute reçoit show_time : `not show_time and ...`); une condition qui ne coïncide avec la bonne qu'en
+        un point (`n == DECIMAL_FROM`, `n <= DECIMAL_FROM`, `DECIMAL_FROM <= n < MAX_TERM`, `as_list and n > 0`,
+        `as_list and n <= 10`); une condition qui coïncide avec la bonne aux bornes, pas entre elles, parce que 0, 10,
+        MAX_LIST, DECIMAL_FROM et MAX_TERM sont tous pairs et multiples de 10 : `... and n % 2 == 0` sur toute la
+        condition ou sur as_list, `as_list and n != 1`, `use_decimal and n % 10_000 == 0`, `use_decimal and n in
+        (DECIMAL_FROM, MAX_TERM)`. Chacune fait payer l'import (3 à 5 ms) à une entrée acceptée.
+        Témoin : quatre fenêtres (SPY_WITNESS), dont une seule vaut 1 (0001) : decimal absent; absent puis chargé dans
+        la fenêtre; chargé mais sys.modules qui grandit; chargé et stable. Un 1 ne peut venir que du préchargement, et
+        chaque moitié du prédicat est prouvée."""
+        run, report = clock_reads_with_decimal(SPY_WITNESS)
+        self.assertEqual((run.returncode, report), (0, "0001"), run.stderr)
+        cases = (
+            ["--time", "--list", "0"],
+            ["--time", "--list", str(MAX_LIST)],
+            ["--time", str(DECIMAL_FROM)],
+            ["--time", str(MAX_TERM)],
+            ["--time", "--algo", "matrix", str(DECIMAL_FROM)],
+            ["--time", "--algo", "matrix", str(MAX_TERM)],
+            ["--time", "--list", "1"],
+            ["--time", str(DECIMAL_FROM + 1)],
+            ["--time", "--algo", "matrix", str(MAX_TERM - 1)],
+            ["--list", "10"],
+            [str(DECIMAL_FROM)],
+            ["--algo", "matrix", str(DECIMAL_FROM)],
+        )
+        for args in cases:
+            with self.subTest(args=args):
+                run, report = clock_reads_with_decimal(SPY_CLI, *args)
+                self.assertEqual(run.returncode, 0, run.stderr)
+                self.assertRegex(report, r"\A1+\Z", "decimal chargé et sys.modules stable dans la fenêtre (1), non 0")
 
 
 if __name__ == "__main__":
