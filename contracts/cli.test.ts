@@ -350,7 +350,7 @@ describe('harnais', () => {
   // HAR-5 : l'A/B apparié du banc (`--contre REF`). L'ordre s'alterne (A puis B aux tours pairs, B puis A aux impairs) et la paire
   // se rend toujours [A, B]. Le résumé est la médiane des différences B − A, non la différence des médianes : la dérive de la machine
   // entre deux tours touche A et B ensemble, et la différence des médianes la rejoue. A part de la racine de la révision, B de ce
-  // dépôt : sinon l'A/B comparerait l'arbre de travail à lui-même, sans écart. L'espion ne lance rien et la racine n'est jamais créée.
+  // dépôt : sinon l'A/B comparerait l'arbre de travail à lui-même, sans écart. L'espion ne lance rien; seuls le nettoyage et l'A/B entier (`main`) écrivent sur le disque, chacun dans un dossier provisoire.
   test('HAR-5 : l’A/B apparié alterne l’ordre, rend la médiane des différences B − A, et lance A depuis la révision, B depuis le dépôt', () => {
     const ordre: string[] = [];
     for (let i = 0; i < 4; i++) pair(i, () => ordre.push(`A${i}`), () => ordre.push(`B${i}`));
@@ -504,6 +504,49 @@ describe('harnais', () => {
     const defaut = banc(['--contre', 'HEAD'], arbre('go', 'rust', 'ts'));
     assert.deepEqual([defaut.code, defaut.stderr], [1, 'bench: py : dossier absent de HEAD'], 'les langages par défaut ne sont pas cherchés dans REF');
     seulementLecture(defaut.calls);
+
+    // Le banc ordinaire, `main` jusqu'au tableau, sous l'espion : `rounds(runs, …)` y joue 1 tour de chauffe et `runs` tours gardés, tous depuis
+    // le dépôt. Sans `--contre`, ni lecture ni extraction de révision. Un `rounds(runs - 1, …)` de `table` ne lance que le tour de chauffe et
+    // rend des médianes vides (NaN), que seul le compte des lancements voit.
+    const ordinaire = banc(['go', '--runs', '1']);
+    assert.deepEqual([ordinaire.code, ordinaire.stderr], [0, ''], 'le banc ordinaire doit réussir sans rien écrire sur stderr');
+    assert.ok(ordinaire.calls.every((c) => c.file !== 'git'), 'le banc ordinaire lit ou extrait une révision');
+    assert.deepEqual(ordinaire.calls.filter((c) => c.file === 'go').map((c) => c.options.cwd), [depot], 'le banc ordinaire ne compile pas Go une fois, depuis le dépôt');
+    const mesuresBanc = ordinaire.calls.filter((c) => c.file !== 'go');
+    assert.equal(mesuresBanc.length, 2 * S, 'le banc ne joue pas 1 tour de chauffe et 1 tour gardé de chaque scénario');
+    for (const c of mesuresBanc) assert.deepEqual([c.file, c.options.cwd], [command('go')[0], depot], 'le banc ordinaire lance autre chose que le binaire du dépôt');
+    const lignesBanc = ordinaire.stdout.split('\n');
+    assert.match(lignesBanc[0], /^médianes sur 1 exécutions /, 'l’en-tête du banc ordinaire a changé');
+    assert.equal(lignesBanc.length, 2 + S, 'le banc ordinaire n’écrit pas son en-tête, ses colonnes et une ligne par scénario');
+    assert.doesNotMatch(ordinaire.stdout, /NaN/, 'le banc ordinaire écrit une médiane vide');
+
+    // L'A/B entier, `main` sous l'espion jusqu'au tableau, avec une révision déjà extraite : `extract` réutilise <revisions>/<sha> sans lancer
+    // git, donc seuls `git rev-parse`, `git ls-tree`, deux builds et les lancements de mesure passent par l'espion. `abPairs` ne garde pas, seul, la
+    // racine que `versus` lui passe : un `abPairs(id, runs, ROOT)` dans `versus` laisserait HAR-5 vert, et l'A/B comparerait le dépôt à lui-même.
+    // Un `build(id, rev)` retiré ou remplacé par `build(id)` y survivrait aussi, et ne se verrait qu'à une extraction neuve.
+    const base = mkdtempSync(join(tmpdir(), 'fib-har5-ab-'));
+    try {
+      const rev = join(base, sha);
+      mkdirSync(rev);
+      const ab = banc(['go', '--runs', '1', '--contre', 'HEAD'], arbre('go', 'rust', 'ts', 'python'), base);
+      assert.deepEqual([ab.code, ab.stderr], [0, ''], 'l’A/B doit réussir sans rien écrire sur stderr');
+      assert.match(ab.stdout, /^A\/B apparié sur 1 paire [^\n]*A = HEAD \(aaaaaaa\), B = /, 'l’en-tête ne nomme pas REF et son SHA court');
+      // Aucun appel git hors la lecture de la révision : la révision déjà extraite est réutilisée.
+      seulementLecture(ab.calls.filter((c) => c.file === 'git'));
+      // Un build part de la racine de la révision, l'autre du dépôt, dans un ordre quelconque.
+      assert.deepEqual(ab.calls.filter((c) => c.file === 'go').map((c) => c.options.cwd).sort(), [depot, rev].sort(), 'les deux builds ne partent pas du dépôt et de la révision');
+      // 1 tour de chauffe et 1 tour gardé : 2 × S rendez-vous, deux lancements chacun; la moitié, A, part de la racine de la révision.
+      const mesures = ab.calls.filter((c) => c.file !== 'git' && c.file !== 'go');
+      assert.equal(mesures.length, 2 * 2 * S, 'l’A/B ne joue pas 1 tour de chauffe et 1 tour gardé de chaque scénario, deux lancements chacun');
+      const de = (racine: string) => mesures.filter((c) => c.options.cwd === racine && c.file === command('go', racine)[0]);
+      assert.equal(de(rev).length, 2 * S, 'la moitié des lancements (A) ne part pas de la racine de la révision, avec son binaire');
+      assert.equal(de(depot).length, 2 * S, 'la moitié des lancements (B) ne part pas du dépôt, avec son binaire');
+      const lignes = ab.stdout.split('\n');
+      assert.equal(lignes.length, 2 + S, 'l’A/B n’écrit pas son en-tête, ses colonnes et une ligne par scénario');
+      for (const ligne of lignes.slice(2)) assert.match(ligne, /\/1$/, `une ligne du tableau ne compte pas 1 paire : ${ligne}`);
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
 
     // Nettoyer .build/revisions/ sans suivre les liens : chaque révision porte un lien (jonction sous Windows) vers le node_modules de ce
     // dépôt, que `Remove-Item -Recurse` de Windows PowerShell 5.1 peut traverser pour vider sa cible. Le banc détache d'abord le lien,
