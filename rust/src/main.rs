@@ -1,5 +1,6 @@
 //! Commande fib : adaptateur mince autour de la bibliothèque fib (PRD § 4, analyse manuelle selon l'ADR-0002).
 use fib::{Algo, fib, fib_list};
+use num_bigint::BigUint;
 use std::{
     env,
     io::{BufWriter, Write},
@@ -89,27 +90,28 @@ fn timed<T>(name: &str, calc: impl FnOnce() -> T) -> (T, String) {
 
 /// Rend les lignes de stdout (un terme par ligne) et les lignes de durée; avec all, les trois algorithmes doivent
 /// concorder. Rien n'est écrit ici : une discordance (F3) laisse stdout vide et sans durée.
-fn compute(o: &Options) -> Result<(Vec<String>, String), CliError> {
+/// `term` est générique, non un `fn` ou un `dyn` : l'appel reste direct, et un test y passe un terme faussé.
+fn compute(o: &Options, term: impl Fn(u64, Algo) -> BigUint) -> Result<(Vec<String>, String), CliError> {
     if o.list {
         return Ok(timed("iterative", || fib_list(o.n)));
     }
     let (terms, durations): (Vec<_>, Vec<String>) =
-        o.algos.iter().map(|&algo| timed(algo.name(), || fib(o.n, algo))).unzip();
+        o.algos.iter().map(|&algo| timed(algo.name(), || term(o.n, algo))).unzip();
     if terms.iter().any(|t| *t != terms[0]) {
         return Err(CliError(3, format!("discordance entre les algorithmes pour l'indice {}", o.n)));
     }
     Ok((vec![terms[0].to_string()], durations.concat()))
 }
 
-/// Rend les lignes de stdout et le texte de stderr.
-fn run(args: &[String]) -> Result<(Vec<String>, String), CliError> {
+/// Rend les lignes de stdout et le texte de stderr; `term` calcule un terme (`fib` pour `main`).
+fn run(args: &[String], term: impl Fn(u64, Algo) -> BigUint) -> Result<(Vec<String>, String), CliError> {
     // L'aide l'emporte sur tout le reste, y compris à la place de la valeur de --algo.
     if args.iter().any(|a| a == "--help" || a == "-h") {
         // La sortie ajoute '\n' à chaque ligne : sans trim_end, l'aide finirait par une ligne vide.
         return Ok((vec![USAGE.trim_end().into()], String::new()));
     }
     let options = parse(args)?;
-    let (lines, durations) = compute(&options)?;
+    let (lines, durations) = compute(&options, term)?;
     Ok((lines, if options.time { durations } else { String::new() }))
 }
 
@@ -131,7 +133,7 @@ fn write_lines<W: Write>(w: W, lines: &[String]) {
 fn main() -> ExitCode {
     // `args_os` plutôt que `args`, qui paniquerait sur un argument qui n'est pas de l'Unicode valide.
     let args: Vec<String> = env::args_os().skip(1).map(|a| a.to_string_lossy().into_owned()).collect();
-    match run(&args) {
+    match run(&args, fib) {
         Ok((lines, err)) => {
             write_lines(std::io::stdout().lock(), &lines);
             let _ = std::io::stderr().write_all(err.as_bytes());
@@ -148,6 +150,7 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
 
     /// Un `Write` qui garde les octets reçus et compte ses appels à `write`.
     #[derive(Default)]
@@ -187,5 +190,60 @@ mod tests {
             spy.bytes == format!("{}\n", lines.join("\n")).as_bytes(),
             "octets écrits différents des lignes jointes"
         );
+    }
+
+    fn args(a: &[&str]) -> Vec<String> {
+        a.iter().map(|s| s.to_string()).collect()
+    }
+
+    // PERF-RS-11 (F3), hors catalogue : garde du code 3, que le contrat ne sait pas provoquer (catalogue § 6). `run`
+    // reçoit un terme discordant : le vrai plus 1 pour un algorithme, tour à tour à chacune des trois places. Le test
+    // ne recalcule aucun terme. Le type du résultat écarte les lignes de durée (`Err` ne porte que le code et le
+    // message), mais pas une durée glissée dans le message : d'où l'absence de `\n` et de ` ms`. Rouge sous
+    // `skip(3)`, `any(|_t| false)`, `take(2)`, `CliError(2, …)`, des durées ajoutées au message (une par ligne, ou sur
+    // sa ligne) et `fib::fib` en dur dans `compute`; la forme naïve `*t != *t` échoue à clippy (`eq_op`).
+    // Survivants connus, laissés à la revue : R7, un `eprint!` des durées avant l'erreur (stderr n'est pas dans le
+    // résultat); R8b, `ExitCode::from(code.min(2))` dans `main`; RW, `main` passe une closure qui fait tout par `fast`.
+    #[test]
+    fn perf_rs_11_si_un_algorithme_diverge_des_deux_autres_run_rend_3_sans_duree() {
+        for bad in [Algo::Fast, Algo::Iterative, Algo::Matrix] {
+            let name = bad.name();
+            let result =
+                run(&args(&["--time", "--algo", "all", "10"]), |n, algo| fib(n, algo) + u32::from(algo == bad));
+            let Err(CliError(code, msg)) = result else { panic!("{name} diverge : run devait échouer") };
+            assert_eq!(code, 3, "{name} diverge");
+            assert!(!msg.is_empty(), "{name} diverge : message vide");
+            assert!(!msg.contains('\n'), "{name} diverge : plusieurs lignes dans le message {msg:?}");
+            assert!(!msg.contains(" ms"), "{name} diverge : une durée (F6) dans le message {msg:?}");
+        }
+    }
+
+    // PERF-RS-12 (F2 et F6), hors catalogue : l'algorithme nommé par une ligne de durée est celui qui calcule, un appel
+    // chacun et dans l'ordre. Le contrat ne voit que le nom et le format de la ligne (catalogue § 6). Un espion note
+    // l'algorithme puis délègue à `fib`; mêmes quatre cas que PERF-GO-10. Rouge sous le mutant où un seul algorithme
+    // (`--algo iterative` ou `--algo matrix`) est calculé par `fast`, que PERF-RS-11 laisse passer.
+    #[test]
+    fn perf_rs_12_chaque_ligne_de_duree_nomme_l_algorithme_calcule() {
+        let cases: [(&[&str], &[Algo]); 4] = [
+            (&["10"], &[Algo::Fast]),
+            (&["--algo", "iterative", "10"], &[Algo::Iterative]),
+            (&["--algo", "matrix", "10"], &[Algo::Matrix]),
+            (&["--algo", "all", "10"], &[Algo::Fast, Algo::Iterative, Algo::Matrix]),
+        ];
+        for (rest, expected) in cases {
+            let calls = RefCell::new(Vec::new());
+            let argv = args(&[&["--time"], rest].concat());
+            let Ok((_, durations)) = run(&argv, |n, algo| {
+                calls.borrow_mut().push(algo);
+                fib(n, algo)
+            }) else {
+                panic!("--time {} : run devait réussir", rest.join(" "))
+            };
+            let calls = calls.into_inner();
+            assert_eq!(calls, expected, "algorithmes calculés pour --time {}", rest.join(" "));
+            let named: Vec<&str> = durations.lines().map(|l| l.split(' ').next().unwrap_or("")).collect();
+            let called: Vec<&str> = calls.iter().map(|a| a.name()).collect();
+            assert_eq!(named, called, "lignes de durée pour --time {}", rest.join(" "));
+        }
     }
 }
