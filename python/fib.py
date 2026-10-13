@@ -54,7 +54,7 @@ def _fast(n, kind=int):
 
 
 # Seul aiguillage des algorithmes, en int comme en Decimal : PERF-PY-26, 27 et 28 y substituent un algorithme qui
-# discorde ou qui espionne.
+# discorde ou qui espionne, et PERF-PY-30 en vérifie les couples nom-fonction par identité.
 _ALGOS = {"iterative": _iterative, "matrix": _matrix, "fast": _fast}
 
 
@@ -200,7 +200,7 @@ def _text(x):
 
 
 # Mesuré : à cet indice, l'import de decimal (5 ms) coûte autant que l'écriture par tranches, quadratique au-delà.
-# Couplage : F(169 999) compte environ 118 000 bits, donc STR_FROM_BITS ne joue qu'avec iterative et all, dès F(288 000)
+# Couplage : F(169 999) compte environ 118 000 bits, donc STR_FROM_BITS ne joue qu'avec iterative et all, dès F(288 086)
 DECIMAL_FROM = 170_000
 
 

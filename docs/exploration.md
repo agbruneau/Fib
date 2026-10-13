@@ -215,7 +215,7 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
   
   Écarté : un stderr ouvert mais qui refuse l'écriture, qui relève des comportements à arbitrer ci-dessous.
 - **A aidé** :
-  - La boucle différentielle a trouvé un vrai écart là où 121 vecteurs et 402 cas verts n'en voyaient aucun. Elle a pris la dimension que personne n'avait jouée : l'état des descripteurs au lancement.
+  - La boucle différentielle a trouvé un vrai écart là où 121 vecteurs et 398 cas verts n'en voyaient aucun. Elle a pris la dimension que personne n'avait jouée : l'état des descripteurs au lancement.
   - Le vérificateur sceptique a ramené 15 candidats à 4 bugs et 10 lacunes, chacun avec sa commande minimale.
   - La phase 4 a évité un correctif à moitié : le seul garde de `reconfigure` aurait laissé `--time` et les erreurs d'usage en code 1.
 - **Friction** :
@@ -360,7 +360,7 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
   - Donner au vérificateur de mutants un critère d'arrêt : un mutant compte s'il est une modification plausible du code, pas une condition arbitraire.
   - Demander dès le ticket les deux côtés d'une condition d'optimisation : là où elle doit agir, et là où elle ne doit rien coûter.
 
-## 2026-10-13 — Pistes A, C, D et E de l'étape 10 : conception en workflow, une série de questions, livraison en trois vagues
+## 2026-10-13 — `codebase-design` et `grilling` (pistes A, C, D et E de l'étape 10, #27 à #36), livraison en trois vagues, puis `/code-review`
 
 - **Contexte** : le rapport de l'étape 10 gardait quatre pistes en plus de B, livré par #20. Le propriétaire a demandé de traiter les quatre : A (lancement commun dans `contracts/`), C (discordance testée en Go, Rust et Python), D (texte décimal de Python) et E (entrée Python appelable sans processus).
 - **Conception** : un workflow `ultracode` de 11 agents (environ 3 millions de jetons, 2 h 23).
@@ -374,9 +374,10 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
     - « le code 3 n'est observé nulle part » : faux depuis PERF-TS-7 ;
     - « deux lignes par langage » : il en faut 6 ou 7 en production, et 50 à 80 de gardes ;
     - « PERF-PY-22 en mémoire » : elle l'est déjà.
+  - Pour C, la critique a montré qu'une relance du binaire de test tuerait aussi G9 et G10 en Go (une écriture directe sur `os.Stderr` ou `os.Stdout` depuis `compute`), ce que la variable de paquet ne faisait pas, mais au prix d'un mode caché du binaire de test : le paramètre retenu les laisse à la revue. Elle a aussi trouvé un trou commun aux quatre langages : une durée glissée sur la ligne du message de discordance (T2 en TypeScript, #32). Une assertion qui refuse ` ms` dans ce message le ferme dans PERF-TS-7, PERF-GO-9, PERF-RS-11 et PERF-PY-26.
 - **Décisions** : une seule série de quatre questions, une par piste, avec les options et la recommandation de chaque critique. Le propriétaire a suivi les quatre recommandations :
   - A en trois tickets ;
-  - C par paramètre en Go et Rust, et par substitution dans `_ALGOS` en Python, avec les espions de l'algorithme exécuté ;
+  - C dans l'idiome de chaque langage, sur le modèle d'`Io.fib` en TypeScript : un paramètre `termFunc` en Go, un paramètre générique `impl Fn` en Rust, une substitution dans `_ALGOS` par `mock.patch.dict` en Python, avec les espions de l'algorithme exécuté ;
   - D réduite à une garde ;
   - E réduite à un ticket de test.
   
@@ -409,7 +410,7 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
       - HAR-6 ne voyait ni les tests lancés par un glob, ni `node --run`, ni `npm test`, ni une URL relative sans `./` ;
       - la boucle sortait en 0 sans rien chercher sous Windows ;
       - la parité des paires n'était imposée que dans `main`.
-    - Son vérificateur a aligné le marqueur de la boucle sur X-4 (`[^\x20-\x7e]`). 136 mutants ont été joués, puis 53 sur la projection.
+    - Son vérificateur a aligné le marqueur de la boucle sur X-4 (`[^\x20-\x7e]`). 136 mutants ont été joués, et le catalogue compte désormais 53 mutants qui rougissent le témoin de la boucle (46 avant), sept de plus sur la projection.
     - Le lancement parallèle des quatre CLI dans la boucle a été écarté : c'est un outil de recherche, et ses 62 s par défaut ne sont pas un enjeu.
 - **A aidé** :
   - Le critique adverse par piste a évité deux refactorisations sans gain, D et E, sur preuve par mutants et par instructions, non par opinion.
@@ -418,7 +419,7 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
 - **Friction** :
   - Les numéros de garde se télescopent quand des tickets écrits ensemble sont livrés dans un autre ordre : HAR-4 et HAR-5 visés deux fois, PERF-PY-26 visé par trois conceptions.
   - Les tickets de documentation sont livrés avec des numéros de ligne déjà périmés.
-  - Les fichiers partagés (`README.md`, catalogue § 6, `contracts/bench.ts`) produisent des conflits dès que des tickets parallèles les touchent : un en vague 2, six en vague 3.
+  - Les fichiers partagés (le catalogue, trois fois, puis `PRD.md`, `CONTEXT.md`, `contracts/README.md`, `contracts/bench.ts` et `contracts/cli.test.ts`) produisent des conflits dès que des tickets parallèles les touchent : un en vague 2, sept en vague 3.
   - Le plafond de concurrence des workflows dépend du nombre de cœurs : sur 4 cœurs, un workflow ne lance que 2 agents à la fois. « Tout en parallèle » demande un workflow par ticket.
   - L'orchestrateur a été pris à corriger lui-même du code (un commentaire). La revue l'a vu, mais la règle de `CLAUDE.md` se perd facilement en fin de vague.
 - **À changer** :
@@ -428,6 +429,88 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
   - Ne pas paralléliser deux tickets qui réécrivent la même fonction (ici `extract`) : les enchaîner, ou les confier au même `fib-dev`.
   - Lancer un workflow par ticket quand le nombre de cœurs plafonne la concurrence.
 
+## 2026-10-13 — Revue finale de cohérence en workflow (hors skill), gardes d'identité de l'aiguillage (#39 à #43), puis `/code-review`, avant la version v1.0.0
+
+- **Contexte** : avant la version finale, le propriétaire a demandé une revue de cohérence de tout le dépôt et sa fermeture. Il a ensuite demandé de lancer en parallèle la garde d'identité de la table des algorithmes, une lacune que la vérification de #36 avait trouvée.
+- **Démarche** : quatre workflows de revue, un par angle (chiffres et commandes, cohérence entre documents, tickets et traçabilité, code et gardes). Chacun a un réviseur qui vérifie par exécution, puis un vérificateur adverse qui tente de réfuter chaque constat.
+  - 46 constats en sont sortis : 40 confirmés et 6 réfutés.
+  - L'orchestrateur a corrigé les constats de documentation. Ceux de code ont fait le ticket #43, livré par un `fib-dev`.
+  - Les gardes d'identité ont fait quatre tickets, un par langage (#39 à #42), dans quatre workflows parallèles.
+- **Ce que la revue a trouvé** :
+  - des chiffres périmés : A3 du PRD au 2026-10-11, « 402 cas verts » au lieu de 398, « cinq chantiers » ;
+  - une ADR qui décrivait une refonte que le propriétaire avait annulée ;
+  - un PRD qui disait le harnais facultatif ;
+  - un piège `process.exit()` déclaré « à vérifier », pourtant reproductible sous Linux ;
+  - une procédure de tickets fondée sur des commandes `gh issue`, refusées en session infonuagique ;
+  - deux optimisations sans garde : les accesseurs paresseux de stdout en TypeScript, devenus PERF-TS-11, et le contenu de la table de lancement, devenu HAR-7 ;
+  - trois lacunes non nommées au catalogue : le code de sortie, le `fib` de `processIo` et le `forget` de Rust.
+- **Gardes d'identité** : chaque langage a sa forme.
+  - Go (PERF-GO-11) : une empreinte d'allocations, sans changer la production (4, 67 et 52 allocations à n = 1023).
+  - Rust (PERF-RS-13) : des adresses de fonction, par une fonction privée `algorithm`.
+  - TypeScript (PERF-TS-10) : le nom et des espions, sur la table exportée pour les seules gardes.
+  - Python (PERF-PY-30) : l'identité de chaque entrée de `_ALGOS`.
+  
+  Les six échanges d'aiguillage les rougissent toutes.
+- **Mesure** : le code généré par Rust change (un appel indirect au lieu de l'inlining), et TypeScript gagne un export. `npm run bench -- rust ts --contre de075bf`, au repos :
+  - TypeScript : de −2,5 à +0,8 %, avec des signes alternés.
+  - Rust : un premier tour de 100 paires a montré +4,7 % sur `petit (10)`. Deux tours de 200 paires l'ont démenti (−1,9 %, puis +1,0 %), sans qu'aucun scénario ne garde son signe : c'est du bruit.
+- **A aidé** :
+  - Le vérificateur adverse a réfuté 6 constats sur 46, dont deux affirmations fausses sur l'A/B et sur A3, et a resserré plusieurs correctifs avant leur application.
+  - L'A/B apparié du dépôt a servi sur la mesure même qui l'avait motivé, et sa répétition a départagé un écart que la première passe faisait croire réel.
+- **Friction** :
+  - L'orchestrateur a deux fois mal lancé un workflow : un SHA de base inventé, puis un chemin de script provisoire envoyé en parallèle de sa création. Le premier a dû être arrêté et relancé.
+  - Les tickets écrits ensemble se recoupent encore : #43 visait 113 tests par langage, alors que HAR-7, à un test par commande, en donne 116.
+- **`/code-review` du lot final** : 12 constats, tous traités.
+  - Huit de documentation :
+    - le catalogue se contredisait sur `_ALGOS` ;
+    - les survivants des gardes d'identité n'étaient pas nommés ;
+    - les commandes de build échappent à HAR-7 ;
+    - la traçabilité de F6 était incomplète ;
+    - la procédure REST ne filtrait pas la frontière ;
+    - la phrase du README sur les revues était fausse.
+  - Quatre de code, chez deux `fib-dev` :
+    - `algos` exportée en lecture seule par le type ;
+    - un seul lanceur pour PERF-TS-9 et 11 ;
+    - HAR-7 bouclé sur `IDS` ;
+    - `hasGap`.
+- **À changer** :
+  - Toujours lire la tête (`git rev-parse`) au moment de lancer un workflow, jamais la recopier de mémoire.
+  - Respecter la règle « un ticket et un langage par `fib-dev` » jusque dans les retouches. La dernière `/code-review` a relevé deux invocations qui mêlaient #41 et #43, ou ts/, contracts/ et python/.
+  - Écrire dans un ticket le compte attendu par la formule, par exemple 6 ORA, plus le groupe du harnais, plus 99 cas, plutôt que par un nombre.
+
+## 2026-10-13 — Seconde `/handoff`, file d'instructions et fermeture pour la version v1.0.0
+
+- **Contexte** : après #25, le propriétaire a mis en file une quinzaine de consignes enchaînées par « ensuite » :
+  - les pistes ;
+  - le journal, le README et le PRD ;
+  - la fermeture des PR et des tickets ;
+  - le handoff et le résumé ;
+  - le nettoyage et `CLAUDE.md` ;
+  - la revue finale, la version v1.0.0, puis la poussée sur `main`.
+  
+  Quatre demandes « en parallèle » sont venues s'y ajouter pendant l'exécution. L'orchestrateur les a suivies dans l'ordre, sauf sur deux points : l'étiquette `v1.0.0` vient en dernier, après la poussée et le nettoyage, et le résumé suit l'étiquette, pour que l'étiquette marque le dernier commit et que le résumé la cite.
+- **Seconde `/handoff`** : le document de l'étape 11 a été réécrit, pas complété, pour la fermeture du dépôt. Il garde la même règle, « renvoyer, ne pas redire » :
+  - l'état vérifié sur `main` ;
+  - les points ouverts sans ticket, chacun avec l'endroit où il est consigné et ce qu'il faudrait ;
+  - les pièges de l'environnement ;
+  - les skills suggérées.
+  
+  Rédigé avant le lot final, il a dû être repris après : 409 tests au lieu de 413, la garde d'identité encore ouverte, Windows non signalé. C'est la friction de l'étape 11, un instantané vite périmé, que la fermeture rend plus visible encore.
+- **Parallélisme** :
+  - un workflow par ticket, à cause du plafond de deux agents par workflow sur quatre cœurs ;
+  - des `fib-dev` en arrière-plan, chacun dans son worktree, pour les retouches de la dernière `/code-review`.
+  
+  Pendant ce temps, l'orchestrateur tenait les documents, et la session a été résumée au moins une fois. Les brouillons laissés dans le dossier de travail de la session ont porté l'état d'un contexte à l'autre : le handoff, les notes de version et l'entrée du journal des pistes.
+- **A aidé** :
+  - L'ordre explicite de la file, qui a permis de repousser l'étiquette et le résumé sans redemander.
+  - Les brouillons hors dépôt, relus au lieu d'être réécrits de mémoire.
+- **Friction** :
+  - Une consigne envoyée pendant un tour peut interrompre un workflow en arrière-plan (#25), et chaque « en parallèle » est arrivé pendant qu'un lot tournait.
+  - Le handoff et les notes de version dépendent des derniers comptes. Les écrire avant le dernier lot oblige à les reprendre.
+- **À changer** :
+  - Recevoir une file d'instructions comme une liste de tâches, posée dès la réception.
+  - Écrire le handoff et les notes de version en dernier, après la vérification finale de `main`, et y laisser des marqueurs pour les comptes plutôt que des chiffres provisoires.
+
 ## Bilan au 2026-10-13
 
 | Skill | Usage |
@@ -436,21 +519,22 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
 | `/grill-with-docs` (`grilling`, `domain-modeling`) | utilisée : glossaire, ADR-0001 et ADR-0002, PRD éprouvé |
 | `/to-spec` | utilisée : spec #1 |
 | `/to-tickets` | utilisée : tickets #2 à #5, avec dépendances natives |
-| `tdd` | utilisée : catalogue de cas, puis cycles des quatre `fib-dev`; absente de la session infonuagique du 2026-10-12, où les `fib-dev` ont suivi son cycle à la main |
+| `tdd` | utilisée : catalogue de cas, puis cycles des quatre `fib-dev`; absente de la session infonuagique des 2026-10-12 et 2026-10-13 (`Unknown skill: tdd`), où les `fib-dev` ont suivi son cycle à la main |
 | `/implement` | remplacée par l'agent `fib-dev`, qui applique `tdd` directement |
-| `resolving-merge-conflicts` | non nécessaire : aucune des 41 fusions n'a conflicté |
+| `resolving-merge-conflicts` | introuvable dans la session infonuagique : les conflits des vagues parallèles du 2026-10-13 (huit, dans six fichiers) ont été résolus à la main : par un `fib-dev` pour la fusion de #29 (cinq fichiers, code et documentation), par l'orchestrateur pour les trois autres (`docs/cas-de-test.md` deux fois, `CONTEXT.md`) |
 | `research`, `prototype` | non utilisées; un `prototype` aurait détecté plus tôt le piège de `go run` |
-| `/code-review` | utilisée trois fois le 2026-10-11, axes Standards et Spec : après la refactorisation, après l'optimisation, après la borne à 1 000 000; puis le 2026-10-12, sur les tickets #6 à #14 et sur #16; puis le 2026-10-13, sur #20, #21 et #25 |
+| `/code-review` | utilisée trois fois le 2026-10-11, axes Standards et Spec : après la refactorisation, après l'optimisation, après la borne à 1 000 000; puis le 2026-10-12, sur les tickets #6 à #14 et sur #16; puis le 2026-10-13, sur #20, #21 et #25, puis quatre fois sur les pistes A, C, D et E (#27 à #36), une par vague et une dernière sur la fusion de #29, puis une sur le lot final (#39 à #43), soit huit passes ce jour-là |
 | `diagnosing-bugs` | utilisée à l'étape 9 (#16), lue dans `mattpocock/skills` faute de plugin; précédée d'une boucle différentielle pour trouver l'écart |
-| `/improve-codebase-architecture`, `codebase-design`, `grilling` | utilisées à l'étape 10 (#20), lues dans `mattpocock/skills` : rapport de 5 candidats, *design it twice* à 4 prototypes, 2 tours de *grilling* |
-| `/handoff` | utilisée à l'étape 11, lue dans `mattpocock/skills` : document de reprise hors dépôt, envoyé au propriétaire |
+| `/improve-codebase-architecture`, `codebase-design`, `grilling` | utilisées à l'étape 10 (#20), lues dans `mattpocock/skills` : rapport de 5 candidats, *design it twice* à 4 prototypes, 2 tours de *grilling*; puis pour les pistes A, C, D et E : deux conceptions prototypées par piste, un critique adverse, une série de questions |
+| `/handoff` | utilisée deux fois, lue dans `mattpocock/skills` : à l'étape 11, puis à la fermeture du dépôt pour la version v1.0.0; chaque fois un document de reprise hors dépôt, envoyé au propriétaire |
 
-Hors skill : l'audit du PRD (2026-10-10), l'audit en workflow du 2026-10-11 (auditeurs en lecture seule), puis l'optimisation des performances et la borne à 1 000 000, confiées à des sous-agents `fib-dev`, et enfin l'épreuve des cas de test en workflow.
+Hors skill : l'audit du PRD (2026-10-10), l'audit en workflow du 2026-10-11 (auditeurs en lecture seule), puis l'optimisation des performances et la borne à 1 000 000, confiées à des sous-agents `fib-dev`, l'épreuve des cas de test en workflow, et, le 2026-10-13, les workflows `ultracode` de livraison : un `fib-dev`, un vérificateur adverse par exécution et un tour de correction par ticket.
 
-Cinq leçons :
+Six leçons :
 
 1. **Un catalogue de cas avant le code** a fait converger quatre implémentations indépendantes. Elles sont passées au vert d'un seul coup quand l'oracle est arrivé.
 2. **Les sondes par sous-agents valent le coût quand elles exécutent**, plus que quand elles lisent de la doc. Le piège de `go run`, la toolchain MSVC et les fins de ligne CRLF ne sont apparus qu'à l'exécution.
 3. **Les données externes sont un prérequis à traiter avant les agents.** L'oracle bloqué a immobilisé les quatre tickets.
 4. **Mesurer avant d'optimiser.** Le banc d'essai a montré que le temps partait au démarrage et dans la conversion décimale, pas dans `fast`, qui calculait F(100 000) en moins d'une milliseconde. À 1 000 000, il a aussi dit où ne rien changer : Go, Rust et TypeScript convertissaient déjà en temps sous-quadratique.
-5. **La revue trouve ce que les agents laissent passer.** À chacun de ses trois passages, `/code-review` a trouvé un défaut que les `fib-dev` n'avaient pas vu : le lecteur d'oracle Rust qui n'ignorait plus les lignes vides (PRD § 7), `matrix` en TypeScript qui refaisait l'ancien `fast`, le chemin `Decimal` de Python qui contournait la seam.
+5. **La revue trouve ce que les agents laissent passer.** À chacun de ses trois passages du 2026-10-11, `/code-review` a trouvé un défaut que les `fib-dev` n'avaient pas vu : le lecteur d'oracle Rust qui n'ignorait plus les lignes vides (PRD § 7), `matrix` en TypeScript qui refaisait l'ancien `fast`, le chemin `Decimal` de Python qui contournait la seam.
+6. **Un critique adverse qui exécute vaut mieux qu'un rapport qui raisonne.** Il a réfuté, par mutants et par instructions, quatre affirmations du rapport de l'étape 10 et deux refactorisations sans gain (D et E). À la livraison, un vérificateur par ticket a trouvé, avant la revue, des survivants réels : un module paresseux, un int converti en Decimal, une trace d'exception perdue.

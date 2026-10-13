@@ -59,7 +59,7 @@ Après la borne à 1 000 000 et les trois revues de code (`npm run bench -- --ru
 
 ## Amendement du 2026-10-13 : l'A/B apparié, mesure d'un travail de démarrage
 
-Le banc seul ne tranche pas un gain de quelques pour cent. Pour l'horloge `process.hrtime` (#21), les médianes séparées se recouvraient : de 46,3 à 55,8 ms pour `main`, de 44,9 à 47,8 ms pour la branche. Seul un A/B apparié a tranché, de −1,8 à −2,6 ms (−4,0 à −5,7 %), sur 6 tours de 201 lancements. Il avait été refait à la main au moins quatre fois, chaque fois par un script jetable propre à un langage, sans les commandes du contrat. La série Python (D, puis la partie Python de C, puis E) refond le texte décimal et le point d'entrée de `python/fib.py` : elle doit montrer qu'elle ne ralentit pas le démarrage, à quelques pour cent près, sous le bruit des médianes séparées.
+Le banc seul ne tranche pas un gain de quelques pour cent. Pour l'horloge `process.hrtime` (#21), les médianes séparées se recouvraient : de 46,3 à 55,8 ms pour `main`, de 44,9 à 47,8 ms pour la branche. Seul un A/B apparié a tranché, de −1,8 à −2,6 ms (−4,0 à −5,7 %), sur 6 tours de 201 lancements. Il avait été refait à la main au moins quatre fois, chaque fois par un script jetable propre à un langage, sans les commandes du contrat. La série Python (D, puis la partie Python de C, puis E) devait refondre le texte décimal et le point d'entrée de `python/fib.py`. Réduite à des gardes (#33 à #35), elle n'a touché `python/fib.py` que par un commentaire.
 
 Le propriétaire décide que l'A/B devient la mesure d'un travail de démarrage (imports, chargement, point d'entrée) :
 

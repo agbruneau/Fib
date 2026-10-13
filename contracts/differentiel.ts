@@ -47,11 +47,11 @@ function group(projections: ReadonlyMap<string, string>): string[][] {
 }
 
 // Plus d'un groupe : un écart.
-const diverges = (groups: readonly string[][]) => groups.length > 1;
+const hasGap = (groups: readonly string[][]) => groups.length > 1;
 
 // Le témoin, joué avant chaque recherche. Une projection trop large rendrait la boucle aveugle, une trop étroite la noierait sous
 // le texte libre et les durées, et un regroupement qui prendrait une implémentation pour référence en ferait un oracle. Il ne lance
-// rien, et le contrat ne le joue pas : HAR-6 interdit au contrat d'importer la boucle. Il se contrôle en le mutant à la main (HAR-6).
+// rien, et le contrat ne le joue pas : HAR-6 interdit au contrat d'importer la boucle. Il se contrôle en le mutant à la main (catalogue § 6, « Le témoin de la boucle différentielle »).
 function witness(): void {
   const p = (code: number | null, out: string, err: string) => project({ code, out, err });
   assert.equal(p(2, '', 'fib: a\n'), p(2, '', 'fib: b\n'), 'le texte qui suit fib: est libre (F9)');
@@ -90,7 +90,7 @@ function witness(): void {
   assert.deepEqual(group(new Map([...three].reverse())), group(three), 'le verdict ne dépend pas de l’ordre des lancements');
   const agree = new Map([['go', 'x'], ['py', 'x']]);
   assert.deepEqual(group(agree), [['go', 'py']], 'un accord est un seul groupe');
-  assert.ok(diverges(group(odd)) && diverges(group(three)) && !diverges(group(agree)), 'un écart, c’est plus d’un groupe');
+  assert.ok(hasGap(group(odd)) && hasGap(group(three)) && !hasGap(group(agree)), 'un écart, c’est plus d’un groupe');
 
   // Les suites de jetons : de 0 à K, par longueur puis dans l'ordre des jetons, et le niveau K + 1, que rien ne joue, n'est jamais construit.
   // Le niveau suivant se construit par un `map` sur les jetons, une fois par suite du niveau courant : 1 + 2 suites sous K = 2 avec deux jetons.
@@ -272,7 +272,7 @@ function search({ ids: asked, dimensions, tokens, ref }: Options): number {
       const runs = new Map<string, Run>();
       for (const id of ids) runs.set(id, launch(id, entry.args, { env: entry.env, stderrClosed: entry.stderrClosed, root }));
       const groups = group(new Map([...runs].map(([id, r]) => [id, project(r)])));
-      if (!diverges(groups)) continue;
+      if (!hasGap(groups)) continue;
       g++;
       console.log(`écart (${name}) : ${describeEntry(entry)}`);
       for (const members of groups) console.log(`  ${members.join(', ').padEnd(18)} ${preview(runs.get(members[0])!)}`);

@@ -1,7 +1,7 @@
 """Seam 1 : la bibliothèque. Les attendus viennent de l'oracle (contracts/b000045.txt) ou de faits mathématiques.
 Les gardes PERF-PY-n, hors seams (ADR-0004), protègent les optimisations que les cas BIB et CLI ne visent pas
-(PERF-PY-20, 23 et 29 protègent les correctifs F10 et CLI-V04). Chaque test porte son identifiant en tête de sa
-docstring : grep BIB-05 python/."""
+(PERF-PY-20, 23 et 29 protègent les correctifs F10 et CLI-V04; PERF-PY-26, 27 et 30 gardent des exigences, F2, F3 et
+F6, et non des optimisations). Chaque test porte son identifiant en tête de sa docstring : grep BIB-05 python/."""
 import decimal
 import math
 import os
@@ -19,7 +19,10 @@ from fib import (
     MAX_LIST,
     MAX_TERM,
     STR_FROM_BITS,
+    _fast,
     _fib_decimal,
+    _iterative,
+    _matrix,
     _text,
     compute,
     fib,
@@ -630,7 +633,7 @@ class TestFib(unittest.TestCase):
         Comme PERF-PY-26 et 27, elle suppose que _ALGOS reste le seul aiguillage : sans lui, le quatrième signal devient
         aveugle (PERF-PY-27 rougit alors).
         Quatre signaux, dans un interpréteur neuf (PERF-PY-5 a déjà chargé _pylong ici) lancé par run_fib, à des indices
-        de toute la plage, des deux côtés de F(288 000) et pour chacun des deux algorithmes : un int s'écrirait par les
+        de toute la plage, des deux côtés de F(288 086) et pour chacun des deux algorithmes : un int s'écrirait par les
         tranches de _text (divmod, quadratique) jusqu'à STR_FROM_BITS bits, puis par str(), qui importe _pylong (10 ms,
         PRD § 5); un int converti par Decimal(int), conversion binaire → décimale quadratique que _fib_decimal dit
         éviter, ne passe ni par l'un ni par l'autre. Le divmod de fib est donc espionné, _pylong ne doit pas se charger,
@@ -705,7 +708,7 @@ class TestFib(unittest.TestCase):
                     (witness.returncode, witness.stderr), (1, "Decimal accepte\nalgorithme sans Decimal pour kind\n")
                 )
         # DECIMAL_FROM, l'intérieur de la sous-plage des tranches (F(250 001) compte 173 561 bits), juste au-delà de
-        # F(288 000) (F(300 001) en compte 208 273), le milieu de celle de str() (F(600 000) en compte 416 544) et
+        # F(288 086) (F(300 001) en compte 208 273), le milieu de celle de str() (F(600 000) en compte 416 544) et
         # MAX_TERM : les mêmes pour fast et pour matrix, puisqu'une bande sans Decimal peut n'exclure que l'un des deux
         spies = kind_spy + convert_spy + spy
         for args in (
@@ -742,6 +745,26 @@ class TestFib(unittest.TestCase):
                 run = run_main_block(args)
                 self.assertEqual((run.stdout, run.returncode), (out.encode("ascii"), code), run.stderr)
                 self.assertRegex(run.stderr, err)
+
+    def test_PERF_PY_30_chaque_nom_d_algorithme_aiguille_vers_sa_propre_fonction(self):
+        """PERF-PY-30 : hors catalogue, garde de F2 et de F6, qui ferme la lacune de PERF-PY-27 (catalogue § 6) : l'espion
+        de PERF-PY-27 note le nom demandé, pas la fonction qui calcule derrière ce nom, et les trois algorithmes rendent
+        le même terme. Les trois noms de _ALGOS, seul aiguillage des algorithmes (fib() et le chemin Decimal,
+        _fib_decimal, la lisent), doivent donc être, par identité (assertIs), _iterative, _matrix et _fast. Aucune valeur
+        calculée (elles sont justes sous le mutant), aucune durée. Mutants rouges, les six échanges d'aiguillage, un
+        sous-test chacun : "iterative": _matrix, "iterative": _fast, "matrix": _iterative, "matrix": _fast,
+        "fast": _iterative, "fast": _matrix. Quatre d'entre eux ne rougissent qu'elle, ni le contrat ni les autres gardes;
+        sous "matrix": _iterative et "fast": _iterative, _iterative n'accepte pas kind, et les gardes du chemin Decimal
+        lèvent aussi (bruyant). Elle suppose que fib() et _fib_decimal lisent _ALGOS : une fib() qui aiguille sans la
+        table rougit PERF-PY-27 (P8n), qu'elle ne remplace pas.
+        Une reliaison faite avant la table, `_matrix = _fast` ou `_matrix, _fast = _fast, _matrix`, change les deux
+        côtés de l'assertIs et le laisse vert : le nom de la fonction (__name__, ici _matrix) la rougit. Elle ne voit
+        pas un corps qui délègue à un autre algorithme (`return _fast(n, kind)` en tête de `_matrix`) : c'est à la revue
+        de code. Une entrée enveloppée (lambda, functools.partial) la rougit à tort, bruyamment, jamais en silence."""
+        for name, function in {"iterative": _iterative, "matrix": _matrix, "fast": _fast}.items():
+            with self.subTest(algo=name):
+                self.assertIs(_ALGOS.get(name), function)
+                self.assertEqual(function.__name__, f"_{name}")
 
 
 if __name__ == "__main__":

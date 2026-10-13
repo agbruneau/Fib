@@ -14,6 +14,15 @@ Les issues et les specs de ce dépôt sont des issues GitHub de `agbruneau/Fib`.
 
 `gh` déduit le dépôt de `git remote -v` quand il s'exécute dans un clone.
 
+**Session infonuagique.** Les sous-commandes `gh issue` passent par GraphQL, qui y est refusé (« HTTP 403: GitHub GraphQL is not available »). Il faut alors l'API REST, par `gh api` :
+
+- **Lire** : `gh api repos/agbruneau/Fib/issues/<n>` (corps, étiquettes, état), puis `.../issues/<n>/comments`.
+- **Lister la frontière** : `gh api 'repos/agbruneau/Fib/issues?state=open&labels=ready-for-agent,waiting' --jq '[.[] | select(.pull_request | not)]'` (les deux étiquettes à la fois) ; sans le filtre `pull_request`, la liste contient aussi les PR.
+- **Créer** : `gh api -X POST repos/agbruneau/Fib/issues --input <json>`, avec `title`, `body` et `labels`.
+- **Commenter** : `gh api -X POST repos/agbruneau/Fib/issues/<n>/comments -f body="..."`.
+- **Étiquettes** : `gh api -X POST repos/agbruneau/Fib/issues/<n>/labels -f 'labels[]=in-progress'`, puis `gh api -X DELETE repos/agbruneau/Fib/issues/<n>/labels/waiting`.
+- **Fermer** : retirer `in-progress` et `waiting` (`gh api -X DELETE .../labels/<étiquette>`), commenter la clôture (`gh api -X POST .../issues/<n>/comments -f body="..."`), puis `gh api -X PATCH repos/agbruneau/Fib/issues/<n> -f state=closed -f state_reason=completed`.
+
 ## Statuts
 
 GitHub n'a que deux états, Open et Closed. Deux étiquettes précisent l'état d'un ticket ouvert, qui porte l'une ou l'autre, jamais les deux :
@@ -21,6 +30,8 @@ GitHub n'a que deux états, Open et Closed. Deux étiquettes précisent l'état 
 - **Waiting** (`waiting`) : le ticket attend son exécution. Soit personne ne l'a encore pris, soit le travail attend un prérequis externe; dans ce cas, un commentaire nomme le prérequis.
 - **In Progress** (`in-progress`) : `gh issue edit <numéro> --remove-label waiting --add-label in-progress`, au lancement du travail (agent ou humain), avant toute écriture.
 - **Closed** : `gh issue edit <numéro> --remove-label in-progress --remove-label waiting`, puis `gh issue close <numéro> --comment "..."`.
+
+L'étiquette `in-review` existe sur GitHub, mais aucun ticket ne la porte : la boucle de `CLAUDE.md` passe directement de `in-progress` à la fermeture.
 
 Un ticket `in-progress` sort de la frontière : personne d'autre ne le prend. Un travail qui s'arrête sans pouvoir fermer son ticket le repasse à `waiting`, avec un commentaire qui dit ce qu'il attend.
 

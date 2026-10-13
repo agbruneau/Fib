@@ -21,8 +21,11 @@ Fib est un terrain d'essai académique. Il sert à explorer, avec Claude Code, l
 | Étape 9 du PRD § 9, `diagnosing-bugs` : écart du stderr fermé en Python ([agbruneau/Fib#16](https://github.com/agbruneau/Fib/issues/16)), puis `/code-review` | 2026-10-12 | fait |
 | Étape 10 du PRD § 9, `/improve-codebase-architecture` et `codebase-design` : rapport, puis la CLI TypeScript appelable dans le processus ([agbruneau/Fib#20](https://github.com/agbruneau/Fib/issues/20)) et `/code-review` | 2026-10-13 | fait |
 | Étape 11 du PRD § 9 : `/handoff`, document de reprise hors dépôt | 2026-10-13 | fait |
+| Horloge `process.hrtime` en TypeScript ([agbruneau/Fib#21](https://github.com/agbruneau/Fib/issues/21)) et garde du préchargement de `decimal` en Python ([agbruneau/Fib#25](https://github.com/agbruneau/Fib/issues/25)), puis `/code-review` | 2026-10-13 | fait |
+| Pistes A, C, D et E de l'étape 10 : conception en workflow, une série de questions, puis tickets #27 à #36 livrés en trois vagues (lancement commun et contrôles du harnais, A/B apparié, boucle différentielle, discordance et algorithme exécuté gardés dans les quatre langages, gardes Python), puis `/code-review` | 2026-10-13 | fait |
+| Revue finale de cohérence en quatre angles, gardes d'identité de l'aiguillage ([agbruneau/Fib#39](https://github.com/agbruneau/Fib/issues/39) à [#42](https://github.com/agbruneau/Fib/issues/42)), PERF-TS-11 et HAR-7 ([#43](https://github.com/agbruneau/Fib/issues/43)), puis `/code-review` | 2026-10-13 | fait |
 
-Les quatre implémentations passent `npm run check` sous Windows 11, avec Python 3.14, et sous Linux (2026-10-12), avec Go 1.26, Rust 1.97, Node 22 et Python 3.13. Python 3.12 n'est pas vérifié.
+Les quatre implémentations passent `npm run check` sous Windows 11, avec Python 3.14 (2026-10-12), et sous Linux (2026-10-13), avec Go 1.26, Rust 1.97, Node 22.22 et Python 3.13. La suite Python et le contrat Python passent aussi sous Python 3.12 (3.12.3, Linux, 2026-10-13).
 
 | Implémentation | Grand entier |
 |---|---|
@@ -53,16 +56,16 @@ Temps total du processus, en millisecondes, médianes de 15 exécutions (`npm ru
 **Qualité.**
 
 - L'audit, en 8 dimensions (les quatre langages, contrat, cohérence, test différentiel, documentation), a rendu 233 constats, dont 36 réfutés par un vérificateur sceptique. Il n'a trouvé aucune erreur de calcul et un seul écart au contrat : Python laissait `PYTHONIOENCODING` changer l'encodage de sa sortie. L'écart est corrigé et gardé par PERF-PY-20 : CLI-V03 ne peut pas le voir, car `python -I` ignore la variable. Un test différentiel de 121 vecteurs hors catalogue n'a trouvé aucun écart entre les quatre implémentations. Le 2026-10-12, une boucle différentielle d'environ 170 000 entrées en a trouvé un : avec stderr fermé, Python sortait en code 1, stdout vide. Il est corrigé et gardé par CLI-V04 et PERF-PY-23. Elle a aussi relevé des comportements que le contrat ne tranchait pas, comme un stdout qui refuse l'écriture : ils sont désormais hors contrat (PRD § 4, [agbruneau/Fib#18](https://github.com/agbruneau/Fib/issues/18)).
-- Chaque langage passe les 99 cas CLI du contrat (CLI-V04 se saute sous Windows), ORA-01 à ORA-06 sur l'oracle et sept contrôles du harnais, la sonde du fd 2 et HAR-1 à HAR-6 (112 tests par langage), BIB-01 à BIB-14 sur sa bibliothèque (BIB-14 est sans objet en Rust), et des tests de garde de ses optimisations : 10 en Go, 12 en Rust, 9 en TypeScript, 29 en Python, dont PERF-PY-20, PERF-PY-23 et PERF-PY-29, qui gardent des correctifs (F10 et CLI-V04). D'autres gardes tiennent des exigences que le contrat ne sait pas provoquer. La discordance (F3) est gardée dans les quatre langages (PERF-TS-7, PERF-GO-9, PERF-RS-11, PERF-PY-26), ainsi que l'algorithme réellement exécuté (F2, F6 : PERF-TS-8, PERF-GO-10, PERF-RS-12, PERF-PY-27). La durée réellement mesurée ne l'est qu'en TypeScript (PERF-TS-8).
-- Une revue `/code-review` a suivi chacun des cinq chantiers. Ces revues ont trouvé, entre autres, une violation du PRD § 7 en Rust (lignes vides de l'oracle) et un `matrix` TypeScript qui refaisait l'ancien `fast`. Les constats sont corrigés.
+- Chaque langage passe les 99 cas CLI du contrat (CLI-V04 se saute sous Windows), ORA-01 à ORA-06 sur l'oracle et les contrôles du harnais HAR-1 à HAR-7 (HAR-7 en un test par commande de lancement) et la sonde du fd 2 de CLI-V04 (116 tests par langage, 413 en tout), BIB-01 à BIB-14 sur sa bibliothèque (BIB-14 est sans objet en Rust), et des tests de garde de ses optimisations : 11 en Go, 13 en Rust, 11 en TypeScript, 30 en Python, dont PERF-PY-20, PERF-PY-23 et PERF-PY-29, qui gardent des correctifs (F10 et CLI-V04). D'autres gardes tiennent des exigences que le contrat ne sait pas provoquer. La discordance (F3) est gardée dans les quatre langages (PERF-TS-7, PERF-GO-9, PERF-RS-11, PERF-PY-26), ainsi que l'algorithme réellement exécuté (F2, F6 : PERF-TS-8, PERF-GO-10, PERF-RS-12, PERF-PY-27) et l'aiguillage de chaque nom vers sa propre fonction (PERF-TS-10, PERF-GO-11, PERF-RS-13, PERF-PY-30). La durée réellement mesurée ne l'est qu'en TypeScript (PERF-TS-8).
+- Une revue `/code-review` a suivi chaque chantier du tableau d'état depuis le 2026-10-11, sauf l'étape 11; les tickets #2 à #5 du 2026-10-10 ont été fermés sans elle. Ces revues ont trouvé, entre autres, une violation du PRD § 7 en Rust (lignes vides de l'oracle) et un `matrix` TypeScript qui refaisait l'ancien `fast`. Les constats sont corrigés.
 
 **Coût.**
 
 | Lignes de code (`wc -l`, hors fichiers de test) | Go | Rust | TypeScript | Python |
 |---|---|---|---|---|
-| avant → final | 255 → 385 | 205 → 469 | 151 → 266 | 158 → 270 |
+| avant → final | 255 → 385 | 205 → 501 | 151 → 268 | 158 → 270 |
 
-- Rust compte aussi ses tests unitaires : 34 lignes dans `lib.rs` et 102 dans `main.rs` (PERF-RS-8, 11 et 12). La cible d'environ 200 lignes (PRD, A3) est remplacée par l'ADR-0004.
+- Rust compte aussi ses tests unitaires : 60 lignes dans `lib.rs` (dont PERF-RS-13) et 102 dans `main.rs` (PERF-RS-8, 11 et 12). La cible d'environ 200 lignes (PRD, A3) est remplacée par l'ADR-0004.
 - `iterative` reste en O(n²) opérations sur les mots : à 1 000 000, il prend environ 1,6 s en Go et 5 s en Python, ce que F8 accepte.
 
 Le détail des décisions et des mesures est dans l'[ADR-0004](docs/adr/0004-performance-du-calcul.md).
@@ -144,7 +147,7 @@ npm run bench -- py --contre main
 npm run differentiel
 ```
 
-- `check:<id>` vérifie un langage (`go`, `rust`, `ts` ou `py`) : analyse statique, tests du langage, puis contrat.
+- `check:<id>` vérifie un langage (`go`, `rust`, `ts` ou `py`) : analyse statique (aucune en Python), tests du langage, puis contrat.
 - `contract` compile Go, Rust et TypeScript, puis joue le contrat sur les implémentations présentes.
 - `check` vérifie les quatre langages.
 - `bench` compile, puis mesure le temps total et le temps de calcul de chaque langage sur sept scénarios, dont un terme à 1 000 000. Il prend aussi des identifiants de langage; sans `--runs`, il fait 11 exécutions.
@@ -178,7 +181,7 @@ Fib/
 │   └── exploration.md   journal des skills utilisées
 ├── contracts/           oracle, lancement commun des CLI (lancement.ts), test de contrat, banc d'essai (bench.ts) et boucle différentielle (differentiel.ts)
 ├── go/  rust/  ts/  python/
-├── .build/              Go et TypeScript compilés (ignoré par git)
+├── .build/              Go et TypeScript compilés, et révisions extraites par `bench --contre` et `differentiel --revision` (ignoré par git)
 ├── package.json         point d'entrée des vérifications
 ├── tsconfig.json        typage de ts/ et contracts/
 └── tsconfig.build.json  compile ts/src en JavaScript dans .build/ts
@@ -209,4 +212,4 @@ La répartition des rôles est décrite dans [CLAUDE.md](CLAUDE.md).
 
 Aucune licence n'est encore déclarée pour le code de ce dépôt.
 
-L'oracle des tests (`contracts/b000045.txt`) est généré par la formule de Binet et vérifié par la définition de la suite. Il coïncide avec la séquence [A000045 de l'OEIS](https://oeis.org/A000045), qui reste la référence publique.
+L'oracle des tests (`contracts/b000045.txt`) est généré par la formule de Binet et vérifié par la définition de la suite. Il coïncide avec la suite [A000045 de l'OEIS](https://oeis.org/A000045), qui reste la référence publique.

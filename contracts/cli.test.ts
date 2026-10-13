@@ -256,7 +256,7 @@ describe('oracle', () => {
 });
 
 // Les contrôles du harnais, joués une fois pour les quatre CLI : ils éprouvent le test de contrat lui-même et rougissent
-// quand il ferait passer un cas à vide. La sonde du fd 2 lance un vrai processus; HAR-1 à HAR-3, HAR-5 et HAR-6 n'en lancent aucun.
+// quand il ferait passer un cas à vide. La sonde du fd 2 lance un vrai processus; HAR-1 à HAR-3 et HAR-5 à HAR-7 n'en lancent aucun.
 describe('harnais', () => {
   // Si `2>&-` cessait de fermer le fd 2, CLI-V04 passerait à vide. Une redirection vers un fd fermé échoue (code non nul).
   test('CLI-V04 : le harnais ferme le fd 2', { skip: noShell }, () => {
@@ -811,6 +811,29 @@ describe('harnais', () => {
     assert.ok(reached.includes(join(ROOT, 'contracts', 'lancement.ts')), 'témoin : le parcours des imports ne voit pas lancement.ts');
     assert.deepEqual(reached.map((f) => relative(ROOT, f)).filter((f) => LOOP.test(f)), [], 'un fichier que le contrat lance ou importe atteint la boucle par un import');
   });
+
+  // HAR-7 : le contenu de la table de lancement (`contracts/lancement.ts`). HAR-1 et HAR-5 comparent le banc à `command(id)`, tiré de cette même
+  // table, et HAR-3 n'exige que des commandes distinctes : aucune garde ne fixait ce que la table lance. Le retour de ts au `.ts` non compilé
+  // (`ts/src/cli.ts`) et le retrait de `-I -S` pour Python passaient donc le contrat, alors que le banc aurait mesuré le retrait des types
+  // de Node, ou `site` et PYTHON*, au lieu du programme (ADR-0004). Go par `go run` et Rust par `cargo run` mesureraient la chaîne d'outils.
+  // Le contrôle ne lance rien et n'espionne rien : il compare `command(id)` à l'attendu, écrit ici sans la table, pour chaque identifiant de
+  // `IDS` (les quatre du PRD § 5), un test chacun. Les attendus sont ceux du PRD § 5 : les binaires de Go et de Rust (suffixe `.exe` sous Windows,
+  // comme dans la table) vus depuis la racine de ce dépôt, le JavaScript que tsc émet sous `.build/ts/`, et Python isolé (`-I`) sans `site` (`-S`).
+  // La boucle court sur `IDS`, non sur ces attendus : un identifiant ajouté à la table sans attendu ici échoue sous son propre nom.
+  const exe = process.platform === 'win32' ? '.exe' : '';
+  const LANCEMENT: Record<string, { quoi: string; argv: string[] }> = {
+    go: { quoi: 'le binaire de go build', argv: [join(ROOT, '.build', `fib${exe}`)] },
+    rust: { quoi: 'le binaire de cargo build --release', argv: [join(ROOT, 'rust', 'target', 'release', `fib${exe}`)] },
+    ts: { quoi: 'le JavaScript compilé par tsc, non la source', argv: [process.execPath, '.build/ts/cli.js'] },
+    py: { quoi: 'python/fib.py sous -I -S', argv: ['python', '-I', '-S', 'python/fib.py'] },
+  };
+  for (const id of IDS) {
+    const attendu: { quoi: string; argv: string[] } | undefined = LANCEMENT[id];
+    test(`HAR-7 : ${id} se lance par ${attendu?.quoi ?? 'une commande sans attendu'}`, () => {
+      assert.ok(attendu, `${id} : HAR-7 n’a pas d’attendu pour cet identifiant de lancement.ts`);
+      assert.deepEqual(command(id), attendu.argv, `${id} : la table de lancement ne lance pas ${attendu.quoi}`);
+    });
+  }
 });
 
 const requested = process.argv.slice(2);

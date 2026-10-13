@@ -1,6 +1,6 @@
 # PRD — Fib : calculateur Fibonacci académique en quatre langages
 
-Version 1.13 · 2026-10-13 · André-Guy Bruneau. Révisée par `/grill-with-docs`, par un audit, par le catalogue de cas de test, par l'implémentation des tickets #2 à #5, par l'audit et la refactorisation du 2026-10-11, par l'optimisation des performances (ADR-0004), par la borne d'un terme à 1 000 000 et le bilan des résultats, puis par l'étape 9 (`diagnosing-bugs`, #16), par les cas hors contrat (#18), par l'étape 10 (#20), par l'étape 11 (`/handoff`) et par les gardes du code 3 et de l'algorithme exécuté en Go, Rust et Python (#36) : le vocabulaire est dans `CONTEXT.md`, les décisions durables dans `docs/adr/`.
+Version 1.15 · 2026-10-13 · André-Guy Bruneau. Révisée par `/grill-with-docs`, par un audit, par le catalogue de cas de test, par l'implémentation des tickets #2 à #5, par l'audit et la refactorisation du 2026-10-11, par l'optimisation des performances (ADR-0004), par la borne d'un terme à 1 000 000 et le bilan des résultats, puis par l'étape 9 (`diagnosing-bugs`, #16), par les cas hors contrat (#18), par l'étape 10 (#20), par l'étape 11 (`/handoff`) et par les pistes A, C, D et E de l'étape 10 (#27 à #36 : lancement commun des CLI, A/B apparié, boucle différentielle, gardes du code 3, de l'algorithme exécuté et du texte décimal), puis par la revue finale de cohérence (#39 à #43 : gardes d'identité de l'aiguillage, PERF-TS-11, HAR-7) : le vocabulaire est dans `CONTEXT.md`, les décisions durables dans `docs/adr/`.
 
 ## 1. Contexte et objectifs
 
@@ -109,7 +109,7 @@ La CLI est un adaptateur mince : grammaire, bornes, comparaison, durées, format
 | Analyse statique | `go vet` | `cargo clippy --all-targets -- -D warnings` | `tsc` (sans émission) | — |
 | Exécutable du contrat, depuis la racine | `go -C go build -o ../.build/fib ./cmd/fib`, puis `.build/fib` (`fib.exe` sous Windows, suffixe donné à `-o`) | `cargo build -q --release --manifest-path rust/Cargo.toml`, puis `rust/target/release/fib` (`fib.exe` sous Windows) | `npx tsc -p tsconfig.build.json` (émet dans `.build/ts/`), puis `node .build/ts/cli.js` | `python -I -S python/fib.py` |
 
-Dépendances autorisées : `num-bigint`, avec ses dépendances transitives `num-integer`, `num-traits` et `autocfg`, pour Rust; `typescript` et `@types/node` en `devDependencies` pour TypeScript. Aucune autre.
+Dépendances autorisées : `num-bigint`, avec ses dépendances transitives `num-integer`, `num-traits` et `autocfg`, pour Rust; `typescript` et `@types/node` en `devDependencies` pour TypeScript, avec leurs dépendances transitives (`undici-types`, et le binaire natif `@typescript/typescript-<plateforme>` de tsc 7). Aucune autre.
 
 Durée indicative du calcul itératif de F(100 000) sur la machine de développement, mesurée le 2026-10-11 après optimisation (ADR-0004) : Go 16 ms, Rust 26 ms, Node 42 ms, Python 54 ms. Le temps de réponse complet, démarrage compris, se mesure par `npm run bench`.
 
@@ -132,6 +132,7 @@ Durée indicative du calcul itératif de F(100 000) sur la machine de développe
 ```
 Fib/
 ├── README.md, PRD.md, CLAUDE.md, CONTEXT.md, .gitignore, .gitattributes
+├── .claude/            agents/fib-dev.md (sous-agent) et settings.json (orchestrateur, worktrees), voir CLAUDE.md
 ├── docs/adr/ (0001 à 0004), docs/agents/, docs/cas-de-test.md, docs/exploration.md
 ├── contracts/
 │   ├── b000045.txt      oracle : F(0) … F(2000), au format du b-file OEIS A000045
@@ -152,13 +153,13 @@ Les quatre implémentations sont indépendantes (ADR-0001) : la seule frontière
 
 | Script de `package.json` | Rôle |
 |---|---|
-| `check:go`, `check:rust`, `check:ts`, `check:py` | analyse statique, tests du langage, puis test de contrat pour ce seul langage |
+| `check:go`, `check:rust`, `check:ts`, `check:py` | analyse statique (aucune en Python, § 5), tests du langage, puis test de contrat pour ce seul langage |
 | `contract` | test de contrat pour les implémentations présentes |
 | `bench` | banc d'essai : médianes du temps total et du temps de calcul, par langage et par scénario, après le même build que le contrat et par le même lancement (`--runs N`, 11 par défaut; ADR-0004). `--contre REF` : A/B apparié de la révision REF, extraite sous `.build/revisions/<sha>`, contre l'arbre de travail, en temps total (médiane des différences par paire; `--runs` vaut alors 100 par défaut, et un nombre impair y est arrondi au pair supérieur, que le banc écrit sur stderr : l'ordre alterne, et seul un nombre pair de paires le répartit à égalité, ADR-0004), pour un travail de démarrage. `--nettoyer` vide `.build/revisions/` |
 | `differentiel` | boucle différentielle, un outil de recherche : lance les implémentations présentes sur les mêmes entrées (grammaire, valeurs, environnement, descripteurs) et regroupe celles dont les sorties diffèrent, sans référence ni attendu. Code 1 s'il y a un écart. `--dimension`, `--jetons K`, `--revision REF` (les implémentations de REF entre elles, extraites sous `.build/revisions/<sha>` comme celles de l'A/B). Hors de `check` et de `contract` (ADR-0001, HAR-6) |
 | `check` | les quatre `check:*` |
 
-`node contracts/cli.test.ts [id…]` vérifie les implémentations nommées par leur identifiant. Un identifiant dont le dossier manque fait échouer le test. Sans argument, le test vérifie les implémentations dont le dossier existe; s'il n'y en a aucune, il ne vérifie que l'oracle. Pour Go, Rust et TypeScript, il compile d'abord (§ 5). Chaque lancement d'une CLI, par le test de contrat comme par le banc d'essai et la boucle différentielle, a un délai de 300 s.
+`node contracts/cli.test.ts [id…]` vérifie les implémentations nommées par leur identifiant. Un identifiant dont le dossier manque fait échouer le test. Il joue toujours l'oracle (ORA-01 à ORA-06) et le groupe `harnais`, qui suppose les quatre dossiers (sans eux, HAR-5 et HAR-6 rougissent), puis les implémentations demandées. Sans argument, il vérifie les implémentations dont le dossier existe. Pour Go, Rust et TypeScript, il compile d'abord (§ 5). Chaque lancement d'une CLI, par le test de contrat comme par le banc d'essai et la boucle différentielle, a un délai de 300 s.
 
 ## 7. Tests et critères d'acceptation
 
@@ -188,16 +189,16 @@ Le chemin de la discordance (code 3) dans la CLI n'a pas de cas de test, puisque
 
 - **A1** — Chaque ticket de langage : les cas ORA, les cas BIB de son langage et tous les cas CLI de son identifiant passent, donc `npm run check:<id>` et `npm run contract` sont verts sur `main`. Le projet : `npm run check` passe sous Windows 11 une fois les quatre implémentations livrées.
 - **A2** — Aucune dépendance hors de celles du § 5.
-- **A3** — Remplacé par l'ADR-0004 : la taille suit la performance. Mesuré le 2026-10-11, après optimisation et borne à 1 000 000 (`wc -l` des sources, hors fichiers de test) : TypeScript 232, Python 261, Rust 359 (dont 34 lignes de tests unitaires dans `lib.rs`), Go 376. Avant les travaux du 2026-10-11 : 151, 158, 205 et 255.
+- **A3** — Remplacé par l'ADR-0004 : la taille suit la performance. Mesuré le 2026-10-13 (`wc -l` des sources, hors fichiers de test) : TypeScript 268, Python 270, Rust 501 (dont 60 lignes de tests unitaires dans `lib.rs` et 102 dans `main.rs`), Go 385. Le 2026-10-11, après optimisation et borne à 1 000 000 : 232, 261, 359 et 376. Avant les travaux du 2026-10-11 : 151, 158, 205 et 255.
 - **A4** — `docs/exploration.md` contient une entrée pour chaque skill du § 9 réellement utilisée.
 
 ## 8. Hors périmètre
 
-FFT, GMP, Strassen, parallélisme, TUI, mode serveur, calibration et seuils réglables (ceux de Python, ADR-0004, sont fixes), limites de mémoire, de GC et de temps, `-last-digits`, `-output`, variables d'environnement, profilage, complétion de shell, Docker, négafibonacci (n < 0), Mojo, ponts entre langages (FFI, WASM). La CI GitHub Actions est candidate pour une phase 2; elle vérifierait aussi le piège `process.exit()` sous Linux.
+FFT, GMP, Strassen, parallélisme, TUI, mode serveur, calibration et seuils réglables (ceux de Python, ADR-0004, sont fixes), limites de mémoire, de GC et de temps, `-last-digits`, `-output`, variables d'environnement, profilage, complétion de shell, Docker, négafibonacci (n < 0), Mojo, ponts entre langages (FFI, WASM). La CI GitHub Actions est candidate pour une phase 2.
 
 ## 9. Démarche d'exploration des skills
 
-L'orchestrateur est la session principale (Opus 5.5 en `ultracode`); le code revient au sous-agent `fib-dev` (Sonnet 5.5). Voir `CLAUDE.md`. Les étapes 0, 1 et 4 à 11 sont faites : les quatre implémentations passent `npm run check`. L'étape 8 a pris la forme d'un audit, puis de quatre chantiers suivis chacun de `/code-review` : la refactorisation, l'optimisation des performances (ADR-0004) et la borne d'un terme à 1 000 000 (2026-10-11), puis les suites de l'épreuve des cas de test (tickets #6 à #14, 2026-10-12). L'étape 9 a corrigé l'écart du stderr fermé en Python (#16, 2026-10-12), que sa boucle différentielle avait trouvé : `npm run differentiel` la rejoue depuis, comme outil de recherche (ADR-0001). L'étape 10 a rendu la CLI TypeScript appelable dans le processus (#20, 2026-10-13). Les étapes 2 et 3 n'ont pas servi. L'étape 11 a produit un document de reprise, hors dépôt comme la skill l'exige (2026-10-13). Le bilan par skill, dont `/implement` remplacée par `fib-dev`, est dans `docs/exploration.md`.
+L'orchestrateur est la session principale (Opus 5.5 en `ultracode`); le code revient au sous-agent `fib-dev` (Sonnet 5.5). Voir `CLAUDE.md`. Les étapes 0, 1 et 4 à 11 sont faites : les quatre implémentations passent `npm run check`. L'étape 8 a pris la forme d'un audit, puis de quatre chantiers suivis chacun de `/code-review` : la refactorisation, l'optimisation des performances (ADR-0004) et la borne d'un terme à 1 000 000 (2026-10-11), puis les suites de l'épreuve des cas de test (tickets #6 à #14, 2026-10-12). L'étape 9 a corrigé l'écart du stderr fermé en Python (#16, 2026-10-12), que sa boucle différentielle avait trouvé : `npm run differentiel` la rejoue depuis, comme outil de recherche (ADR-0001). L'étape 10 a rendu la CLI TypeScript appelable dans le processus (#20, 2026-10-13). Les étapes 2 et 3 n'ont pas servi. L'étape 11 a produit un document de reprise, hors dépôt comme la skill l'exige (2026-10-13). Les pistes A, C, D et E du rapport de l'étape 10 ont suivi le même jour, conçues en workflow puis livrées en trois vagues (#27 à #36). Une revue finale de cohérence en quatre angles a précédé la version v1.0.0 (#39 à #43). Le bilan par skill, dont `/implement` remplacée par `fib-dev`, est dans `docs/exploration.md`.
 
 | # | Étape | Skill | Livrable |
 |---|---|---|---|
@@ -226,7 +227,7 @@ Chaque entrée de `docs/exploration.md` donne : la skill, l'étape ou le ticket,
 | Conversions trop permissives de `N` | validation de `^[0-9]+$` avant conversion (§ 5); cas `+5`, `1_000`, `0x10`, `٣`, `""` |
 | Limite de conversion entier → texte de Python | `set_int_max_str_digits(0)`, gardé par CLI-T14 et PERF-PY-14 : les cas `100000` et `1000000` passent désormais par les tranches et par `Decimal` |
 | Débordement à l'analyse de `N` | cas `99999999999999999999` |
-| Sortie tronquée par `process.exit()` (Node, POSIX) | `process.exitCode`; à vérifier en CI Linux |
+| Sortie tronquée par `process.exit()` (Node, POSIX) | `process.exitCode`; vérifié sous Linux le 2026-10-13 : `process.exit()` y tronque la sortie dans un tube, et le contrat le voit (CLI-L05, L06 et L16 rougissent) |
 | Rust ne lie pas sous Windows sans le composant C++ MSVC | override rustup GNU locale au dossier |
 | Termes attendus recopiés dans chaque test, qui finissent par différer | un seul oracle, vérifié par le test lui-même et lu par tous les tests |
 | `go run` remplace le code de sortie et pollue stderr | binaire compilé par `go build` (§ 5) |
