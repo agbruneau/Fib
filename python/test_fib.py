@@ -602,20 +602,37 @@ class TestFib(unittest.TestCase):
 
     def test_PERF_PY_28_un_terme_en_decimal_s_ecrit_sans_jamais_devenir_un_int(self):
         """PERF-PY-28 : hors catalogue, garde de l'optimisation du terme en Decimal : de DECIMAL_FROM à MAX_TERM, fast ou
-        matrix seul s'écrit par le str() linéaire du Decimal, sans convertir d'int. Un int s'écrirait par les tranches de
-        _text (divmod, quadratique) jusqu'à STR_FROM_BITS bits, soit F(288 000), puis par str(), qui importe _pylong
-        (10 ms, PRD § 5) : la garde lance fib.main dans un interpréteur neuf (PERF-PY-5 a déjà chargé _pylong ici), divmod
-        de fib espionné, et n'admet ni l'un ni l'autre, à des indices des deux côtés de F(288 000). Le texte est le même
-        par les deux chemins, d'où cette garde : PERF-PY-10 à 12 ne voient pas la conversion, et PERF-PY-13 n'espionne
-        que l'appel de _fib_decimal à DECIMAL_FROM. Mutants rouges : _fib_decimal qui rend int(...) (B-W3), compute qui
-        écrit _text(int(terms[0])) (B-W2), _text qui convertit un Decimal en int puis le découpe (B-W1) ou l'écrit par
-        str(int(x)) (B-W5), une bande d'indices sans Decimal, de 200 000 à 900 000 (B-R9) ou de 170 002 à 288 000 (B-R10),
-        compute qui appelle fib() pour tout terme (B-C1, que PERF-PY-13 rougit déjà). Témoin : les deux signaux répondent
-        sur un int; sans lui, la garde serait aveugle sous une version de CPython qui change l'un d'eux, et il rougit si
-        les tranches cessent d'appeler divmod (G-1, x // base, x % base). Comme PERF-PY-25, dépend de _decimal et de
-        _pylong, ceux des CPython officiels 3.12+."""
+        matrix seul se calcule et s'écrit en Decimal, par le str() linéaire, sans qu'un int soit converti ni écrit.
+        Trois signaux, dans un interpréteur neuf (PERF-PY-5 a déjà chargé _pylong ici) lancé par run_fib, à des indices
+        des deux côtés de F(288 000) : un int s'écrirait par les tranches de _text (divmod, quadratique) jusqu'à
+        STR_FROM_BITS bits, puis par str(), qui importe _pylong (10 ms, PRD § 5); un int converti par Decimal(int),
+        conversion binaire → décimale quadratique que _fib_decimal dit éviter, ne passe ni par l'un ni par l'autre.
+        Le divmod de fib est donc espionné, _pylong ne doit pas se charger, et Decimal espionne tout int de plus de 64
+        bits (_exact_decimal importe Decimal à l'appel : kind et tout Decimal(int) de fib passent par l'espion). Le
+        texte est le même par les deux chemins, d'où cette garde : PERF-PY-10 à 12 ne voient pas la conversion, et
+        PERF-PY-13 n'espionne que l'appel de _fib_decimal à DECIMAL_FROM. Mutants rouges : _fib_decimal qui rend
+        int(...) (B-W3), compute qui écrit _text(int(terms[0])) (B-W2), _text qui convertit un Decimal en int puis le découpe
+        (B-W1) ou l'écrit par str(int(x)) (B-W5), une bande d'indices sans Decimal, de 200 000 à 900 000 (B-R9) ou de
+        170 002 à 288 000 (B-R10), compute qui appelle fib() pour tout terme (B-C1, que PERF-PY-13 rougit déjà),
+        _fib_decimal qui calcule en int puis convertit, Decimal(_ALGOS[algo](n)) (X-INT2DEC) ou Decimal(fib(n, algo))
+        (X-INT2DEC-FIB, la simplification qui retire kind des algorithmes), fast qui calcule en int et rend kind(...)
+        (X-FAST-KIND-END). Témoin : les trois signaux répondent sur un int; sans lui, la garde serait aveugle sous une
+        version de CPython qui change l'un d'eux. Il rougit si les tranches cessent d'appeler divmod (G-1,
+        x // base, x % base) ou si _exact_decimal lie Decimal avant l'espion (W-BLIND, from decimal import ... en tête
+        de module). Comme PERF-PY-25, dépend de _decimal et de _pylong, ceux des CPython officiels 3.12+."""
         # le premier divmod des tranches termine l'interpréteur, code 1, avec ce message sur stderr
         spy = "fib.divmod = lambda a, b: sys.exit('tranches de _text')\n"
+        # idem pour Decimal(int) : les constantes 0 et 1 des algorithmes tiennent sous 64 bits, un terme jamais
+        convert_spy = (
+            "import decimal\n"
+            "D = decimal.Decimal\n"
+            "class Spy(D):\n"
+            "    def __new__(cls, value='0', context=None):\n"
+            "        if type(value) is int and value.bit_length() > 64:\n"
+            "            sys.exit('int converti en Decimal')\n"
+            "        return D(value, context)\n"
+            "decimal.Decimal = Spy\n"
+        )
         witness = run_fib(
             "assert '_pylong' not in sys.modules\n"
             # signal de str() : un int de plus de STR_FROM_BITS bits charge _pylong
@@ -626,6 +643,9 @@ class TestFib(unittest.TestCase):
             + "fib._text(10**2000)\n"
         )
         self.assertEqual((witness.returncode, witness.stderr), (1, "tranches de _text\n"))
+        # signal de Decimal(int) : le Decimal que rend _exact_decimal est l'espion
+        witness = run_fib(convert_spy + "fib._exact_decimal()[0](1 << 100)\n")
+        self.assertEqual((witness.returncode, witness.stderr), (1, "int converti en Decimal\n"))
         for args in (
             [str(DECIMAL_FROM)],
             ["--algo", "matrix", str(DECIMAL_FROM)],
@@ -637,7 +657,10 @@ class TestFib(unittest.TestCase):
             ["--algo", "matrix", str(MAX_TERM)],
         ):
             with self.subTest(args=args):
-                run = run_fib(spy + "assert fib.main(sys.argv[2:]) == 0\nassert '_pylong' not in sys.modules\n", *args)
+                run = run_fib(
+                    convert_spy + spy + "assert fib.main(sys.argv[2:]) == 0\nassert '_pylong' not in sys.modules\n",
+                    *args,
+                )
                 self.assertEqual(run.returncode, 0, run.stderr)
 
 
