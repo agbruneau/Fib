@@ -109,65 +109,80 @@ test('PERF-TS-8 : l’horloge est appelée en méthode de l’Io, this compris',
   assert.deepEqual(stderr, ['fast 0.500 ms\n']);
 });
 
-// PERF-TS-9 : la CLI ne charge pas `performance` (ADR-0004, #21). Son premier accès charge neuf modules (perf_hooks, sept
-// internal/perf/… et internal/histogram), et timed lit l'horloge même sans --time : la garde éprouve donc `10` comme `--time 10`.
-// Elle joue la CLI compilée dans un sous-processus : celui de test a pu charger perf_hooks lui-même. Un module de `--import`
+// PERF-TS-9 : la CLI ne charge pas `performance` (ADR-0004, #21). L'horloge est lue avant l'ouverture de stdout, et le premier
+// accès à performance charge alors 11 modules : perf_hooks, neuf internal/perf/… et internal/histogram. timed lit l'horloge
+// même sans --time : la garde éprouve donc `10` comme `--time 10`, et les deux branches de compute (--list et un terme).
+// Elle joue la source de la CLI dans un sous-processus : celui de test a pu charger perf_hooks lui-même. Un module de `--import`
 // y écrit process.moduleLoadList sur stderr à la sortie; stdout, le code et la ligne de durée restent ceux de la CLI.
-// Trois internal/perf/… ne viennent pas du global : utils au démarrage de Node, performance_entry et observe par net dès
-// que stdout est un tube (mesuré sous Node 22.22, avec la CLI corrigée). Toute autre entrée perf, perf_hooks compris, est interdite.
-// Le témoin vérifie que le crochet et le filtre voient bien performance se charger.
+// Seuls perf_hooks et internal/perf/performance sont interdits : eux seuls viennent du global. Les autres internal/perf/…
+// ne prouvent rien : utils est chargé au démarrage de Node, performance_entry et observe par net dès que stdout est un tube.
+// Le témoin vérifie que le crochet et le prédicat voient bien ces deux noms sous `performance.now()`.
 // Rouge sous le mutant `clock: () => performance.now()` dans processIo (cli.ts), ou sous un import de node:perf_hooks.
 const root = fileURLToPath(new URL('../..', import.meta.url));
-// Dossier à part de .build/ts : une exécution du contrat ou du banc en parallèle ne lit jamais un cli.js en cours d'écriture.
-const outDir = join(root, '.build', 'ts-garde');
 const MARK = 'moduleLoadList:';
 const HOOK =
   'data:text/javascript,' +
   encodeURIComponent(
     `import{writeSync}from'node:fs';process.on('exit',()=>writeSync(2,${JSON.stringify(MARK)}+JSON.stringify(process.moduleLoadList)+'\\n'))`,
   );
-const NOT_FROM_PERFORMANCE = ['internal/perf/utils', 'internal/perf/performance_entry', 'internal/perf/observe'];
-const perfModules = (modules: string[]) =>
-  modules.filter((m) => /\bperf_hooks$|\binternal\/perf\//.test(m) && !NOT_FROM_PERFORMANCE.some((ok) => m.endsWith(ok)));
+const onlyPerformance = (modules: string[]) => modules.filter((m) => /\b(perf_hooks|internal\/perf\/performance)$/.test(m));
 
-let compiled = false;
-function compile() {
-  if (compiled) return;
-  // Même commande que le contrat (PRD § 5), vers outDir.
-  const tsc = join(root, 'node_modules', 'typescript', 'bin', 'tsc');
-  const r = spawnSync(process.execPath, [tsc, '-p', 'tsconfig.build.json', '--outDir', outDir], { cwd: root, encoding: 'latin1' });
-  assert.ifError(r.error);
-  assert.equal(r.status, 0, r.stdout + r.stderr);
-  compiled = true;
-}
-
-// Lance node avec le crochet; rend stdout, stderr sans la liste du crochet, et la liste.
+// Lance node avec le crochet; rend stdout, stderr sans la liste du crochet, la liste et le temps mural en ms.
+// NODE_OPTIONS est retiré : un préchargement ou un débogueur hérité ajouterait des modules ou du texte sur stderr.
+// L'avertissement du retrait des types, que certains Node 22 écrivent sur stderr, est tu pour la même raison.
 function launch(args: string[]) {
-  const r = spawnSync(process.execPath, ['--import', HOOK, ...args], { cwd: root, encoding: 'latin1' });
+  const start = process.hrtime.bigint();
+  const r = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', '--import', HOOK, ...args], {
+    cwd: root,
+    encoding: 'latin1',
+    env: { ...process.env, NODE_OPTIONS: undefined },
+    // Filet contre une CLI qui boucle, comme celui du contrat.
+    timeout: 300_000,
+  });
+  const wall = Number(process.hrtime.bigint() - start) / 1e6;
   assert.ifError(r.error);
   assert.equal(r.status, 0, r.stderr);
   const at = r.stderr.lastIndexOf(MARK);
   assert.notEqual(at, -1, 'le crochet n’a rien écrit sur stderr');
-  return { stdout: r.stdout, stderr: r.stderr.slice(0, at), modules: JSON.parse(r.stderr.slice(at + MARK.length)) as string[] };
+  return { stdout: r.stdout, stderr: r.stderr.slice(0, at), modules: JSON.parse(r.stderr.slice(at + MARK.length)) as string[], wall };
 }
 
-const NO_PERF: [args: string[], stderr: RegExp][] = [
-  [['--time', '10'], /^fast \d+\.\d{3} ms\n$/],
-  [['10'], /^$/],
+const CLI = join(root, 'ts', 'src', 'cli.ts');
+const LIST_10 = '0\n1\n1\n2\n3\n5\n8\n13\n21\n34\n55\n';
+const NO_PERF: [args: string[], stdout: string, stderr: RegExp][] = [
+  [['10'], '55\n', /^$/],
+  [['--time', '10'], '55\n', /^fast \d+\.\d{3} ms\n$/],
+  [['--time', '--list', '10'], LIST_10, /^iterative \d+\.\d{3} ms\n$/],
+  [['--time', '--algo', 'all', '10'], '55\n', /^fast \d+\.\d{3} ms\niterative \d+\.\d{3} ms\nmatrix \d+\.\d{3} ms\n$/],
 ];
 
-for (const [args, stderr] of NO_PERF) {
-  test(`PERF-TS-9 : ${args.join(' ')} ne charge ni perf_hooks ni internal/perf/…, et la sortie reste celle de la CLI`, () => {
-    compile();
-    const r = launch([join(outDir, 'cli.js'), ...args]);
-    assert.equal(r.stdout, '55\n');
+for (const [args, stdout, stderr] of NO_PERF) {
+  test(`PERF-TS-9 : ${args.join(' ')} ne charge ni perf_hooks ni internal/perf/performance, et la sortie reste celle de la CLI`, () => {
+    const r = launch([CLI, ...args]);
+    assert.equal(r.stdout, stdout);
     assert.match(r.stderr, stderr);
-    assert.deepEqual(perfModules(r.modules), []);
+    assert.deepEqual(onlyPerformance(r.modules), []);
   });
 }
 
-test('PERF-TS-9 : témoin, le crochet voit performance charger perf_hooks', () => {
-  const loaded = perfModules(launch(['-e', 'performance.now()']).modules);
+test('PERF-TS-9 : témoin, le crochet voit performance charger perf_hooks et internal/perf/performance', () => {
+  const loaded = onlyPerformance(launch(['-e', 'performance.now()']).modules);
   assert.ok(loaded.some((m) => m.endsWith('perf_hooks')), `perf_hooks absent de ${loaded.join(', ')}`);
-  assert.ok(loaded.some((m) => m.includes('internal/perf/performance')), `internal/perf/performance absent de ${loaded.join(', ')}`);
+  assert.ok(loaded.some((m) => m.endsWith('internal/perf/performance')), `internal/perf/performance absent de ${loaded.join(', ')}`);
+});
+
+// PERF-TS-8 et le contrat ne voient pas l'unité de l'horloge réelle : la première est factice, le second ne lit que le format.
+// La durée d'un calcul de quelques dizaines de ms (iterative 100000, environ 85 ms) doit être en millisecondes : strictement
+// positive, au plus le temps mural du sous-processus, et au moins son vingtième (le démarrage de Node en fait le reste; la
+// borne basse, 20 fois sous la valeur attendue, ne rougit pas sous charge).
+// Rouge sous les mutants `/ 1e6` retiré (nanosecondes, au-dessus du temps mural), `/ 1e3` (microsecondes, idem) et `/ 1e9`
+// (secondes : 0,085, sous le vingtième du temps mural).
+test('PERF-TS-9 : l’horloge réelle rend des millisecondes, de --time --algo iterative 100000 à son temps mural', () => {
+  const r = launch([CLI, '--time', '--algo', 'iterative', '100000']);
+  const m = /^iterative (\d+\.\d{3}) ms\n$/.exec(r.stderr);
+  assert.ok(m, `ligne de durée inattendue : ${JSON.stringify(r.stderr)}`);
+  const ms = Number(m[1]);
+  assert.ok(ms > 0, `durée ${ms} ms non positive`);
+  assert.ok(ms <= r.wall, `durée ${ms} ms au-delà du temps mural ${r.wall.toFixed(3)} ms`);
+  assert.ok(ms >= r.wall / 20, `durée ${ms} ms sous le vingtième du temps mural ${r.wall.toFixed(3)} ms`);
 });
