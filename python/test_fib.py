@@ -600,6 +600,46 @@ class TestFib(unittest.TestCase):
                 self.assertEqual(lines, algos, "les lignes de durée")
                 self.assertEqual(noted, lines, "les algorithmes exécutés")
 
+    def test_PERF_PY_28_un_terme_en_decimal_s_ecrit_sans_jamais_devenir_un_int(self):
+        """PERF-PY-28 : hors catalogue, garde de l'optimisation du terme en Decimal : de DECIMAL_FROM à MAX_TERM, fast ou
+        matrix seul s'écrit par le str() linéaire du Decimal, sans convertir d'int. Un int s'écrirait par les tranches de
+        _text (divmod, quadratique) jusqu'à STR_FROM_BITS bits, soit F(288 000), puis par str(), qui importe _pylong
+        (10 ms, PRD § 5) : la garde lance fib.main dans un interpréteur neuf (PERF-PY-5 a déjà chargé _pylong ici), divmod
+        de fib espionné, et n'admet ni l'un ni l'autre, à des indices des deux côtés de F(288 000). Le texte est le même
+        par les deux chemins, d'où cette garde : PERF-PY-10 à 12 ne voient pas la conversion, et PERF-PY-13 n'espionne
+        que l'appel de _fib_decimal à DECIMAL_FROM. Mutants rouges : _fib_decimal qui rend int(...) (B-W3), compute qui
+        écrit _text(int(terms[0])) (B-W2), _text qui convertit un Decimal en int puis le découpe (B-W1) ou l'écrit par
+        str(int(x)) (B-W5), une bande d'indices sans Decimal, de 200 000 à 900 000 (B-R9) ou de 170 002 à 288 000 (B-R10),
+        compute qui appelle fib() pour tout terme (B-C1, que PERF-PY-13 rougit déjà). Témoin : les deux signaux répondent
+        sur un int; sans lui, la garde serait aveugle sous une version de CPython qui change l'un d'eux, et il rougit si
+        les tranches cessent d'appeler divmod (G-1, x // base, x % base). Comme PERF-PY-25, dépend de _decimal et de
+        _pylong, ceux des CPython officiels 3.12+."""
+        # le premier divmod des tranches termine l'interpréteur, code 1, avec ce message sur stderr
+        spy = "fib.divmod = lambda a, b: sys.exit('tranches de _text')\n"
+        witness = run_fib(
+            "assert '_pylong' not in sys.modules\n"
+            # signal de str() : un int de plus de STR_FROM_BITS bits charge _pylong
+            "fib._text(1 << (fib.STR_FROM_BITS + 1))\n"
+            "assert '_pylong' in sys.modules\n"
+            # signal des tranches : un int plus court appelle divmod
+            + spy
+            + "fib._text(10**2000)\n"
+        )
+        self.assertEqual((witness.returncode, witness.stderr), (1, "tranches de _text\n"))
+        for args in (
+            [str(DECIMAL_FROM)],
+            ["--algo", "matrix", str(DECIMAL_FROM)],
+            # intérieur de la sous-plage des tranches (F(250 001) compte 173 561 bits), puis juste au-delà de F(288 000)
+            # (F(300 001) en compte 208 273)
+            ["250001"],
+            ["300001"],
+            [str(MAX_TERM)],
+            ["--algo", "matrix", str(MAX_TERM)],
+        ):
+            with self.subTest(args=args):
+                run = run_fib(spy + "assert fib.main(sys.argv[2:]) == 0\nassert '_pylong' not in sys.modules\n", *args)
+                self.assertEqual(run.returncode, 0, run.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
