@@ -54,7 +54,7 @@ def _fast(n, kind=int):
 
 
 # Seul aiguillage des algorithmes, en int comme en Decimal : PERF-PY-26, 27 et 28 y substituent un algorithme qui
-# discorde ou qui espionne.
+# discorde ou qui espionne, et PERF-PY-30 en vérifie les couples nom-fonction par identité.
 _ALGOS = {"iterative": _iterative, "matrix": _matrix, "fast": _fast}
 
 

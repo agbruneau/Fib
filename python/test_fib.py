@@ -1,7 +1,7 @@
 """Seam 1 : la bibliothèque. Les attendus viennent de l'oracle (contracts/b000045.txt) ou de faits mathématiques.
 Les gardes PERF-PY-n, hors seams (ADR-0004), protègent les optimisations que les cas BIB et CLI ne visent pas
-(PERF-PY-20, 23 et 29 protègent les correctifs F10 et CLI-V04). Chaque test porte son identifiant en tête de sa
-docstring : grep BIB-05 python/."""
+(PERF-PY-20, 23 et 29 protègent les correctifs F10 et CLI-V04; PERF-PY-26, 27 et 30 gardent des exigences, F2, F3 et
+F6, et non des optimisations). Chaque test porte son identifiant en tête de sa docstring : grep BIB-05 python/."""
 import decimal
 import math
 import os
@@ -756,10 +756,15 @@ class TestFib(unittest.TestCase):
         "fast": _iterative, "fast": _matrix. Quatre d'entre eux ne rougissent qu'elle, ni le contrat ni les autres gardes;
         sous "matrix": _iterative et "fast": _iterative, _iterative n'accepte pas kind, et les gardes du chemin Decimal
         lèvent aussi (bruyant). Elle suppose que fib() et _fib_decimal lisent _ALGOS : une fib() qui aiguille sans la
-        table rougit PERF-PY-27 (P8n), qu'elle ne remplace pas."""
+        table rougit PERF-PY-27 (P8n), qu'elle ne remplace pas.
+        Une reliaison faite avant la table, `_matrix = _fast` ou `_matrix, _fast = _fast, _matrix`, change les deux
+        côtés de l'assertIs et le laisse vert : le nom de la fonction (__name__, ici _matrix) la rougit. Elle ne voit
+        pas un corps qui délègue à un autre algorithme (`return _fast(n, kind)` en tête de `_matrix`) : c'est à la revue
+        de code. Une entrée enveloppée (lambda, functools.partial) la rougit à tort, bruyamment, jamais en silence."""
         for name, function in {"iterative": _iterative, "matrix": _matrix, "fast": _fast}.items():
             with self.subTest(algo=name):
                 self.assertIs(_ALGOS.get(name), function)
+                self.assertEqual(function.__name__, f"_{name}")
 
 
 if __name__ == "__main__":
