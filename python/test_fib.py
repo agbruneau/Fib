@@ -627,7 +627,8 @@ class TestFib(unittest.TestCase):
     def test_PERF_PY_28_un_terme_en_decimal_s_ecrit_sans_jamais_devenir_un_int(self):
         """PERF-PY-28 : hors catalogue, garde de l'optimisation du terme en Decimal : de DECIMAL_FROM à MAX_TERM, fast ou
         matrix seul se calcule et s'écrit en Decimal, par le str() linéaire, sans qu'un int soit converti ni écrit.
-        Quatre signaux, dans un interpréteur neuf (PERF-PY-5 a déjà chargé _pylong ici) lancé par run_fib, à des indices
+        Comme PERF-PY-26 et 27, elle suppose que _ALGOS reste le seul aiguillage : sans lui, le quatrième signal devient
+        aveugle (PERF-PY-27 rougit alors). Quatre signaux, dans un interpréteur neuf (PERF-PY-5 a déjà chargé _pylong ici) lancé par run_fib, à des indices
         de toute la plage, des deux côtés de F(288 000) et pour chacun des deux algorithmes : un int s'écrirait par les
         tranches de _text (divmod, quadratique) jusqu'à STR_FROM_BITS bits, puis par str(), qui importe _pylong (10 ms,
         PRD § 5); un int converti par Decimal(int), conversion binaire → décimale quadratique que _fib_decimal dit
