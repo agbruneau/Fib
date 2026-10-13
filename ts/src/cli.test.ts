@@ -1,8 +1,10 @@
-// Tests de garde de la CLI, joués dans le processus par run(args, io) (hors seams, catalogue § 6), sauf PERF-TS-9, qui lance la CLI compilée.
+// Tests de garde de la CLI, joués dans le processus par run(args, io) (hors seams, catalogue § 6), sauf PERF-TS-9 et PERF-TS-11, qui lancent la source de la CLI (`ts/src/cli.ts`) dans un sous-processus.
 // Ils protègent ce que le test de contrat ne peut pas éprouver; la grammaire, les bornes et les octets de sortie lui restent.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { closeSync, mkdtempSync, openSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { terms } from '../../contracts/oracle.ts';
@@ -186,4 +188,57 @@ test('PERF-TS-9 : l’horloge réelle rend des millisecondes, de --time --algo i
   assert.ok(ms > 0, `durée ${ms} ms non positive`);
   assert.ok(ms <= r.wall, `durée ${ms} ms au-delà du temps mural ${r.wall.toFixed(3)} ms`);
   assert.ok(ms >= r.wall / 20, `durée ${ms} ms sous le vingtième du temps mural ${r.wall.toFixed(3)} ms`);
+});
+
+// PERF-TS-11 : les accesseurs paresseux de processIo (cli.ts, `get stdout()` et `get stderr()`, ADR-0004) : le chemin d'erreur n'ouvre pas
+// process.stdout. Le contrat ne le voit pas : il lit la sortie, non les modules chargés. Quand stdout est un fichier, process.stdout se
+// construit en SyncWriteStream et charge internal/fs/sync_write_stream; avec deux tubes, stdout et stderr chargent les mêmes modules,
+// donc un fichier de tmpdir() comme stdout est essentiel. `--bogus 5` sort en 2 sans rien écrire sur stdout : le module ne doit pas se charger.
+// Cette garde a son propre spawnSync : le `launch` de PERF-TS-9 exige le code 0. Même crochet (moduleLoadList), même NODE_OPTIONS retiré.
+// Le témoin, sous les mêmes stdio, vérifie que `process.stdout` charge ce module et que `0` ne le charge pas : sans lui, la garde serait aveugle.
+// Rouge sous le mutant `stdout: process.stdout, stderr: process.stderr` dans processIo (cli.ts), et sous `stdout: process.stdout` seul;
+// `stderr: process.stderr` seul la laisse verte : stderr est un tube ici, et le chemin d'erreur l'ouvre de toute façon.
+const SYNC_WRITE_STREAM = /\binternal\/fs\/sync_write_stream$/;
+
+// Lance node avec le crochet, stdout vers un fichier de tmpdir() et stderr vers un tube (stdin ignoré); rend le code, le contenu du fichier,
+// stderr sans la liste du crochet et la liste.
+function launchToFile(args: string[]) {
+  const dir = mkdtempSync(join(tmpdir(), 'fib-perf-ts-11-'));
+  const file = join(dir, 'stdout');
+  const fd = openSync(file, 'w');
+  try {
+    const r = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', '--import', HOOK, ...args], {
+      cwd: root,
+      encoding: 'latin1',
+      env: { ...process.env, NODE_OPTIONS: undefined },
+      stdio: ['ignore', fd, 'pipe'],
+      timeout: 300_000,
+    });
+    assert.ifError(r.error);
+    const at = r.stderr.lastIndexOf(MARK);
+    assert.notEqual(at, -1, 'le crochet n’a rien écrit sur stderr');
+    return {
+      code: r.status,
+      stdout: readFileSync(file, 'latin1'),
+      stderr: r.stderr.slice(0, at),
+      modules: JSON.parse(r.stderr.slice(at + MARK.length)) as string[],
+    };
+  } finally {
+    closeSync(fd);
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test('PERF-TS-11 : --bogus 5 sort en 2, laisse le fichier de stdout vide et ne charge pas internal/fs/sync_write_stream', () => {
+  const r = launchToFile([CLI, '--bogus', '5']);
+  assert.equal(r.code, 2, r.stderr);
+  assert.equal(r.stdout, '', 'stdout vide');
+  assert.match(r.stderr, /^fib: [^\n]*\n$/, 'la CLI a bien écrit sa ligne d’erreur');
+  assert.deepEqual(r.modules.filter((m) => SYNC_WRITE_STREAM.test(m)), []);
+});
+
+test('PERF-TS-11 : témoin, avec un fichier comme stdout, process.stdout charge internal/fs/sync_write_stream et 0 ne le charge pas', () => {
+  const loaded = launchToFile(['-e', 'process.stdout']).modules.filter((m) => SYNC_WRITE_STREAM.test(m));
+  assert.ok(loaded.length > 0, 'internal/fs/sync_write_stream absent des modules de process.stdout');
+  assert.deepEqual(launchToFile(['-e', '0']).modules.filter((m) => SYNC_WRITE_STREAM.test(m)), []);
 });
