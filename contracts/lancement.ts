@@ -31,8 +31,14 @@ function impl(id: string) {
   return IMPLS[id];
 }
 
-// Les identifiants des implémentations dont le dossier existe, dans l'ordre du PRD § 5.
-export const present = (): string[] => Object.keys(IMPLS).filter((id) => existsSync(join(root, IMPLS[id].dir)));
+// Tous les identifiants du PRD § 5, dans cet ordre, que le dossier existe ou non : l'ensemble de HAR-3, qui n'a pas besoin du disque.
+export const IDS: readonly string[] = Object.keys(IMPLS);
+
+// Les identifiants des implémentations dont le dossier existe, dans l'ordre du PRD § 5 : ce que le contrat et le banc jouent par défaut.
+export const present = (): string[] => IDS.filter((id) => existsSync(join(root, IMPLS[id].dir)));
+
+// La commande de lancement de l'implémentation, sans argument : l'exécutable puis ses arguments fixes. HAR-1 y compare l'appel du banc.
+export const command = (id: string): string[] => [...impl(id).cmd];
 
 // Compile Go, Rust ou TypeScript; rien pour Python. Un échec lève une erreur qui porte la sortie du compilateur.
 export function build(id: string): void {
@@ -56,7 +62,7 @@ export type LaunchOptions = {
 // Lance la CLI construite et rend son code, ses deux flux en latin1 (un octet égale un caractère, donc X-2, X-4 et les
 // longueurs voient les octets bruts) et la durée du seul spawnSync, que le banc rapporte.
 export function launch(id: string, args: readonly string[], { env, stderrClosed = false }: LaunchOptions = {}) {
-  const argv = [...impl(id).cmd, ...args];
+  const argv = [...command(id), ...args];
   // Sans stderrClosed, la CLI elle-même : le banc ne paie jamais le démarrage de /bin/sh.
   const [file, rest] = stderrClosed ? closeStderr(argv) : [argv[0], argv.slice(1)];
   const options = {

@@ -4,8 +4,9 @@ import { before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import cp, { spawnSync } from 'node:child_process';
 import { syncBuiltinESMExports } from 'node:module';
-import { measure } from './bench.ts';
-import { build, closeStderr, launch, present, type LaunchOptions } from './lancement.ts';
+import { fileURLToPath } from 'node:url';
+import { measure, parseArgs } from './bench.ts';
+import { build, closeStderr, command, IDS, launch, present, type LaunchOptions } from './lancement.ts';
 import { CHECKS, lines, terms } from './oracle.ts';
 
 const USAGE = `usage: fib [--algo iterative|matrix|fast|all] [--time] N
@@ -283,20 +284,25 @@ describe('harnais', () => {
     return calls;
   };
 
-  // HAR-1 : le banc mesure ce que le contrat vérifie, sans shell : un /bin/sh ajouterait son démarrage à chaque mesure sans
-  // changer aucune sortie. Rouge sous un lancement par défaut qui passe par sh, un banc qui lance avec stderrClosed ou sans --time.
-  test('HAR-1 : le banc lance chaque CLI comme le contrat, sans shell', () => {
+  // HAR-1 : le banc lance exactement la commande de l'implémentation, suivie de --time et des arguments : une propriété, non une
+  // liste noire de shells. Tout enveloppeur (sh, env, ksh -c, nice, time…) ajouterait son démarrage à chaque mesure sans changer
+  // aucune sortie. `command(id)` vient du tableau de lancement, non de `launch` : un défaut de `launch` ne fausse pas l'attendu.
+  // Le second contrôle ajoute les options (cwd, env, tampon, délai), identiques à celles d'un lancement du contrat.
+  // Ensemble : present(), les implémentations que le contrat et le banc jouent par défaut (HAR-3 prend tous les identifiants).
+  test('HAR-1 : le banc lance la commande de chaque CLI, suivie de --time et des arguments, sans enveloppeur', () => {
     for (const id of present()) {
       const bench = spy(() => measure(id, ['10']));
       assert.equal(bench.length, 1, `${id} : une mesure, un lancement`);
-      assert.doesNotMatch(bench[0].file, /(^|[\\/])(sh|bash|dash|zsh|cmd|powershell|pwsh)(\.exe)?$/i, `${id} : lancé par ${bench[0].file}`);
-      assert.deepEqual(bench, spy(() => launch(id, ['--time', '10'])), `${id} : le banc ne lance pas la commande du contrat`);
+      assert.deepEqual([bench[0].file, ...bench[0].args], [...command(id), '--time', '10'], `${id} : le banc ne lance pas la commande de l'implémentation`);
+      assert.deepEqual(bench, spy(() => launch(id, ['--time', '10'])), `${id} : le banc ne lance pas l'appel du contrat`);
     }
   });
 
   // HAR-2 : l'env d'un cas s'ajoute à celui du processus, et undefined retire la variable (NO_COLOR de CLI-V02). Les CLI
   // ignorent ces variables par contrat : sur a906e27, un env perdu, substitué ou écrasé laissait le contrat vert (403/403).
+  // La seule variable que le contrôle écrit dans process.env est FIB_RETIREE : il la rend telle qu'il l'a trouvée, absente ou non.
   test('HAR-2 : l’env d’un cas s’ajoute à celui du processus, et undefined retire la variable', () => {
+    const avant = process.env.FIB_RETIREE;
     process.env.FIB_RETIREE = 'r';
     try {
       const [{ options }] = spy(() => launch('py', ['10'], { env: { FIB_SONDE: 'x', FIB_RETIREE: undefined } }));
@@ -304,15 +310,35 @@ describe('harnais', () => {
       assert.equal(options.env?.FIB_RETIREE, undefined, 'une variable mise à undefined reste dans l’env du fils');
       for (const k of Object.keys(process.env)) if (k !== 'FIB_RETIREE') assert.equal(options.env?.[k], process.env[k], `${k} n’est pas hérité`);
     } finally {
-      delete process.env.FIB_RETIREE;
+      if (avant === undefined) delete process.env.FIB_RETIREE;
+      else process.env.FIB_RETIREE = avant;
     }
   });
 
-  // HAR-3 : les quatre CLI passent les mêmes cas, donc le contrat ne voit pas laquelle il lance. Sur a906e27, un `run` qui
-  // lançait toujours Python laissait 403/403 : chaque identifiant doit lancer sa propre commande.
+  // HAR-3 : les CLI passent les mêmes cas, donc le contrat ne voit pas laquelle il lance. Sur a906e27, un `run` qui lançait
+  // toujours Python laissait 403/403 : chaque identifiant doit lancer sa propre commande.
+  // Ensemble : IDS, tous les identifiants du PRD § 5, présents ou non : `launch` ne lit pas le disque et l'espion ne lance rien.
   test('HAR-3 : chaque identifiant lance sa propre commande', () => {
-    const cmds = ['go', 'rust', 'ts', 'py'].map((id) => spy(() => launch(id, ['10'])).map((c) => [c.file, ...c.args].join(' ')).join());
-    assert.equal(new Set(cmds).size, 4, `commandes confondues : ${cmds.join(' | ')}`);
+    const cmds = IDS.map((id) => spy(() => launch(id, ['10'])).map((c) => [c.file, ...c.args].join(' ')).join());
+    assert.equal(new Set(cmds).size, IDS.length, `commandes confondues : ${cmds.join(' | ')}`);
+  });
+
+  // HAR-4 : --runs demande un entier d'au moins 1. Absent, nul ou non numérique, il donnait NaN ou 0 lancement, puis un TypeError
+  // dans cell() : le banc refuse maintenant par une erreur d'usage (code 2, sur stderr), avant tout build. Le processus du banc
+  // lancé ici ne construit ni ne lance aucune implémentation.
+  test('HAR-4 : --runs demande un entier d’au moins 1', () => {
+    for (const mauvais of [[], [''], ['0'], ['-1'], ['2.5'], ['1e3'], ['0x10'], [' 3'], ['abc'], ['go']]) {
+      assert.throws(() => parseArgs(['py', '--runs', ...mauvais]), /--runs demande un entier/, `--runs ${JSON.stringify(mauvais)} accepté`);
+    }
+    assert.deepEqual(parseArgs([]), { runs: 11, ids: [] });
+    assert.deepEqual(parseArgs(['py', '--runs', '3', 'go']), { runs: 3, ids: ['py', 'go'] });
+    assert.deepEqual(parseArgs(['--runs', '1']), { runs: 1, ids: [] });
+    const banc = fileURLToPath(new URL('./bench.ts', import.meta.url));
+    const r = spawnSync(process.execPath, [banc, 'py', '--runs', '0'], { encoding: 'utf8' });
+    assert.ifError(r.error);
+    assert.equal(r.status, 2, `code ${r.status}, stderr ${r.stderr.slice(0, 200)}`);
+    assert.equal(r.stdout, '', 'une erreur d’usage n’écrit rien sur stdout');
+    assert.match(r.stderr, /^bench: --runs demande un entier d’au moins 1 \(reçu : "0"\)\nusage : /);
   });
 });
 
