@@ -4,8 +4,10 @@ import { before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import cp, { spawnSync } from 'node:child_process';
 import { syncBuiltinESMExports } from 'node:module';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { measure, parseArgs } from './bench.ts';
+import { abRound, measure, pair, paired, parseArgs } from './bench.ts';
 import { build, closeStderr, command, IDS, launch, present, type LaunchOptions } from './lancement.ts';
 import { CHECKS, lines, terms } from './oracle.ts';
 
@@ -253,7 +255,7 @@ describe('oracle', () => {
 });
 
 // Les contrôles du harnais, joués une fois pour les quatre CLI : ils éprouvent le test de contrat lui-même et rougissent
-// quand il ferait passer un cas à vide. La sonde du fd 2 lance un vrai processus; HAR-1 à HAR-3 n'en lancent aucun.
+// quand il ferait passer un cas à vide. La sonde du fd 2 lance un vrai processus; HAR-1 à HAR-3 et HAR-5 n'en lancent aucun.
 describe('harnais', () => {
   // Si `2>&-` cessait de fermer le fd 2, CLI-V04 passerait à vide. Une redirection vers un fd fermé échoue (code non nul).
   test('CLI-V04 : le harnais ferme le fd 2', { skip: noShell }, () => {
@@ -263,9 +265,9 @@ describe('harnais', () => {
     assert.match(probe.stdout, /^[1-9][0-9]*\n$/, 'le harnais ne ferme pas le fd 2');
   });
 
-  // HAR-1 à HAR-3 remplacent spawnSync par un espion qui note l'appel et rend une exécution factice : rien n'est lancé ni
+  // HAR-1 à HAR-3 et HAR-5 remplacent spawnSync par un espion qui note l'appel et rend une exécution factice : rien n'est lancé ni
   // construit, et ils valent sous Windows.
-  type Call = { file: string; args: readonly string[]; options: { env?: NodeJS.ProcessEnv } };
+  type Call = { file: string; args: readonly string[]; options: { cwd?: string; env?: NodeJS.ProcessEnv } };
   const spy = (f: () => unknown): Call[] => {
     const real = cp.spawnSync;
     const calls: Call[] = [];
@@ -339,6 +341,52 @@ describe('harnais', () => {
     assert.equal(r.status, 2, `code ${r.status}, stderr ${r.stderr.slice(0, 200)}`);
     assert.equal(r.stdout, '', 'une erreur d’usage n’écrit rien sur stdout');
     assert.match(r.stderr, /^bench: --runs demande un entier d’au moins 1 \(reçu : "0"\)\nusage : /);
+  });
+
+  // HAR-5 : l'A/B apparié du banc (`--contre REF`). L'ordre s'alterne (A puis B aux tours pairs, B puis A aux impairs) et la paire
+  // se rend toujours [A, B]. Le résumé est la médiane des différences B − A, non la différence des médianes : la dérive de la machine
+  // entre deux tours touche A et B ensemble, et la différence des médianes la rejoue. A part de la racine de la révision, B de ce
+  // dépôt : sinon l'A/B comparerait l'arbre de travail à lui-même, sans écart. L'espion ne lance rien et la racine n'est jamais créée.
+  test('HAR-5 : l’A/B apparié alterne l’ordre, rend la médiane des différences B − A, et lance A depuis la révision, B depuis le dépôt', () => {
+    const ordre: string[] = [];
+    for (let i = 0; i < 4; i++) pair(i, () => ordre.push(`A${i}`), () => ordre.push(`B${i}`));
+    assert.deepEqual(ordre, ['A0', 'B0', 'B1', 'A1', 'A2', 'B2', 'B3', 'A3'], 'l’ordre ne s’alterne pas');
+    assert.deepEqual(pair(1, () => 'a', () => 'b'), ['a', 'b'], 'pair ne rend pas [A, B] à un tour impair');
+
+    // B gagne 4 paires sur 5 de 0,5 ms alors que sa médiane dépasse celle de A : seule la médiane des différences le voit.
+    assert.deepEqual(paired([[10, 9.5], [50, 49.5], [12, 11.5], [48, 47.5], [30, 31]]), { a: 30, b: 31, d: -0.5, faster: 4 });
+    // Une égalité n'est pas un gain : « B < A » est strict.
+    assert.equal(paired([[5, 5], [7, 6]]).faster, 1, 'une paire à égalité compte comme un gain de B');
+
+    const depot = fileURLToPath(new URL('..', import.meta.url));
+    const revision = join(tmpdir(), 'fib-har5-revision');
+    for (const id of IDS) {
+      const calls = spy(() => abRound(0, id, ['10'], revision));
+      assert.equal(calls.length, 2, `${id} : un tour, deux lancements`);
+      const [a, b] = calls;
+      assert.deepEqual([a.file, ...a.args], [...command(id, revision), '--time', '10'], `${id} : A ne lance pas la commande de la révision`);
+      assert.equal(a.options.cwd, revision, `${id} : A ne part pas de la racine de la révision`);
+      assert.deepEqual([b.file, ...b.args], [...command(id), '--time', '10'], `${id} : B ne lance pas la commande du dépôt`);
+      assert.equal(b.options.cwd, depot, `${id} : B ne part pas de la racine du dépôt`);
+    }
+    // Go et Rust tirent leur binaire de la racine donnée; TypeScript et Python s'y lancent comme dossier courant (le dossier ci-dessus).
+    for (const id of ['go', 'rust']) assert.ok(command(id, revision)[0].startsWith(revision), `${id} : le binaire ne vient pas de la révision`);
+    // present et build suivent la racine donnée : une racine sans dossier n'a aucune implémentation, et un build part de cette racine.
+    assert.deepEqual(present(revision), [], 'present ne lit pas la racine donnée');
+    for (const id of ['go', 'rust', 'ts']) {
+      const compile = spy(() => build(id, revision));
+      assert.equal(compile.length, 1, `${id} : un build, un lancement`);
+      assert.equal(compile[0].options.cwd, revision, `${id} : le build ne part pas de la racine de la révision`);
+    }
+    // Aux tours impairs, B part le premier, et chacun garde sa racine.
+    const [premier, second] = spy(() => abRound(1, 'go', ['10'], revision));
+    assert.deepEqual([premier.options.cwd, second.options.cwd], [depot, revision], 'abRound n’alterne pas l’ordre des lancements');
+
+    // --contre REF : la révision se lit après l'option, et une valeur absente ou qui ressemble à une option est une erreur d'usage.
+    assert.deepEqual(parseArgs(['py', '--contre', 'HEAD', '--runs', '3']), { runs: 3, ids: ['py'], ref: 'HEAD' });
+    for (const mauvais of [[], [''], ['-x'], ['--runs', '3']]) {
+      assert.throws(() => parseArgs(['py', '--contre', ...mauvais]), /--contre demande une révision/, `--contre ${JSON.stringify(mauvais)} accepté`);
+    }
   });
 });
 

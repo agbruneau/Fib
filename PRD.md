@@ -139,7 +139,7 @@ Fib/
 │   ├── README.md        provenance de l'oracle
 │   ├── oracle.ts        lecture et vérification de l'oracle (ORA), en TypeScript
 │   ├── lancement.ts     commandes de build et de lancement des CLI (§ 5), partagées par le contrat et le banc
-│   ├── bench.ts         banc d'essai des temps de réponse (`npm run bench`)
+│   ├── bench.ts         banc d'essai des temps de réponse, et son A/B apparié (`npm run bench`)
 │   └── cli.test.ts      test de contrat, et contrôles du harnais (HAR)
 ├── go/  rust/  ts/  python/
 ├── package.json         "type": "module", point d'entrée unique (avec package-lock.json)
@@ -153,7 +153,7 @@ Les quatre implémentations sont indépendantes (ADR-0001) : la seule frontière
 |---|---|
 | `check:go`, `check:rust`, `check:ts`, `check:py` | analyse statique, tests du langage, puis test de contrat pour ce seul langage |
 | `contract` | test de contrat pour les implémentations présentes |
-| `bench` | banc d'essai : médianes du temps total et du temps de calcul, par langage et par scénario, après le même build que le contrat et par le même lancement (`--runs N`, 11 par défaut; ADR-0004) |
+| `bench` | banc d'essai : médianes du temps total et du temps de calcul, par langage et par scénario, après le même build que le contrat et par le même lancement (`--runs N`, 11 par défaut; ADR-0004). `--contre REF` : A/B apparié de la révision REF, extraite sous `.build/revisions/<sha>`, contre l'arbre de travail, en temps total (médiane des différences par paire), pour un travail de démarrage |
 | `check` | les quatre `check:*` |
 
 `node contracts/cli.test.ts [id…]` vérifie les implémentations nommées par leur identifiant. Un identifiant dont le dossier manque fait échouer le test. Sans argument, le test vérifie les implémentations dont le dossier existe; s'il n'y en a aucune, il ne vérifie que l'oracle. Pour Go, Rust et TypeScript, il compile d'abord (§ 5). Chaque lancement d'une CLI, par le test de contrat comme par le banc d'essai, a un délai de 300 s.
@@ -233,4 +233,4 @@ Chaque entrée de `docs/exploration.md` donne : la skill, l'étape ou le ticket,
 | Une optimisation casse un cas limite que les seams ne visent pas : retenue de l'additionneur décimal, dernière étape de `matrix` et de `fast`, chemin `Decimal` de Python | balayages de 0 à 2000 (BIB-05 à BIB-07, BIB-12), tests de garde `PERF-<ID>-<n>`, test différentiel entre les quatre CLI, sondes de `/code-review` jusqu'à F(1 000 000) |
 | Le contrat ou le banc d'essai lance un binaire ou un `.js` périmé | les deux compilent Go, Rust et TypeScript avant de lancer (§ 6), par le même module, `contracts/lancement.ts` |
 | Seuils de Python (`DECIMAL_FROM`, `STR_FROM_BITS`) mesurés sur Python 3.14 seulement, alors que le minimum est 3.12 | ils ne changent que la vitesse : chaque chemin écrit le même terme exact, gardé par les tests de garde Python et CLI-T13; à remesurer par `npm run bench` sous 3.12 et 3.13 |
-| Mesures bruitées : des agents qui mesurent en même temps se gênent | médianes; mesures en série, jamais en parallèle; une seule mesure après la fusion fait foi |
+| Mesures bruitées : des agents qui mesurent en même temps se gênent, et les médianes séparées ne tranchent pas un gain de quelques pour cent (démarrage) | médianes; mesures en série, jamais en parallèle; une seule mesure après la fusion fait foi; l'A/B apparié (`bench --contre REF`), qui lance les deux côtés dans le même tour et résume par la médiane des différences, pour un travail de démarrage |
