@@ -194,7 +194,7 @@ FFT, GMP, Strassen, parallélisme, TUI, mode serveur, calibration et seuils rég
 
 ## 9. Démarche d'exploration des skills
 
-L'orchestrateur est la session principale (Opus 5.5 en `ultracode`); le code revient au sous-agent `fib-dev` (Sonnet 5.5). Voir `CLAUDE.md`. Les étapes 0, 1 et 4 à 9 sont faites : les quatre implémentations passent `npm run check`. L'étape 8 a pris la forme d'un audit, puis de quatre chantiers suivis chacun de `/code-review` : la refactorisation, l'optimisation des performances (ADR-0004) et la borne d'un terme à 1 000 000 (2026-10-11), puis les suites de l'épreuve des cas de test (tickets #6 à #14, 2026-10-12). L'étape 9 a corrigé l'écart du stderr fermé en Python (#16, 2026-10-12). Les étapes 2 et 3 n'ont pas servi. Les étapes 10 et 11 restent à faire. Le bilan par skill, dont `/implement` remplacée par `fib-dev`, est dans `docs/exploration.md`.
+L'orchestrateur est la session principale (Opus 5.5 en `ultracode`); le code revient au sous-agent `fib-dev` (Sonnet 5.5). Voir `CLAUDE.md`. Les étapes 0, 1 et 4 à 10 sont faites : les quatre implémentations passent `npm run check`. L'étape 8 a pris la forme d'un audit, puis de quatre chantiers suivis chacun de `/code-review` : la refactorisation, l'optimisation des performances (ADR-0004) et la borne d'un terme à 1 000 000 (2026-10-11), puis les suites de l'épreuve des cas de test (tickets #6 à #14, 2026-10-12). L'étape 9 a corrigé l'écart du stderr fermé en Python (#16, 2026-10-12). L'étape 10 a rendu la CLI TypeScript appelable dans le processus (#20, 2026-10-13). Les étapes 2 et 3 n'ont pas servi. L'étape 11 reste à faire. Le bilan par skill, dont `/implement` remplacée par `fib-dev`, est dans `docs/exploration.md`.
 
 | # | Étape | Skill | Livrable |
 |---|---|---|---|
