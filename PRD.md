@@ -1,6 +1,6 @@
 # PRD — Fib : calculateur Fibonacci académique en quatre langages
 
-Version 1.11 · 2026-10-12 · André-Guy Bruneau. Révisée par `/grill-with-docs`, par un audit, par le catalogue de cas de test, par l'implémentation des tickets #2 à #5, par l'audit et la refactorisation du 2026-10-11, par l'optimisation des performances (ADR-0004), par la borne d'un terme à 1 000 000 et le bilan des résultats, puis par l'étape 9 (`diagnosing-bugs`, #16) et par les cas hors contrat (#18) : le vocabulaire est dans `CONTEXT.md`, les décisions durables dans `docs/adr/`.
+Version 1.12 · 2026-10-13 · André-Guy Bruneau. Révisée par `/grill-with-docs`, par un audit, par le catalogue de cas de test, par l'implémentation des tickets #2 à #5, par l'audit et la refactorisation du 2026-10-11, par l'optimisation des performances (ADR-0004), par la borne d'un terme à 1 000 000 et le bilan des résultats, puis par l'étape 9 (`diagnosing-bugs`, #16), par les cas hors contrat (#18), par l'étape 10 (#20) et par l'étape 11 (`/handoff`) : le vocabulaire est dans `CONTEXT.md`, les décisions durables dans `docs/adr/`.
 
 ## 1. Contexte et objectifs
 
@@ -194,7 +194,7 @@ FFT, GMP, Strassen, parallélisme, TUI, mode serveur, calibration et seuils rég
 
 ## 9. Démarche d'exploration des skills
 
-L'orchestrateur est la session principale (Opus 5.5 en `ultracode`); le code revient au sous-agent `fib-dev` (Sonnet 5.5). Voir `CLAUDE.md`. Les étapes 0, 1 et 4 à 10 sont faites : les quatre implémentations passent `npm run check`. L'étape 8 a pris la forme d'un audit, puis de quatre chantiers suivis chacun de `/code-review` : la refactorisation, l'optimisation des performances (ADR-0004) et la borne d'un terme à 1 000 000 (2026-10-11), puis les suites de l'épreuve des cas de test (tickets #6 à #14, 2026-10-12). L'étape 9 a corrigé l'écart du stderr fermé en Python (#16, 2026-10-12). L'étape 10 a rendu la CLI TypeScript appelable dans le processus (#20, 2026-10-13). Les étapes 2 et 3 n'ont pas servi. L'étape 11 reste à faire. Le bilan par skill, dont `/implement` remplacée par `fib-dev`, est dans `docs/exploration.md`.
+L'orchestrateur est la session principale (Opus 5.5 en `ultracode`); le code revient au sous-agent `fib-dev` (Sonnet 5.5). Voir `CLAUDE.md`. Les étapes 0, 1 et 4 à 11 sont faites : les quatre implémentations passent `npm run check`. L'étape 8 a pris la forme d'un audit, puis de quatre chantiers suivis chacun de `/code-review` : la refactorisation, l'optimisation des performances (ADR-0004) et la borne d'un terme à 1 000 000 (2026-10-11), puis les suites de l'épreuve des cas de test (tickets #6 à #14, 2026-10-12). L'étape 9 a corrigé l'écart du stderr fermé en Python (#16, 2026-10-12). L'étape 10 a rendu la CLI TypeScript appelable dans le processus (#20, 2026-10-13). Les étapes 2 et 3 n'ont pas servi. L'étape 11 a produit un document de reprise, hors dépôt comme la skill l'exige (2026-10-13). Le bilan par skill, dont `/implement` remplacée par `fib-dev`, est dans `docs/exploration.md`.
 
 | # | Étape | Skill | Livrable |
 |---|---|---|---|
