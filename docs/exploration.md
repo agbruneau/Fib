@@ -418,7 +418,7 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
 - **Friction** :
   - Les numéros de garde se télescopent quand des tickets écrits ensemble sont livrés dans un autre ordre : HAR-4 et HAR-5 visés deux fois, PERF-PY-26 visé par trois conceptions.
   - Les tickets de documentation sont livrés avec des numéros de ligne déjà périmés.
-  - Les fichiers partagés (`README.md`, catalogue § 6, `contracts/bench.ts`) produisent des conflits dès que des tickets parallèles les touchent : un en vague 2, six en vague 3.
+  - Les fichiers partagés (`README.md`, catalogue § 6, `contracts/bench.ts`) produisent des conflits dès que des tickets parallèles les touchent : un en vague 2, sept en vague 3.
   - Le plafond de concurrence des workflows dépend du nombre de cœurs : sur 4 cœurs, un workflow ne lance que 2 agents à la fois. « Tout en parallèle » demande un workflow par ticket.
   - L'orchestrateur a été pris à corriger lui-même du code (un commentaire). La revue l'a vu, mais la règle de `CLAUDE.md` se perd facilement en fin de vague.
 - **À changer** :
@@ -438,7 +438,7 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
 | `/to-tickets` | utilisée : tickets #2 à #5, avec dépendances natives |
 | `tdd` | utilisée : catalogue de cas, puis cycles des quatre `fib-dev`; absente de la session infonuagique du 2026-10-12, où les `fib-dev` ont suivi son cycle à la main |
 | `/implement` | remplacée par l'agent `fib-dev`, qui applique `tdd` directement |
-| `resolving-merge-conflicts` | introuvable dans la session infonuagique : les conflits des vagues parallèles du 2026-10-13 (sept fichiers) ont été résolus à la main, par l'orchestrateur pour la documentation et par un `fib-dev` pour le code |
+| `resolving-merge-conflicts` | introuvable dans la session infonuagique : les conflits des vagues parallèles du 2026-10-13 (huit, dans six fichiers) ont été résolus à la main, par l'orchestrateur pour la documentation et par un `fib-dev` pour le code |
 | `research`, `prototype` | non utilisées; un `prototype` aurait détecté plus tôt le piège de `go run` |
 | `/code-review` | utilisée trois fois le 2026-10-11, axes Standards et Spec : après la refactorisation, après l'optimisation, après la borne à 1 000 000; puis le 2026-10-12, sur les tickets #6 à #14 et sur #16; puis le 2026-10-13, sur #20, #21 et #25, puis une fois par vague des pistes A, C, D et E (#27 à #36), soit cinq passes de plus |
 | `diagnosing-bugs` | utilisée à l'étape 9 (#16), lue dans `mattpocock/skills` faute de plugin; précédée d'une boucle différentielle pour trouver l'écart |
