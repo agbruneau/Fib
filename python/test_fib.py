@@ -142,9 +142,15 @@ def spying(noted):
 
 
 # Flux hostiles : l'encodage de PYTHONIOENCODING=utf-16 et la fin de ligne de Windows (\r\n), que CPython ne donne pas
-# sous Linux. Le bloc __main__ doit les ramener à l'ASCII et à \n (F10).
-HOSTILE = "import io, sys\n" + "".join(
-    f"sys.{name} = io.TextIOWrapper(sys.{name}.buffer, 'utf-16', newline='\\r\\n')\n" for name in ("stdout", "stderr")
+# sous Linux. Le bloc __main__ doit les ramener à l'ASCII et à \n (F10). `kept` garde les deux flux vivants quand un
+# test met sys.<flux> à None : sinon le finaliseur du flux hostile ferme le BufferedWriter qu'il partage avec
+# sys.__<flux>__, et le vrai stderr (la trace d'une exception du bloc) devient inutilisable.
+HOSTILE = (
+    "import io, sys\n"
+    + "".join(
+        f"sys.{name} = io.TextIOWrapper(sys.{name}.buffer, 'utf-16', newline='\\r\\n')\n" for name in ("stdout", "stderr")
+    )
+    + "kept = sys.stdout, sys.stderr\n"
 )
 
 
@@ -152,7 +158,7 @@ def run_main_block(args, absent=()):
     """Exécute le bloc __main__ de fib.py dans python -I -S -c, sur des flux hostiles (HOSTILE), après avoir mis à None
     les flux de `absent` : l'état où CPython laisse sys.stdout ou sys.stderr quand le fd 1 ou 2 est fermé au lancement
     ou, sous Windows, quand son handle est invalide. Pas de runpy : il importe os lui-même. Une exception du bloc
-    s'écrit sur le vrai stderr."""
+    s'écrit sur le vrai stderr, même si `absent` le contient : HOSTILE garde les flux hostiles référencés."""
     code = "".join(
         [
             HOSTILE,
@@ -500,7 +506,9 @@ class TestFib(unittest.TestCase):
         handle est invalide (catalogue § 6). Sans le puits, reconfigure lève AttributeError avant main : code 1.
         stderr absent : stdout et le code sont ceux de F1 et de F9. stdout absent (hors contrat, effet de bord du
         correctif) : le code reste 2, avec une seule ligne fib: sur stderr, en ASCII. L'autre flux est hostile
-        (run_main_block), comme sous Windows."""
+        (run_main_block), comme sous Windows. Un flux hostile mis à None reste référencé par HOSTILE : sans cela, son
+        finaliseur ferme le BufferedWriter qu'il partage avec sys.__stdout__ ou sys.__stderr__, et la trace d'une
+        exception du bloc, écrite sur le vrai stderr, se perd (ValueError) : ce rouge n'aurait plus de diagnostic."""
         for args, out, code in ((["10"], b"55\n", 0), (["--bogus", "5"], b"", 2)):
             with self.subTest(absent="stderr", args=args):
                 run = run_main_block(args, ["stderr"])
@@ -509,6 +517,12 @@ class TestFib(unittest.TestCase):
             run = run_main_block(["--bogus", "5"], ["stdout"])
             self.assertEqual(run.returncode, 2, run.stderr)
             self.assertRegex(run.stderr, rb"\Afib: [ -~]*\n\Z")
+        with self.subTest(absent="les deux flux, après HOSTILE"):
+            probe = HOSTILE + "sys.stdout = sys.stderr = None\n" + "".join(
+                f"sys.__{name}__.write('{name}\\n'); sys.__{name}__.flush()\n" for name in ("stdout", "stderr")
+            )
+            run = subprocess.run([sys.executable, "-I", "-S", "-c", probe], capture_output=True)
+            self.assertEqual((run.stdout, run.stderr, run.returncode), (b"stdout\n", b"stderr\n", 0))
 
     def test_PERF_PY_24_le_lancement_normal_de_la_cli_n_ajoute_pas_os_au_demarrage_nu(self):
         """PERF-PY-24 : hors catalogue, garde de l'optimisation de l'import os paresseux du bloc __main__ (2,5 ms de
