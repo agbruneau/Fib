@@ -56,3 +56,16 @@ Le propriétaire relève la borne d'un terme de 100 000 à 1 000 000 (F8). Celle
 ## Mesures finales du 2026-10-11
 
 Après la borne à 1 000 000 et les trois revues de code (`npm run bench -- --runs 15`, Windows 11) : voir le [README](../../README.md), § Résultats.
+
+## Amendement du 2026-10-13 : l'A/B apparié, mesure d'un travail de démarrage
+
+Le banc seul ne tranche pas un gain de quelques pour cent. Pour l'horloge `process.hrtime` (#21), les médianes séparées se recouvraient : de 46,3 à 55,8 ms pour `main`, de 44,9 à 47,8 ms pour la branche. Seul un A/B apparié a tranché, de −1,8 à −2,6 ms (−4,0 à −5,7 %), sur 6 tours de 201 lancements. Il avait été refait à la main au moins quatre fois, chaque fois par un script jetable propre à un langage, sans les commandes du contrat. La série Python (D, puis la partie Python de C, puis E) refond le texte décimal et le point d'entrée de `python/fib.py` : elle doit montrer qu'elle ne ralentit pas le démarrage, à quelques pour cent près, sous le bruit des médianes séparées.
+
+Le propriétaire décide que l'A/B devient la mesure d'un travail de démarrage (imports, chargement, point d'entrée) :
+
+- **Forme** : `npm run bench -- <langage> --contre REF`. Le banc extrait la révision REF sous `.build/revisions/<sha>`, puis construit les deux côtés avec les commandes de lancement d'aujourd'hui (`contracts/lancement.ts`). Par scénario, il joue des paires alternées (A puis B, B puis A), écarte le tour 0, et écrit A, B, B − A, le pourcentage et le nombre de paires où B est plus rapide. Le résumé est la médiane des différences par paire, non la différence des médianes : la dérive de la machine touche A et B d'un même tour.
+- **Quand** : un travail de démarrage se mesure par l'A/B, REF étant la révision d'avant le travail. Un travail de calcul garde le banc ordinaire, en médianes (`npm run bench -- <langage>`, avant et après).
+- **Limite** : l'A/B ne vaut que si les commandes de lancement n'ont pas changé entre REF et l'arbre de travail. Elles n'ont pas changé depuis la décision du 2026-10-11. Un ticket qui change une commande de lancement ne se mesure pas ainsi.
+- **Ce qu'il ne fait pas** : il ne compare que des temps, jamais des sorties, car REF n'est pas un attendu (ADR-0001). Comme le banc, il lève si une CLI sort avec un code non nul. Le contrat reste seul juge de la sortie.
+- **Mesure** : en série, jamais en parallèle; une seule mesure après la fusion fait foi (PRD § 10). Les révisions extraites s'accumulent sous `.build/revisions/`, ignoré par git, et se suppriment à la main.
+- **Gardes** : HAR-5 garde l'alternance, le résumé et les racines de l'A/B (`docs/cas-de-test.md` § 6). Aucune garde `PERF` n'est créée, puisque aucune implémentation n'est touchée.
