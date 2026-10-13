@@ -17,11 +17,11 @@ Les issues et les specs de ce dépôt sont des issues GitHub de `agbruneau/Fib`.
 **Session infonuagique.** Les sous-commandes `gh issue` passent par GraphQL, qui y est refusé (« HTTP 403: GitHub GraphQL is not available »). Il faut alors l'API REST, par `gh api` :
 
 - **Lire** : `gh api repos/agbruneau/Fib/issues/<n>` (corps, étiquettes, état), puis `.../issues/<n>/comments`.
-- **Lister** : `gh api 'repos/agbruneau/Fib/issues?state=open&labels=waiting' --jq '[.[] | select(.pull_request | not)]'` ; sans le filtre, la liste contient aussi les PR.
+- **Lister la frontière** : `gh api 'repos/agbruneau/Fib/issues?state=open&labels=ready-for-agent,waiting' --jq '[.[] | select(.pull_request | not)]'` (les deux étiquettes à la fois) ; sans le filtre `pull_request`, la liste contient aussi les PR.
 - **Créer** : `gh api -X POST repos/agbruneau/Fib/issues --input <json>`, avec `title`, `body` et `labels`.
 - **Commenter** : `gh api -X POST repos/agbruneau/Fib/issues/<n>/comments -f body="..."`.
 - **Étiquettes** : `gh api -X POST repos/agbruneau/Fib/issues/<n>/labels -f 'labels[]=in-progress'`, puis `gh api -X DELETE repos/agbruneau/Fib/issues/<n>/labels/waiting`.
-- **Fermer** : retirer `in-progress` par `gh api -X DELETE .../labels/in-progress`, puis `gh api -X PATCH repos/agbruneau/Fib/issues/<n> -f state=closed -f state_reason=completed`.
+- **Fermer** : retirer `in-progress` et `waiting` (`gh api -X DELETE .../labels/<étiquette>`), commenter la clôture (`gh api -X POST .../issues/<n>/comments -f body="..."`), puis `gh api -X PATCH repos/agbruneau/Fib/issues/<n> -f state=closed -f state_reason=completed`.
 
 ## Statuts
 

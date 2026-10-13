@@ -429,7 +429,7 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
   - Ne pas paralléliser deux tickets qui réécrivent la même fonction (ici `extract`) : les enchaîner, ou les confier au même `fib-dev`.
   - Lancer un workflow par ticket quand le nombre de cœurs plafonne la concurrence.
 
-## 2026-10-13 — Revue finale de cohérence en workflow, puis gardes d'identité de l'aiguillage (#39 à #43), avant la version v1.0.0
+## 2026-10-13 — Revue finale de cohérence en workflow (hors skill), gardes d'identité de l'aiguillage (#39 à #43), puis `/code-review`, avant la version v1.0.0
 
 - **Contexte** : avant la version finale, le propriétaire a demandé une revue de cohérence de tout le dépôt et sa fermeture. Il a ensuite demandé de lancer en parallèle la garde d'identité de la table des algorithmes, une lacune que la vérification de #36 avait trouvée.
 - **Démarche** : quatre workflows de revue, un par angle (chiffres et commandes, cohérence entre documents, tickets et traçabilité, code et gardes). Chacun a un réviseur qui vérifie par exécution, puis un vérificateur adverse qui tente de réfuter chaque constat.
@@ -460,8 +460,22 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
 - **Friction** :
   - L'orchestrateur a deux fois mal lancé un workflow : un SHA de base inventé, puis un chemin de script provisoire envoyé en parallèle de sa création. Le premier a dû être arrêté et relancé.
   - Les tickets écrits ensemble se recoupent encore : #43 visait 113 tests par langage, alors que HAR-7, à un test par commande, en donne 116.
+- **`/code-review` du lot final** : 12 constats, tous traités.
+  - Huit de documentation :
+    - le catalogue se contredisait sur `_ALGOS` ;
+    - les survivants des gardes d'identité n'étaient pas nommés ;
+    - les commandes de build échappent à HAR-7 ;
+    - la traçabilité de F6 était incomplète ;
+    - la procédure REST ne filtrait pas la frontière ;
+    - la phrase du README sur les revues était fausse.
+  - Quatre de code, chez deux `fib-dev` :
+    - `algos` exportée en lecture seule par le type ;
+    - un seul lanceur pour PERF-TS-9 et 11 ;
+    - HAR-7 bouclé sur `IDS` ;
+    - `hasGap`.
 - **À changer** :
   - Toujours lire la tête (`git rev-parse`) au moment de lancer un workflow, jamais la recopier de mémoire.
+  - Respecter la règle « un ticket et un langage par `fib-dev` » jusque dans les retouches. La dernière `/code-review` a relevé deux invocations qui mêlaient #41 et #43, ou ts/, contracts/ et python/.
   - Écrire dans un ticket le compte attendu par la formule, par exemple 6 ORA, plus le groupe du harnais, plus 99 cas, plutôt que par un nombre.
 
 ## Bilan au 2026-10-13
