@@ -463,16 +463,21 @@ class TestFib(unittest.TestCase):
         time.perf_counter; dans chaque fenêtre du chronomètre (deux lectures), decimal doit être chargé au départ et
         sys.modules ne doit pas grandir jusqu'à l'arrivée : ni module paresseux, ni import en cours, ni autre module.
         Couvre les bornes des deux chemins, avec --time, la ligne que le préchargement protège : --list 0 et MAX_LIST;
-        un terme en Decimal à DECIMAL_FROM et à MAX_TERM, sans iterative, par fast puis matrix. Puis, sans --time, les
-        trois cas d'origine : compute chronomètre aussi sans lui.
+        un terme en Decimal à DECIMAL_FROM et à MAX_TERM, sans iterative, par fast puis matrix. Puis trois points
+        impairs et intérieurs, car les bornes sont toutes paires et multiples de 10 : --list 1, DECIMAL_FROM + 1 par
+        fast, MAX_TERM - 1 par matrix. Puis, sans --time, les trois cas d'origine : compute chronomètre aussi sans lui.
         Mutants qui la rougissent : `import decimal` retiré de compute; déplacé dans la fenêtre du chronomètre (dans
         timed après start, ou dans la lambda); limité à as_list; limité à use_decimal; remplacé par un module paresseux
         (importlib.util.LazyLoader) ou par un fil (threading.Thread(target=__import__, args=('decimal',))); sauté sous
         --time (compute reçoit show_time : `not show_time and ...`); une condition qui ne coïncide avec la bonne qu'en
         un point (`n == DECIMAL_FROM`, `n <= DECIMAL_FROM`, `DECIMAL_FROM <= n < MAX_TERM`, `as_list and n > 0`,
-        `as_list and n <= 10`). Témoin : quatre fenêtres (SPY_WITNESS), dont une seule vaut 1 (0001) : decimal absent;
-        absent puis chargé dans la fenêtre; chargé mais sys.modules qui grandit; chargé et stable. Un 1 ne peut venir
-        que du préchargement, et chaque moitié du prédicat est prouvée."""
+        `as_list and n <= 10`); une condition qui coïncide avec la bonne aux bornes, pas entre elles, parce que 0, 10,
+        MAX_LIST, DECIMAL_FROM et MAX_TERM sont tous pairs et multiples de 10 : `... and n % 2 == 0` sur toute la
+        condition ou sur as_list, `as_list and n != 1`, `use_decimal and n % 10_000 == 0`, `use_decimal and n in
+        (DECIMAL_FROM, MAX_TERM)`. Chacune fait payer l'import (3 à 5 ms) à une entrée acceptée.
+        Témoin : quatre fenêtres (SPY_WITNESS), dont une seule vaut 1 (0001) : decimal absent; absent puis chargé dans
+        la fenêtre; chargé mais sys.modules qui grandit; chargé et stable. Un 1 ne peut venir que du préchargement, et
+        chaque moitié du prédicat est prouvée."""
         run, report = clock_reads_with_decimal(SPY_WITNESS)
         self.assertEqual((run.returncode, report), (0, "0001"), run.stderr)
         cases = (
@@ -482,6 +487,9 @@ class TestFib(unittest.TestCase):
             ["--time", str(MAX_TERM)],
             ["--time", "--algo", "matrix", str(DECIMAL_FROM)],
             ["--time", "--algo", "matrix", str(MAX_TERM)],
+            ["--time", "--list", "1"],
+            ["--time", str(DECIMAL_FROM + 1)],
+            ["--time", "--algo", "matrix", str(MAX_TERM - 1)],
             ["--list", "10"],
             [str(DECIMAL_FROM)],
             ["--algo", "matrix", str(DECIMAL_FROM)],
