@@ -360,6 +360,74 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
   - Donner au vérificateur de mutants un critère d'arrêt : un mutant compte s'il est une modification plausible du code, pas une condition arbitraire.
   - Demander dès le ticket les deux côtés d'une condition d'optimisation : là où elle doit agir, et là où elle ne doit rien coûter.
 
+## 2026-10-13 — Pistes A, C, D et E de l'étape 10 : conception en workflow, une série de questions, livraison en trois vagues
+
+- **Contexte** : le rapport de l'étape 10 gardait quatre pistes en plus de B, livré par #20. Le propriétaire a demandé de traiter les quatre : A (lancement commun dans `contracts/`), C (discordance testée en Go, Rust et Python), D (texte décimal de Python) et E (entrée Python appelable sans processus).
+- **Conception** : un workflow `ultracode` de 11 agents (environ 3 millions de jetons, 2 h 23).
+  - Chaque piste a eu deux concepteurs indépendants (un seul pour E), qui prototypaient chacun dans un worktree. Ils ne mesuraient que les modules chargés et les instructions, jamais de temps mural.
+  - Un critique adverse par piste a ensuite tout rejoué par exécution. Il a dit si la piste valait son coût, rédigé les décisions du propriétaire et écrit les tickets.
+  - Deux critiques ont conclu que la forme du rapport ne valait pas son coût :
+    - **D** : ni un module privé ni une fonction regroupée ne tuent un mutant de plus qu'une simple garde. Le module coûte une ligne `sys.path` (`-I` implique `-P`), 17 gardes à recibler et +0,55 M d'instructions par lancement pour la fonction.
+    - **E** : une entrée appelable ferait perdre la garde du vrai bloc `__main__` sous Windows. Le seul vrai trou est la fin de ligne de F10, dont le mutant restait vert sous Linux.
+  - Les critiques ont aussi réfuté des affirmations du rapport, chacune par mutant ou par mesure :
+    - « sept noms » connus de `compute` : il y en a quatre ;
+    - « le code 3 n'est observé nulle part » : faux depuis PERF-TS-7 ;
+    - « deux lignes par langage » : il en faut 6 ou 7 en production, et 50 à 80 de gardes ;
+    - « PERF-PY-22 en mémoire » : elle l'est déjà.
+- **Décisions** : une seule série de quatre questions, une par piste, avec les options et la recommandation de chaque critique. Le propriétaire a suivi les quatre recommandations :
+  - A en trois tickets ;
+  - C par paramètre en Go et Rust, et par substitution dans `_ALGOS` en Python, avec les espions de l'algorithme exécuté ;
+  - D réduite à une garde ;
+  - E réduite à un ticket de test.
+  
+  Dix tickets en sont sortis, #27 à #36. Le lanceur Python minimal (−22,5 % d'instructions) n'est pas devenu un ticket : seul un banc au repos sous Windows peut le trancher.
+- **Livraison** : trois vagues. Dans chacune, un workflow lance un `fib-dev` par ticket dans son worktree, puis un vérificateur adverse par exécution, limité aux mutants plausibles (leçon de #25), puis un tour de correction. Viennent ensuite la fusion, la vérification, `/code-review` et une PR par vague.
+  - Vague 1 (#27, #30 à #33, PR #37) : 11 agents, 1,46 million de jetons, 44 minutes.
+    - Les vérificateurs n'ont rien trouvé à corriger dans le code. `/code-review` a rendu 8 constats, tous corrigés, dont un HAR-1 qui cherchait l'absence d'un shell par liste noire au lieu de vérifier la commande exacte.
+    - Le démarrage de Go et de Rust reste neutre : ±0,03 ms à l'A/B apparié, 3 tours de 401 lancements.
+  - Vague 2 (#28, #34) : 6 agents, 0,88 million de jetons, 29 minutes.
+    - Le vérificateur de D a trouvé un survivant réel : un terme calculé en int puis converti en Decimal.
+    - `/code-review` a rendu 11 constats :
+      - deux conversions encore invisibles à PERF-PY-28 ;
+      - une médiane haute sur un nombre pair de paires ;
+      - `versus` non testé ;
+      - une jonction vers `node_modules` que le nettoyage manuel sous Windows peut traverser ;
+      - un `fib-dev` invité à mesurer pendant que d'autres tournent.
+    - Il a aussi relevé que #29 visait un HAR-5 déjà pris.
+  - Vague 3 (#29, #35, #36, et les corrections de #28 et #34), à la demande du propriétaire de « tout faire en parallèle ».
+    - Un premier workflow les portait toutes, mais il plafonne à 2 agents simultanés sur ce conteneur à 4 cœurs : min(16, CPU − 2). Il a été arrêté puis remplacé par cinq workflows, un par chantier, chacun avec son propre plafond. Les deux agents interrompus ont coûté environ 15 minutes ; le travail partiel de #35 a été repris par son successeur.
+    - Les vérificateurs ont trouvé :
+      - pour #35, la trace d'une exception perdue quand un flux hostile est remplacé par `None` ;
+      - pour #36, une lacune réelle : une coquille dans la table des algorithmes (`"iterative": _fast`) passe toutes les gardes. Elle est documentée et reste ouverte ;
+      - pour la correction de #28, la racine de `versus` non gardée ;
+      - pour #29, la fin de ligne de stderr et la fermeture transitive des imports.
+    - `npm run differentiel` joue 575 entrées sans écart sur l'arbre, et retrouve les 7 écarts de l'étape 9 sur la révision 5df6241.
+    - `/code-review` a rendu 9 constats, dont un biais réel : 101 paires donnent une alternance déséquilibrée (51 contre 50), et la médiane garde l'effet d'ordre. Il fallait un nombre pair de paires.
+    - Il a aussi relevé que l'orchestrateur avait corrigé lui-même un commentaire de `python/fib.py`, hors du circuit `fib-dev`.
+    - La fusion de #29 a conflité dans cinq fichiers, parce que #29 et la correction de #28 réécrivaient `extract` en même temps. La résolution est revenue à un `fib-dev`.
+    - Une dernière `/code-review` sur cette fusion a rendu 14 constats, dont 13 retenus et corrigés :
+      - HAR-6 ne voyait ni les tests lancés par un glob, ni `node --run`, ni `npm test`, ni une URL relative sans `./` ;
+      - la boucle sortait en 0 sans rien chercher sous Windows ;
+      - la parité des paires n'était imposée que dans `main`.
+    - Son vérificateur a aligné le marqueur de la boucle sur X-4 (`[^\x20-\x7e]`). 136 mutants ont été joués, puis 53 sur la projection.
+    - Le lancement parallèle des quatre CLI dans la boucle a été écarté : c'est un outil de recherche, et ses 62 s par défaut ne sont pas un enjeu.
+- **A aidé** :
+  - Le critique adverse par piste a évité deux refactorisations sans gain, D et E, sur preuve par mutants et par instructions, non par opinion.
+  - Une seule série de questions a suffi, parce que chaque option portait son coût mesuré.
+  - En vague, une PR couvre plusieurs tickets indépendants sans perdre la vérification par ticket.
+- **Friction** :
+  - Les numéros de garde se télescopent quand des tickets écrits ensemble sont livrés dans un autre ordre : HAR-4 et HAR-5 visés deux fois, PERF-PY-26 visé par trois conceptions.
+  - Les tickets de documentation sont livrés avec des numéros de ligne déjà périmés.
+  - Les fichiers partagés (`README.md`, catalogue § 6, `contracts/bench.ts`) produisent des conflits dès que des tickets parallèles les touchent : un en vague 2, six en vague 3.
+  - Le plafond de concurrence des workflows dépend du nombre de cœurs : sur 4 cœurs, un workflow ne lance que 2 agents à la fois. « Tout en parallèle » demande un workflow par ticket.
+  - L'orchestrateur a été pris à corriger lui-même du code (un commentaire). La revue l'a vu, mais la règle de `CLAUDE.md` se perd facilement en fin de vague.
+- **À changer** :
+  - Réserver les numéros de garde au moment de publier les tickets, dans l'ordre de livraison prévu.
+  - Citer les passages par leur texte, non par leur ligne.
+  - Garder les compteurs du README à l'orchestrateur, ce qui a évité les conflits sur la ligne la plus disputée.
+  - Ne pas paralléliser deux tickets qui réécrivent la même fonction (ici `extract`) : les enchaîner, ou les confier au même `fib-dev`.
+  - Lancer un workflow par ticket quand le nombre de cœurs plafonne la concurrence.
+
 ## Bilan au 2026-10-13
 
 | Skill | Usage |

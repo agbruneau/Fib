@@ -1,7 +1,7 @@
 """Seam 1 : la bibliothèque. Les attendus viennent de l'oracle (contracts/b000045.txt) ou de faits mathématiques.
 Les gardes PERF-PY-n, hors seams (ADR-0004), protègent les optimisations que les cas BIB et CLI ne visent pas
-(PERF-PY-20 et 23 protègent les correctifs F10 et CLI-V04). Chaque test porte son identifiant en tête de sa docstring :
-grep BIB-05 python/."""
+(PERF-PY-20, 23 et 29 protègent les correctifs F10 et CLI-V04). Chaque test porte son identifiant en tête de sa
+docstring : grep BIB-05 python/."""
 import decimal
 import math
 import os
@@ -141,13 +141,27 @@ def spying(noted):
     return wrap
 
 
+# Flux hostiles : l'encodage de PYTHONIOENCODING=utf-16 et la fin de ligne de Windows (\r\n), que CPython ne donne pas
+# sous Linux. Le bloc __main__ doit les ramener à l'ASCII et à \n (F10). `kept` garde les deux flux vivants quand un
+# test met sys.<flux> à None : sinon le finaliseur du flux hostile ferme le BufferedWriter qu'il partage avec
+# sys.__<flux>__, et le vrai stderr (la trace d'une exception du bloc) devient inutilisable.
+HOSTILE = (
+    "import io, sys\n"
+    + "".join(
+        f"sys.{name} = io.TextIOWrapper(sys.{name}.buffer, 'utf-16', newline='\\r\\n')\n" for name in ("stdout", "stderr")
+    )
+    + "kept = sys.stdout, sys.stderr\n"
+)
+
+
 def run_main_block(args, absent=()):
-    """Exécute le bloc __main__ de fib.py dans python -I -S -c, après avoir mis à None les flux de `absent` : l'état où
-    CPython laisse sys.stdout ou sys.stderr quand le fd 1 ou 2 est fermé au lancement ou, sous Windows, quand son
-    handle est invalide. Pas de runpy : il importe os lui-même. Une exception du bloc s'écrit sur le vrai stderr."""
+    """Exécute le bloc __main__ de fib.py dans python -I -S -c, sur des flux hostiles (HOSTILE), après avoir mis à None
+    les flux de `absent` : l'état où CPython laisse sys.stdout ou sys.stderr quand le fd 1 ou 2 est fermé au lancement
+    ou, sous Windows, quand son handle est invalide. Pas de runpy : il importe os lui-même. Une exception du bloc
+    s'écrit sur le vrai stderr, même si `absent` le contient : HOSTILE garde les flux hostiles référencés."""
     code = "".join(
         [
-            "import sys\n",
+            HOSTILE,
             *(f"sys.{name} = None\n" for name in absent),
             f"path = {str(FIB)!r}\n",
             "try:\n",
@@ -448,10 +462,11 @@ class TestFib(unittest.TestCase):
                 self.assertEqual(spy.called, sliced)
 
     def test_PERF_PY_20_pythonioencoding_ne_change_pas_les_octets_hors_de_python_I(self):
-        """PERF-PY-20 : hors catalogue, garde du correctif F10 (ASCII et fin de ligne \\n quel que soit l'environnement),
-        et non d'une optimisation; le ticket du contrat ajoute ce cas au catalogue (§ 6). CLI-V03 ne peut pas le voir :
+        """PERF-PY-20 : hors catalogue, garde du correctif F10 (ASCII quel que soit l'environnement), et non d'une
+        optimisation; le ticket du contrat ajoute ce cas au catalogue (§ 6). CLI-V03 ne peut pas le voir :
         le contrat lance python -I, qui ignore PYTHONIOENCODING. Ici, sans -I, sans les variables PYTHON* du test et
-        avec PYTHONIOENCODING=utf-16 : sans reconfigure(encoding="ascii"), la sortie passerait en UTF-16."""
+        avec PYTHONIOENCODING=utf-16 : sans reconfigure(encoding="ascii"), la sortie passerait en UTF-16. La fin de
+        ligne \\n, que CPython écrit déjà sous Linux, est gardée par PERF-PY-29."""
         env = {name: value for name, value in os.environ.items() if not name.startswith("PYTHON")}
         env["PYTHONIOENCODING"] = "utf-16"
         run = subprocess.run([sys.executable, "-S", str(HERE / "fib.py"), "--time", "50"], capture_output=True, env=env)
@@ -490,7 +505,10 @@ class TestFib(unittest.TestCase):
         et non d'une optimisation; le contrat saute CLI-V04 sous Windows, où CPython met aussi un flux à None quand son
         handle est invalide (catalogue § 6). Sans le puits, reconfigure lève AttributeError avant main : code 1.
         stderr absent : stdout et le code sont ceux de F1 et de F9. stdout absent (hors contrat, effet de bord du
-        correctif) : le code reste 2, avec une seule ligne fib: sur stderr."""
+        correctif) : le code reste 2, avec une seule ligne fib: sur stderr, en ASCII. L'autre flux est hostile
+        (run_main_block), comme sous Windows. Un flux hostile mis à None reste référencé par HOSTILE : sans cela, son
+        finaliseur ferme le BufferedWriter qu'il partage avec sys.__stdout__ ou sys.__stderr__, et la trace d'une
+        exception du bloc, écrite sur le vrai stderr, se perd (ValueError) : ce rouge n'aurait plus de diagnostic."""
         for args, out, code in ((["10"], b"55\n", 0), (["--bogus", "5"], b"", 2)):
             with self.subTest(absent="stderr", args=args):
                 run = run_main_block(args, ["stderr"])
@@ -498,7 +516,13 @@ class TestFib(unittest.TestCase):
         with self.subTest(absent="stdout", args=["--bogus", "5"]):
             run = run_main_block(["--bogus", "5"], ["stdout"])
             self.assertEqual(run.returncode, 2, run.stderr)
-            self.assertRegex(run.stderr, rb"\Afib: [^\n]*\n\Z")
+            self.assertRegex(run.stderr, rb"\Afib: [ -~]*\n\Z")
+        with self.subTest(absent="les deux flux, après HOSTILE"):
+            probe = HOSTILE + "sys.stdout = sys.stderr = None\n" + "".join(
+                f"sys.__{name}__.write('{name}\\n'); sys.__{name}__.flush()\n" for name in ("stdout", "stderr")
+            )
+            run = subprocess.run([sys.executable, "-I", "-S", "-c", probe], capture_output=True)
+            self.assertEqual((run.stdout, run.stderr, run.returncode), (b"stdout\n", b"stderr\n", 0))
 
     def test_PERF_PY_24_le_lancement_normal_de_la_cli_n_ajoute_pas_os_au_demarrage_nu(self):
         """PERF-PY-24 : hors catalogue, garde de l'optimisation de l'import os paresseux du bloc __main__ (2,5 ms de
@@ -599,6 +623,125 @@ class TestFib(unittest.TestCase):
                 lines = [line.split()[0] for line in durations.splitlines()]
                 self.assertEqual(lines, algos, "les lignes de durée")
                 self.assertEqual(noted, lines, "les algorithmes exécutés")
+
+    def test_PERF_PY_28_un_terme_en_decimal_s_ecrit_sans_jamais_devenir_un_int(self):
+        """PERF-PY-28 : hors catalogue, garde de l'optimisation du terme en Decimal : de DECIMAL_FROM à MAX_TERM, fast
+        ou matrix seul se calcule et s'écrit en Decimal, par le str() linéaire, sans qu'un int soit converti ni écrit.
+        Comme PERF-PY-26 et 27, elle suppose que _ALGOS reste le seul aiguillage : sans lui, le quatrième signal devient
+        aveugle (PERF-PY-27 rougit alors).
+        Quatre signaux, dans un interpréteur neuf (PERF-PY-5 a déjà chargé _pylong ici) lancé par run_fib, à des indices
+        de toute la plage, des deux côtés de F(288 000) et pour chacun des deux algorithmes : un int s'écrirait par les
+        tranches de _text (divmod, quadratique) jusqu'à STR_FROM_BITS bits, puis par str(), qui importe _pylong (10 ms,
+        PRD § 5); un int converti par Decimal(int), conversion binaire → décimale quadratique que _fib_decimal dit
+        éviter, ne passe ni par l'un ni par l'autre. Le divmod de fib est donc espionné, _pylong ne doit pas se charger,
+        et Decimal espionne tout int de plus de 64 bits (_exact_decimal importe Decimal à l'appel : kind et tout
+        Decimal(int) de fib passent par l'espion). Mais Decimal(0) + int et create_decimal(int) convertissent en C, sans
+        Decimal(int), et le terme qu'ils rendent s'écrit par str() : le quatrième signal espionne _ALGOS, et fast comme
+        matrix doivent recevoir un Decimal pour kind (sans kind, l'algorithme calcule en int). Le texte est le même par
+        les deux chemins, d'où cette garde : PERF-PY-10 à 12 ne voient pas la conversion, et PERF-PY-13 n'espionne que
+        l'appel de _fib_decimal à DECIMAL_FROM. Mutants rouges : _fib_decimal qui rend int(...) (B-W3), compute qui
+        écrit _text(int(terms[0])) (B-W2), _text qui convertit un Decimal en int puis le découpe (B-W1) ou l'écrit par
+        str(int(x)) (B-W5), une bande d'indices sans Decimal, de 200 000 à 900 000 (B-R9), de 170 002 à 288 000 (B-R10)
+        ou de 310 000 à 990 000 (B-R11), la même pour matrix seul, de 200 000 à 900 000 (B-R12), compute qui appelle
+        fib() pour tout terme (B-C1, que PERF-PY-13 rougit déjà), _fib_decimal qui calcule en int puis convertit,
+        Decimal(_ALGOS[algo](n)) (X-INT2DEC), Decimal(fib(n, algo)) (X-INT2DEC-FIB, la simplification qui retire kind
+        des algorithmes), Decimal(0) + _ALGOS[algo](n) (X-ADD-ZERO) ou ctx.create_decimal(_ALGOS[algo](n)) (X-CREATE),
+        fast qui calcule en int et rend kind(...) (X-FAST-KIND-END). Témoin : les signaux répondent sur un int; sans
+        lui, la garde serait aveugle sous une version de CPython qui change l'un d'eux. Il rougit si les tranches
+        cessent d'appeler divmod (G-1, x // base, x % base), si _exact_decimal lie Decimal avant l'espion (W-BLIND, from
+        decimal import ... en tête de module), ou si l'espion de _ALGOS laisse passer un algorithme sans kind ou refuse
+        un Decimal. Comme PERF-PY-25, dépend de _decimal et de _pylong, ceux des CPython officiels 3.12+."""
+        # le premier divmod des tranches termine l'interpréteur, code 1, avec ce message sur stderr
+        spy = "fib.divmod = lambda a, b: sys.exit('tranches de _text')\n"
+        # idem pour un algorithme de _ALGOS appelé sans Decimal pour kind. Sans kind : int, et un Decimal(0) + int ou un
+        # create_decimal(int) convertit en C, hors de convert_spy. Fast et matrix seuls : ce sont les chemins Decimal.
+        # kind_spy précède convert_spy : real est alors le vrai Decimal, et Spy, sa sous-classe, passe aussi.
+        kind_spy = (
+            "import decimal\n"
+            "real = decimal.Decimal\n"
+            "def wrap(calc):\n"
+            "    def call(n, kind=int):\n"
+            "        if not issubclass(kind, real):\n"
+            "            sys.exit('algorithme sans Decimal pour kind')\n"
+            "        return calc(n, kind)\n"
+            "    return call\n"
+            "for name in ('fast', 'matrix'):\n"
+            "    fib._ALGOS[name] = wrap(fib._ALGOS[name])\n"
+        )
+        # idem pour Decimal(int) : les constantes 0 et 1 des algorithmes tiennent sous 64 bits, un terme jamais
+        convert_spy = (
+            "import decimal\n"
+            "D = decimal.Decimal\n"
+            "class Spy(D):\n"
+            "    def __new__(cls, value='0', context=None):\n"
+            "        if type(value) is int and value.bit_length() > 64:\n"
+            "            sys.exit('int converti en Decimal')\n"
+            "        return D(value, context)\n"
+            "decimal.Decimal = Spy\n"
+        )
+        witness = run_fib(
+            "assert '_pylong' not in sys.modules\n"
+            # signal de str() : un int de plus de STR_FROM_BITS bits charge _pylong
+            "fib._text(1 << (fib.STR_FROM_BITS + 1))\n"
+            "assert '_pylong' in sys.modules\n"
+            # signal des tranches : un int plus court appelle divmod
+            + spy
+            + "fib._text(10**2000)\n"
+        )
+        self.assertEqual((witness.returncode, witness.stderr), (1, "tranches de _text\n"))
+        # signal de Decimal(int) : le Decimal que rend _exact_decimal est l'espion
+        witness = run_fib(convert_spy + "fib._exact_decimal()[0](1 << 100)\n")
+        self.assertEqual((witness.returncode, witness.stderr), (1, "int converti en Decimal\n"))
+        # signal de _ALGOS : le chemin Decimal passe (le marqueur le prouve), fib() appelle l'algorithme sans kind
+        for algo in ("fast", "matrix"):
+            with self.subTest(temoin_kind=algo):
+                witness = run_fib(
+                    kind_spy
+                    + f"fib._fib_decimal(10, {algo!r})\n"
+                    + "sys.stderr.write('Decimal accepte\\n')\n"
+                    + f"fib.fib(10, {algo!r})\n"
+                )
+                self.assertEqual(
+                    (witness.returncode, witness.stderr), (1, "Decimal accepte\nalgorithme sans Decimal pour kind\n")
+                )
+        # DECIMAL_FROM, l'intérieur de la sous-plage des tranches (F(250 001) compte 173 561 bits), juste au-delà de
+        # F(288 000) (F(300 001) en compte 208 273), le milieu de celle de str() (F(600 000) en compte 416 544) et
+        # MAX_TERM : les mêmes pour fast et pour matrix, puisqu'une bande sans Decimal peut n'exclure que l'un des deux
+        spies = kind_spy + convert_spy + spy
+        for args in (
+            argv
+            for n in (DECIMAL_FROM, 250001, 300001, 600000, MAX_TERM)
+            for argv in ([str(n)], ["--algo", "matrix", str(n)])
+        ):
+            with self.subTest(args=args):
+                run = run_fib(
+                    spies + "assert fib.main(sys.argv[2:]) == 0\nassert '_pylong' not in sys.modules\n",
+                    *args,
+                )
+                self.assertEqual(run.returncode, 0, run.stderr)
+
+    def test_PERF_PY_29_des_flux_utf_16_en_crlf_sortent_en_ascii_et_en_lf(self):
+        """PERF-PY-29 : hors catalogue, garde du correctif F10 (fin de ligne \\n quel que soit l'environnement), et non
+        d'une optimisation. Le contrat ne la voit que sous Windows : sous Linux, CPython écrit déjà \\n, donc
+        newline="\\n" retiré, ou limité à stdout ou à stderr, y reste vert, y compris sous PERF-PY-20. Le bloc
+        __main__ tourne sur deux flux hostiles (run_main_block) : stdout, stderr et le code sont ceux du contrat, en
+        ASCII et sans \\r. Témoin : les mêmes flux, sans fib.py, écrivent de l'UTF-16 en \\r\\n, sinon la garde
+        serait aveugle; il rougit si HOSTILE n'installe plus ses flux. Mutants rouges : newline="\\n" retiré, limité à
+        stdout, limité à stderr (PERF-PY-23 rougit aussi sous chacun, et sous le deuxième par son seul regex [ -~]).
+        Le mutant encoding="utf-8" reste vert : il est équivalent, la CLI n'écrit que de l'ASCII."""
+        probe = HOSTILE + "sys.stdout.write('a\\n'); sys.stderr.write('b\\n')\n"
+        witness = subprocess.run([sys.executable, "-I", "-S", "-c", probe], capture_output=True)
+        # sur un tube, l'encodeur n'écrit pas de BOM : l'UTF-16 se reconnaît au décodage
+        self.assertEqual((witness.stdout.decode("utf-16"), witness.stderr.decode("utf-16")), ("a\r\n", "b\r\n"))
+        for args, out, err, code in (
+            (["--list", "3"], "".join(f"{term}\n" for term in oracle_text()[:4]), rb"\A\Z", 0),
+            (["--time", "50"], f"{oracle_text()[50]}\n", rb"\Afast \d+\.\d{3} ms\n\Z", 0),
+            (["--bogus", "5"], "", rb"\Afib: [ -~]*\n\Z", 2),
+        ):
+            with self.subTest(args=args):
+                run = run_main_block(args)
+                self.assertEqual((run.stdout, run.returncode), (out.encode("ascii"), code), run.stderr)
+                self.assertRegex(run.stderr, err)
 
 
 if __name__ == "__main__":

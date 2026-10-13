@@ -53,8 +53,8 @@ def _fast(n, kind=int):
     return (2 * f - g) * (2 * f + g) + sign if last == "1" else f * (f + 2 * g)
 
 
-# Seul aiguillage des algorithmes, en int comme en Decimal : PERF-PY-26 et 27 y substituent un algorithme qui discorde
-# ou qui espionne.
+# Seul aiguillage des algorithmes, en int comme en Decimal : PERF-PY-26, 27 et 28 y substituent un algorithme qui
+# discorde ou qui espionne.
 _ALGOS = {"iterative": _iterative, "matrix": _matrix, "fast": _fast}
 
 

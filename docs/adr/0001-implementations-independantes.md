@@ -14,3 +14,15 @@ Un écart entre langages ne se voit qu'à l'exécution du test de contrat. Celui
 ## Amendement du 2026-10-10 : oracle généré
 
 Le téléchargement du b-file OEIS a été bloqué par les permissions de la session. L'oracle est donc généré par la formule de Binet (`contracts/generer_oracle.py`), une méthode qui ne partage rien avec les trois algorithmes testés. L'indépendance tient à la vérification : ORA-04 et ORA-05 contrôlent la table par la définition seule, et toute table qui les passe est nécessairement la suite de Fibonacci. La table coïncide avec la page OEIS pour F(2000).
+
+## Amendement du 2026-10-13 : la boucle différentielle
+
+Chercher un écart entre les quatre implémentations demande un outil qui les lance sur les mêmes entrées et regroupe celles dont les sorties diffèrent, sans aucun attendu. Il a été refait hors du dépôt à trois reprises (l'audit du 2026-10-11, l'épreuve des cas, l'étape 9), et il a trouvé seul l'écart du stderr fermé de Python (CLI-V04). Il est versionné : `contracts/differentiel.ts`, `npm run differentiel`. C'est un outil de recherche, non un oracle : en tirer un attendu reviendrait à prendre le vrai dans les sorties des implémentations elles-mêmes, comme le golden de FibCalc que cet ADR écarte. Cinq conditions le tiennent à sa place :
+
+- **Hors du contrat.** Aucun script `check*` ni `contract` ne la lance, et le test de contrat ne l'importe pas, même par un module qu'il importe. `HAR-6` le garde (`docs/cas-de-test.md` § 6).
+- **Aucune référence, aucune majorité.** Elle regroupe les implémentations par sortie identique, dans l'ordre du PRD § 5, et ne dit pas laquelle a raison. Un groupe de trois ne vaut pas plus qu'un groupe d'une.
+- **Une seule révision à la fois.** Elle compare les implémentations d'une même révision (`--revision REF` les prend toutes à `REF`), jamais deux révisions d'une même implémentation : c'est l'A/B du banc (ADR-0004), qui ne compare que des temps.
+- **Ni oracle ni attendu.** Elle ne lit pas `contracts/b000045.txt`, et n'écrit qu'un aperçu des sorties : le début de chacune (24 octets de stdout, 100 de stderr), que la boucle ne relit ni ne compare.
+- **Un écart se tranche ailleurs.** Par le PRD § 4, puis par un cas du catalogue : le cas entre dans le contrat, la boucle n'y entre jamais.
+
+Un témoin, joué avant chaque recherche et hors du contrat, éprouve sa projection et son regroupement sur des sorties factices.

@@ -1,6 +1,6 @@
 # PRD — Fib : calculateur Fibonacci académique en quatre langages
 
-Version 1.12 · 2026-10-13 · André-Guy Bruneau. Révisée par `/grill-with-docs`, par un audit, par le catalogue de cas de test, par l'implémentation des tickets #2 à #5, par l'audit et la refactorisation du 2026-10-11, par l'optimisation des performances (ADR-0004), par la borne d'un terme à 1 000 000 et le bilan des résultats, puis par l'étape 9 (`diagnosing-bugs`, #16), par les cas hors contrat (#18), par l'étape 10 (#20) et par l'étape 11 (`/handoff`) : le vocabulaire est dans `CONTEXT.md`, les décisions durables dans `docs/adr/`.
+Version 1.13 · 2026-10-13 · André-Guy Bruneau. Révisée par `/grill-with-docs`, par un audit, par le catalogue de cas de test, par l'implémentation des tickets #2 à #5, par l'audit et la refactorisation du 2026-10-11, par l'optimisation des performances (ADR-0004), par la borne d'un terme à 1 000 000 et le bilan des résultats, puis par l'étape 9 (`diagnosing-bugs`, #16), par les cas hors contrat (#18), par l'étape 10 (#20), par l'étape 11 (`/handoff`) et par les gardes du code 3 et de l'algorithme exécuté en Go, Rust et Python (#36) : le vocabulaire est dans `CONTEXT.md`, les décisions durables dans `docs/adr/`.
 
 ## 1. Contexte et objectifs
 
@@ -138,8 +138,9 @@ Fib/
 │   ├── generer_oracle.py  génère l'oracle par la formule de Binet
 │   ├── README.md        provenance de l'oracle
 │   ├── oracle.ts        lecture et vérification de l'oracle (ORA), en TypeScript
-│   ├── lancement.ts     commandes de build et de lancement des CLI (§ 5), partagées par le contrat et le banc
-│   ├── bench.ts         banc d'essai des temps de réponse (`npm run bench`)
+│   ├── lancement.ts     commandes de build et de lancement des CLI (§ 5) et extraction d'une révision, partagées par le contrat, le banc et la boucle
+│   ├── bench.ts         banc d'essai des temps de réponse, et son A/B apparié (`npm run bench`)
+│   ├── differentiel.ts  boucle différentielle, outil de recherche hors du contrat (`npm run differentiel`)
 │   └── cli.test.ts      test de contrat, et contrôles du harnais (HAR)
 ├── go/  rust/  ts/  python/
 ├── package.json         "type": "module", point d'entrée unique (avec package-lock.json)
@@ -147,16 +148,17 @@ Fib/
 └── tsconfig.build.json  compile ts/src en JavaScript dans .build/ts (ADR-0004)
 ```
 
-Les quatre implémentations sont indépendantes (ADR-0001) : la seule frontière est la CLI, et la seule source de vérité partagée est `contracts/`.
+Les quatre implémentations sont indépendantes (ADR-0001) : la seule frontière est la CLI, et la seule source de vérité partagée est `contracts/`. Le banc d'essai et la boucle différentielle y vivent aussi, sans en être des sources : le banc mesure des temps, et la boucle compare des sorties entre elles, sans attendu ni référence (amendement de l'ADR-0001, gardé par HAR-6).
 
 | Script de `package.json` | Rôle |
 |---|---|
 | `check:go`, `check:rust`, `check:ts`, `check:py` | analyse statique, tests du langage, puis test de contrat pour ce seul langage |
 | `contract` | test de contrat pour les implémentations présentes |
-| `bench` | banc d'essai : médianes du temps total et du temps de calcul, par langage et par scénario, après le même build que le contrat et par le même lancement (`--runs N`, 11 par défaut; ADR-0004) |
+| `bench` | banc d'essai : médianes du temps total et du temps de calcul, par langage et par scénario, après le même build que le contrat et par le même lancement (`--runs N`, 11 par défaut; ADR-0004). `--contre REF` : A/B apparié de la révision REF, extraite sous `.build/revisions/<sha>`, contre l'arbre de travail, en temps total (médiane des différences par paire; `--runs` vaut alors 100 par défaut, et un nombre impair y est arrondi au pair supérieur, que le banc écrit sur stderr : l'ordre alterne, et seul un nombre pair de paires le répartit à égalité, ADR-0004), pour un travail de démarrage. `--nettoyer` vide `.build/revisions/` |
+| `differentiel` | boucle différentielle, un outil de recherche : lance les implémentations présentes sur les mêmes entrées (grammaire, valeurs, environnement, descripteurs) et regroupe celles dont les sorties diffèrent, sans référence ni attendu. Code 1 s'il y a un écart. `--dimension`, `--jetons K`, `--revision REF` (les implémentations de REF entre elles, extraites sous `.build/revisions/<sha>` comme celles de l'A/B). Hors de `check` et de `contract` (ADR-0001, HAR-6) |
 | `check` | les quatre `check:*` |
 
-`node contracts/cli.test.ts [id…]` vérifie les implémentations nommées par leur identifiant. Un identifiant dont le dossier manque fait échouer le test. Sans argument, le test vérifie les implémentations dont le dossier existe; s'il n'y en a aucune, il ne vérifie que l'oracle. Pour Go, Rust et TypeScript, il compile d'abord (§ 5). Chaque lancement d'une CLI, par le test de contrat comme par le banc d'essai, a un délai de 300 s.
+`node contracts/cli.test.ts [id…]` vérifie les implémentations nommées par leur identifiant. Un identifiant dont le dossier manque fait échouer le test. Sans argument, le test vérifie les implémentations dont le dossier existe; s'il n'y en a aucune, il ne vérifie que l'oracle. Pour Go, Rust et TypeScript, il compile d'abord (§ 5). Chaque lancement d'une CLI, par le test de contrat comme par le banc d'essai et la boucle différentielle, a un délai de 300 s.
 
 ## 7. Tests et critères d'acceptation
 
@@ -180,7 +182,7 @@ Les tests de garde `PERF-<ID>-<n>` (ADR-0004) peuvent viser une fonction privée
 - BIB-01 à BIB-14 : la bibliothèque, dans chaque langage (seam 1); BIB-14 est sans objet en Rust.
 - les cas CLI : le contrat de la CLI, joué sur chaque implémentation (seam 2). Des assertions communes s'appliquent à chaque cas : code de sortie, stdout octet pour octet, stderr, format ASCII.
 
-Le chemin de la discordance (code 3) dans la CLI n'a pas de cas de test, puisque aucun cas ne peut la provoquer. BIB-08 vérifie que les algorithmes concordent. En TypeScript, PERF-TS-7 éprouve ce chemin par l'interface dans le processus (`run(args, io)`, avec un `fib` discordant); il reste sans test automatique en Go, Rust et Python.
+Le chemin de la discordance (code 3) dans la CLI n'a pas de cas de test, puisque aucun cas ne peut la provoquer. BIB-08 vérifie que les algorithmes concordent. En TypeScript, PERF-TS-7 éprouve ce chemin par l'interface dans le processus (`run(args, io)`, avec un `fib` discordant); PERF-GO-9 et PERF-RS-11 l'éprouvent de même par `run`, avec un calcul discordant passé en paramètre; PERF-PY-26 par `main`, avec un algorithme discordant substitué dans la table `_ALGOS`.
 
 **Acceptation globale**
 
@@ -195,7 +197,7 @@ FFT, GMP, Strassen, parallélisme, TUI, mode serveur, calibration et seuils rég
 
 ## 9. Démarche d'exploration des skills
 
-L'orchestrateur est la session principale (Opus 5.5 en `ultracode`); le code revient au sous-agent `fib-dev` (Sonnet 5.5). Voir `CLAUDE.md`. Les étapes 0, 1 et 4 à 11 sont faites : les quatre implémentations passent `npm run check`. L'étape 8 a pris la forme d'un audit, puis de quatre chantiers suivis chacun de `/code-review` : la refactorisation, l'optimisation des performances (ADR-0004) et la borne d'un terme à 1 000 000 (2026-10-11), puis les suites de l'épreuve des cas de test (tickets #6 à #14, 2026-10-12). L'étape 9 a corrigé l'écart du stderr fermé en Python (#16, 2026-10-12). L'étape 10 a rendu la CLI TypeScript appelable dans le processus (#20, 2026-10-13). Les étapes 2 et 3 n'ont pas servi. L'étape 11 a produit un document de reprise, hors dépôt comme la skill l'exige (2026-10-13). Le bilan par skill, dont `/implement` remplacée par `fib-dev`, est dans `docs/exploration.md`.
+L'orchestrateur est la session principale (Opus 5.5 en `ultracode`); le code revient au sous-agent `fib-dev` (Sonnet 5.5). Voir `CLAUDE.md`. Les étapes 0, 1 et 4 à 11 sont faites : les quatre implémentations passent `npm run check`. L'étape 8 a pris la forme d'un audit, puis de quatre chantiers suivis chacun de `/code-review` : la refactorisation, l'optimisation des performances (ADR-0004) et la borne d'un terme à 1 000 000 (2026-10-11), puis les suites de l'épreuve des cas de test (tickets #6 à #14, 2026-10-12). L'étape 9 a corrigé l'écart du stderr fermé en Python (#16, 2026-10-12), que sa boucle différentielle avait trouvé : `npm run differentiel` la rejoue depuis, comme outil de recherche (ADR-0001). L'étape 10 a rendu la CLI TypeScript appelable dans le processus (#20, 2026-10-13). Les étapes 2 et 3 n'ont pas servi. L'étape 11 a produit un document de reprise, hors dépôt comme la skill l'exige (2026-10-13). Le bilan par skill, dont `/implement` remplacée par `fib-dev`, est dans `docs/exploration.md`.
 
 | # | Étape | Skill | Livrable |
 |---|---|---|---|
@@ -208,7 +210,7 @@ L'orchestrateur est la session principale (Opus 5.5 en `ultracode`); le code rev
 | 6 | Implémenter | `/implement`, qui applique `tdd` | une branche de worktree par ticket |
 | 7 | Intégrer | `resolving-merge-conflicts` (au besoin) | `main` vert |
 | 8 | Réviser | `/code-review` | rapports Standards et Spec |
-| 9 | Corriger un écart entre langages | `diagnosing-bugs` | test de non-régression |
+| 9 | Corriger un écart entre langages | `diagnosing-bugs` | test de non-régression; `npm run differentiel` pour chercher l'écart |
 | 10 | Revoir l'architecture | `/improve-codebase-architecture`, `codebase-design` | rapport |
 | 11 | Passer le relais entre sessions | `/handoff` | document de reprise |
 
@@ -230,7 +232,8 @@ Chaque entrée de `docs/exploration.md` donne : la skill, l'étape ou le ticket,
 | `go run` remplace le code de sortie et pollue stderr | binaire compilé par `go build` (§ 5) |
 | Le worktree d'un `fib-dev` part de `origin/main` et ignore le travail fusionné localement | `worktree.baseRef: "head"` dans `.claude/settings.json` |
 | Coût en jetons d'`ultracode` | `/effort ultracode off` pour les petites tâches |
-| Une optimisation casse un cas limite que les seams ne visent pas : retenue de l'additionneur décimal, dernière étape de `matrix` et de `fast`, chemin `Decimal` de Python | balayages de 0 à 2000 (BIB-05 à BIB-07, BIB-12), tests de garde `PERF-<ID>-<n>`, test différentiel entre les quatre CLI, sondes de `/code-review` jusqu'à F(1 000 000) |
+| Une optimisation casse un cas limite que les seams ne visent pas : retenue de l'additionneur décimal, dernière étape de `matrix` et de `fast`, chemin `Decimal` de Python | balayages de 0 à 2000 (BIB-05 à BIB-07, BIB-12), tests de garde `PERF-<ID>-<n>`, test différentiel entre les quatre CLI (`npm run differentiel`), sondes de `/code-review` jusqu'à F(1 000 000) |
 | Le contrat ou le banc d'essai lance un binaire ou un `.js` périmé | les deux compilent Go, Rust et TypeScript avant de lancer (§ 6), par le même module, `contracts/lancement.ts` |
 | Seuils de Python (`DECIMAL_FROM`, `STR_FROM_BITS`) mesurés sur Python 3.14 seulement, alors que le minimum est 3.12 | ils ne changent que la vitesse : chaque chemin écrit le même terme exact, gardé par les tests de garde Python et CLI-T13; à remesurer par `npm run bench` sous 3.12 et 3.13 |
-| Mesures bruitées : des agents qui mesurent en même temps se gênent | médianes; mesures en série, jamais en parallèle; une seule mesure après la fusion fait foi |
+| Mesures bruitées : des agents qui mesurent en même temps se gênent, et les médianes séparées ne tranchent pas un gain de quelques pour cent (démarrage) | médianes; mesures en série, jamais en parallèle; une seule mesure après la fusion fait foi; l'A/B apparié (`bench --contre REF`), qui lance les deux côtés dans le même tour et résume par la médiane des différences, pour un travail de démarrage |
+| La boucle différentielle devient un oracle : son verdict, sans attendu, finirait par trancher à la place du PRD, ou par rougir le contrat | hors de `check*` et de `contract`, sans référence ni majorité, sans lecture de l'oracle (amendement de l'ADR-0001); HAR-6 garde son lancement et son import, et son témoin sa projection et son regroupement; un écart se tranche par le PRD § 4, puis par un cas du catalogue |
