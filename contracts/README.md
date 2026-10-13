@@ -3,8 +3,12 @@
 - `b000045.txt` : l'oracle, soit F(0) à F(2000), une ligne `n F(n)` par indice, au format du b-file OEIS A000045.
 - `generer_oracle.py` : génère l'oracle par la formule de Binet (`python contracts/generer_oracle.py`).
 - `oracle.ts` : lecture et vérification de l'oracle (ORA-01 à ORA-06), partagée par les tests.
-- `cli.test.ts` : le test de contrat. `node contracts/cli.test.ts [go|rust|ts|py …]` joue les cas CLI de `docs/cas-de-test.md` sur les implémentations nommées, ou sur celles dont le dossier existe. Il compile d'abord Go, Rust et TypeScript, puis lance les binaires et le JavaScript émis (PRD § 5).
-- `bench.ts` : le banc d'essai (ADR-0004). `node contracts/bench.ts [go|rust|ts|py …] [--runs N]`, ou `npm run bench`, compile comme le test de contrat, puis donne pour sept scénarios la médiane du temps total du processus et de la durée rapportée par `--time` (11 exécutions par défaut).
+- `lancement.ts` : le seul lieu des commandes de build et de lancement des quatre CLI (PRD § 5), que le test de contrat et le banc d'essai appellent tous deux.
+  - `present()` rend les identifiants dont le dossier existe, dans l'ordre du PRD § 5.
+  - `build(id)` compile Go, Rust ou TypeScript, et ne fait rien pour Python; un échec lève une erreur qui porte la sortie du compilateur.
+  - `launch(id, args, { env, stderrClosed })` lance la CLI construite, depuis la racine, et rend `{ code, out, err, ms }` : les deux flux en latin1, `ms` pour le seul `spawnSync`, un délai de 300 s, et une erreur de lancement qui lève. `env` s'ajoute à l'environnement du processus, et une valeur `undefined` retire la variable. Sans `stderrClosed`, la commande part sans `/bin/sh`; avec, `closeStderr` ferme le fd 2 (CLI-V04, POSIX seulement).
+- `cli.test.ts` : le test de contrat. `node contracts/cli.test.ts [go|rust|ts|py …]` joue les cas CLI de `docs/cas-de-test.md` sur les implémentations nommées, ou sur celles dont le dossier existe. Il compile d'abord Go, Rust et TypeScript, puis lance les binaires et le JavaScript émis, par `lancement.ts` (PRD § 5). Son groupe `harnais` porte les contrôles du harnais (HAR-1 à HAR-3, `docs/cas-de-test.md` § 6) et la sonde du fd 2 de CLI-V04 : ils éprouvent le test de contrat lui-même, et HAR-1 à HAR-3 ne lancent aucune implémentation.
+- `bench.ts` : le banc d'essai (ADR-0004). `node contracts/bench.ts [go|rust|ts|py …] [--runs N]`, ou `npm run bench`, compile et lance par `lancement.ts`, comme le test de contrat, puis donne pour sept scénarios la médiane du temps total du processus et de la durée rapportée par `--time` (11 exécutions par défaut). Sans argument, il mesure les implémentations présentes. `measure(id, args)` fait une exécution avec `--time`; le test de contrat l'importe (HAR-1).
 
 ## Provenance de l'oracle
 
