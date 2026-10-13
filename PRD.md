@@ -159,7 +159,7 @@ Les quatre implémentations sont indépendantes (ADR-0001) : la seule frontière
 | `differentiel` | boucle différentielle, un outil de recherche : lance les implémentations présentes sur les mêmes entrées (grammaire, valeurs, environnement, descripteurs) et regroupe celles dont les sorties diffèrent, sans référence ni attendu. Code 1 s'il y a un écart. `--dimension`, `--jetons K`, `--revision REF` (les implémentations de REF entre elles, extraites sous `.build/revisions/<sha>` comme celles de l'A/B). Hors de `check` et de `contract` (ADR-0001, HAR-6) |
 | `check` | les quatre `check:*` |
 
-`node contracts/cli.test.ts [id…]` vérifie les implémentations nommées par leur identifiant. Un identifiant dont le dossier manque fait échouer le test. Sans argument, le test vérifie les implémentations dont le dossier existe; s'il n'y en a aucune, il ne vérifie que l'oracle. Pour Go, Rust et TypeScript, il compile d'abord (§ 5). Chaque lancement d'une CLI, par le test de contrat comme par le banc d'essai et la boucle différentielle, a un délai de 300 s.
+`node contracts/cli.test.ts [id…]` vérifie les implémentations nommées par leur identifiant. Un identifiant dont le dossier manque fait échouer le test. Il joue toujours l'oracle (ORA-01 à ORA-06) et le groupe `harnais`, qui suppose les quatre dossiers (sans eux, HAR-5 et HAR-6 rougissent), puis les implémentations demandées. Sans argument, il vérifie les implémentations dont le dossier existe. Pour Go, Rust et TypeScript, il compile d'abord (§ 5). Chaque lancement d'une CLI, par le test de contrat comme par le banc d'essai et la boucle différentielle, a un délai de 300 s.
 
 ## 7. Tests et critères d'acceptation
 
@@ -194,7 +194,7 @@ Le chemin de la discordance (code 3) dans la CLI n'a pas de cas de test, puisque
 
 ## 8. Hors périmètre
 
-FFT, GMP, Strassen, parallélisme, TUI, mode serveur, calibration et seuils réglables (ceux de Python, ADR-0004, sont fixes), limites de mémoire, de GC et de temps, `-last-digits`, `-output`, variables d'environnement, profilage, complétion de shell, Docker, négafibonacci (n < 0), Mojo, ponts entre langages (FFI, WASM). La CI GitHub Actions est candidate pour une phase 2; elle vérifierait aussi le piège `process.exit()` sous Linux.
+FFT, GMP, Strassen, parallélisme, TUI, mode serveur, calibration et seuils réglables (ceux de Python, ADR-0004, sont fixes), limites de mémoire, de GC et de temps, `-last-digits`, `-output`, variables d'environnement, profilage, complétion de shell, Docker, négafibonacci (n < 0), Mojo, ponts entre langages (FFI, WASM). La CI GitHub Actions est candidate pour une phase 2.
 
 ## 9. Démarche d'exploration des skills
 
@@ -227,7 +227,7 @@ Chaque entrée de `docs/exploration.md` donne : la skill, l'étape ou le ticket,
 | Conversions trop permissives de `N` | validation de `^[0-9]+$` avant conversion (§ 5); cas `+5`, `1_000`, `0x10`, `٣`, `""` |
 | Limite de conversion entier → texte de Python | `set_int_max_str_digits(0)`, gardé par CLI-T14 et PERF-PY-14 : les cas `100000` et `1000000` passent désormais par les tranches et par `Decimal` |
 | Débordement à l'analyse de `N` | cas `99999999999999999999` |
-| Sortie tronquée par `process.exit()` (Node, POSIX) | `process.exitCode`; à vérifier en CI Linux |
+| Sortie tronquée par `process.exit()` (Node, POSIX) | `process.exitCode`; vérifié sous Linux le 2026-10-13 : `process.exit()` y tronque la sortie dans un tube, et le contrat le voit (CLI-L05, L06 et L16 rougissent) |
 | Rust ne lie pas sous Windows sans le composant C++ MSVC | override rustup GNU locale au dossier |
 | Termes attendus recopiés dans chaque test, qui finissent par différer | un seul oracle, vérifié par le test lui-même et lu par tous les tests |
 | `go run` remplace le code de sortie et pollue stderr | binaire compilé par `go build` (§ 5) |

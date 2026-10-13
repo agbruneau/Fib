@@ -215,7 +215,7 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
   
   Écarté : un stderr ouvert mais qui refuse l'écriture, qui relève des comportements à arbitrer ci-dessous.
 - **A aidé** :
-  - La boucle différentielle a trouvé un vrai écart là où 121 vecteurs et 402 cas verts n'en voyaient aucun. Elle a pris la dimension que personne n'avait jouée : l'état des descripteurs au lancement.
+  - La boucle différentielle a trouvé un vrai écart là où 121 vecteurs et 398 cas verts n'en voyaient aucun. Elle a pris la dimension que personne n'avait jouée : l'état des descripteurs au lancement.
   - Le vérificateur sceptique a ramené 15 candidats à 4 bugs et 10 lacunes, chacun avec sa commande minimale.
   - La phase 4 a évité un correctif à moitié : le seul garde de `reconfigure` aurait laissé `--time` et les erreurs d'usage en code 1.
 - **Friction** :
@@ -410,7 +410,7 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
       - HAR-6 ne voyait ni les tests lancés par un glob, ni `node --run`, ni `npm test`, ni une URL relative sans `./` ;
       - la boucle sortait en 0 sans rien chercher sous Windows ;
       - la parité des paires n'était imposée que dans `main`.
-    - Son vérificateur a aligné le marqueur de la boucle sur X-4 (`[^\x20-\x7e]`). 136 mutants ont été joués, puis 53 sur la projection.
+    - Son vérificateur a aligné le marqueur de la boucle sur X-4 (`[^\x20-\x7e]`). 136 mutants ont été joués, et le catalogue compte désormais 53 mutants qui rougissent le témoin de la boucle (46 avant), sept de plus sur la projection.
     - Le lancement parallèle des quatre CLI dans la boucle a été écarté : c'est un outil de recherche, et ses 62 s par défaut ne sont pas un enjeu.
 - **A aidé** :
   - Le critique adverse par piste a évité deux refactorisations sans gain, D et E, sur preuve par mutants et par instructions, non par opinion.
@@ -437,9 +437,9 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
 | `/grill-with-docs` (`grilling`, `domain-modeling`) | utilisée : glossaire, ADR-0001 et ADR-0002, PRD éprouvé |
 | `/to-spec` | utilisée : spec #1 |
 | `/to-tickets` | utilisée : tickets #2 à #5, avec dépendances natives |
-| `tdd` | utilisée : catalogue de cas, puis cycles des quatre `fib-dev`; absente de la session infonuagique du 2026-10-12, où les `fib-dev` ont suivi son cycle à la main |
+| `tdd` | utilisée : catalogue de cas, puis cycles des quatre `fib-dev`; absente de la session infonuagique des 2026-10-12 et 2026-10-13 (`Unknown skill: tdd`), où les `fib-dev` ont suivi son cycle à la main |
 | `/implement` | remplacée par l'agent `fib-dev`, qui applique `tdd` directement |
-| `resolving-merge-conflicts` | introuvable dans la session infonuagique : les conflits des vagues parallèles du 2026-10-13 (huit, dans six fichiers) ont été résolus à la main, par l'orchestrateur pour la documentation et par un `fib-dev` pour le code |
+| `resolving-merge-conflicts` | introuvable dans la session infonuagique : les conflits des vagues parallèles du 2026-10-13 (huit, dans six fichiers) ont été résolus à la main : par un `fib-dev` pour la fusion de #29 (cinq fichiers, code et documentation), par l'orchestrateur pour les trois autres (`docs/cas-de-test.md` deux fois, `CONTEXT.md`) |
 | `research`, `prototype` | non utilisées; un `prototype` aurait détecté plus tôt le piège de `go run` |
 | `/code-review` | utilisée trois fois le 2026-10-11, axes Standards et Spec : après la refactorisation, après l'optimisation, après la borne à 1 000 000; puis le 2026-10-12, sur les tickets #6 à #14 et sur #16; puis le 2026-10-13, sur #20, #21 et #25, puis quatre fois sur les pistes A, C, D et E (#27 à #36), une par vague et une dernière sur la fusion de #29, soit sept passes ce jour-là |
 | `diagnosing-bugs` | utilisée à l'étape 9 (#16), lue dans `mattpocock/skills` faute de plugin; précédée d'une boucle différentielle pour trouver l'écart |
@@ -454,5 +454,5 @@ Six leçons :
 2. **Les sondes par sous-agents valent le coût quand elles exécutent**, plus que quand elles lisent de la doc. Le piège de `go run`, la toolchain MSVC et les fins de ligne CRLF ne sont apparus qu'à l'exécution.
 3. **Les données externes sont un prérequis à traiter avant les agents.** L'oracle bloqué a immobilisé les quatre tickets.
 4. **Mesurer avant d'optimiser.** Le banc d'essai a montré que le temps partait au démarrage et dans la conversion décimale, pas dans `fast`, qui calculait F(100 000) en moins d'une milliseconde. À 1 000 000, il a aussi dit où ne rien changer : Go, Rust et TypeScript convertissaient déjà en temps sous-quadratique.
-5. **La revue trouve ce que les agents laissent passer.** À chacun de ses trois passages, `/code-review` a trouvé un défaut que les `fib-dev` n'avaient pas vu : le lecteur d'oracle Rust qui n'ignorait plus les lignes vides (PRD § 7), `matrix` en TypeScript qui refaisait l'ancien `fast`, le chemin `Decimal` de Python qui contournait la seam.
+5. **La revue trouve ce que les agents laissent passer.** À chacun de ses trois passages du 2026-10-11, `/code-review` a trouvé un défaut que les `fib-dev` n'avaient pas vu : le lecteur d'oracle Rust qui n'ignorait plus les lignes vides (PRD § 7), `matrix` en TypeScript qui refaisait l'ancien `fast`, le chemin `Decimal` de Python qui contournait la seam.
 6. **Un critique adverse qui exécute vaut mieux qu'un rapport qui raisonne.** Il a réfuté, par mutants et par instructions, quatre affirmations du rapport de l'étape 10 et deux refactorisations sans gain (D et E). À la livraison, un vérificateur par ticket a trouvé, avant la revue, des survivants réels : un module paresseux, un int converti en Decimal, une trace d'exception perdue.

@@ -57,7 +57,7 @@ _Avoid_ : divergence, bug
 ## Vérification
 
 **Oracle** :
-La table de référence des termes F(0) à F(2000), produite hors de toute implémentation et vérifiée par la définition de la suite. Elle coïncide avec la séquence OEIS A000045.
+La table de référence des termes F(0) à F(2000), produite hors de toute implémentation et vérifiée par la définition de la suite. Elle coïncide avec la suite A000045 de l'OEIS.
 _Avoid_ : golden, fixture, valeurs attendues
 
 **Contrat** :
@@ -73,7 +73,7 @@ Un test propre à une implémentation, hors du catalogue de cas, qui protège ce
 _Avoid_ : test de performance
 
 **Contrôle du harnais** :
-Un test du harnais lui-même, qui ne lance aucune implémentation et rougit quand le harnais ferait passer un cas à vide ou fausserait une mesure. Le harnais est le code qui compile et lance les quatre CLI, pour le contrat comme pour le banc d'essai.
+Un test du harnais lui-même, qui ne lance aucune implémentation et rougit quand le harnais ferait passer un cas à vide ou fausserait une mesure. Le harnais est le code qui compile et lance les quatre CLI, pour le contrat, le banc d'essai et la boucle différentielle.
 _Avoid_ : test de garde, test du runner
 
 **Banc d'essai** :

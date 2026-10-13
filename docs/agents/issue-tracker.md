@@ -31,6 +31,8 @@ GitHub n'a que deux états, Open et Closed. Deux étiquettes précisent l'état 
 - **In Progress** (`in-progress`) : `gh issue edit <numéro> --remove-label waiting --add-label in-progress`, au lancement du travail (agent ou humain), avant toute écriture.
 - **Closed** : `gh issue edit <numéro> --remove-label in-progress --remove-label waiting`, puis `gh issue close <numéro> --comment "..."`.
 
+L'étiquette `in-review` existe sur GitHub, mais aucun ticket ne la porte : la boucle de `CLAUDE.md` passe directement de `in-progress` à la fermeture.
+
 Un ticket `in-progress` sort de la frontière : personne d'autre ne le prend. Un travail qui s'arrête sans pouvoir fermer son ticket le repasse à `waiting`, avec un commentaire qui dit ce qu'il attend.
 
 ## Pull requests as a triage surface

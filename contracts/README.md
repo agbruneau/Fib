@@ -42,4 +42,4 @@ Le PRD prévoyait une copie du b-file « The first 2000 Fibonacci numbers » de 
 - **Contrôle croisé** : F(2000) coïncide avec la page OEIS A000045 (418 chiffres, début `4224696333`, fin `2516817125`).
 - **Format** : 2 001 lignes, 429 382 octets, ASCII, fins de ligne LF.
 
-Les valeurs d'une suite mathématique ne sont pas une œuvre protégée : aucune attribution n'est requise. La séquence [A000045 de l'OEIS](https://oeis.org/A000045) reste la référence publique.
+Les valeurs d'une suite mathématique ne sont pas une œuvre protégée : aucune attribution n'est requise. La suite [A000045 de l'OEIS](https://oeis.org/A000045) reste la référence publique.
