@@ -62,6 +62,8 @@ function witness(): void {
   assert.notEqual(p(2, '', 'fib: a\n'), p(1, '', 'fib: a\n'), 'le code compte');
   assert.notEqual(p(0, 'x', ''), p(0, '', 'x'), 'stdout et stderr restent distincts');
   assert.notEqual(p(2, '', 'fib: a\n'), p(2, '', 'fib: a\nfib: b\n'), 'stderr se compare ligne à ligne : une seule ligne fib: (F9)');
+  assert.notEqual(p(2, '', 'fib: a\n'), p(2, '', 'fib: a'), 'stderr aussi garde la fin de ligne (F10)');
+  assert.notEqual(p(2, '', 'fib: a\n'), p(2, '', 'fib: a\n\n'), 'stderr : une ligne vide de trop');
   assert.notEqual(p(0, '55\n', 'trace x\n'), p(0, '55\n', 'trace y\n'), 'hors fib: et durées, une ligne se compare au texte');
 
   const odd = new Map([['go', 'x'], ['rust', 'y'], ['ts', 'y'], ['py', 'y']]);

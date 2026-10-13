@@ -3,7 +3,7 @@
 import { before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import cp, { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
@@ -395,7 +395,8 @@ describe('harnais', () => {
   // que l'ADR-0001 écarte. Aucun script `check*` ni `contract` ne l'atteint, en suivant de proche en proche les `npm run <script>`
   // (avec les crochets `pre` et `post` que npm joue) puis les modules que ces commandes lancent, et le test de contrat ne l'importe
   // pas, même par un module qu'il importe. Le prototype d'A-2 laissait passer un `contract` qui lançait `npm run recherche`, un script
-  // qui lançait la boucle : 117 sur 117. Le contrôle ne lance rien : il lit package.json et les sources.
+  // qui lançait la boucle : 117 sur 117. Le contrôle ne lance rien : il lit package.json et les sources, et ses témoins des imports
+  // n'écrivent que des fichiers d'essai sous tmpdir(), qu'ils retirent.
   const LOOP = /differentiel/;
   // Une commande lance un script par `npm run <script>`, `npm run-script <script>` ou leurs alias `rum` et `urn`, avec des options
   // avant ou après, et le nom entre guillemets ou non.
@@ -413,15 +414,17 @@ describe('harnais', () => {
     roots.forEach(visit);
     return [...seen].map((name) => scripts[name]);
   };
-  // Les modules que `entry` importe, de proche en proche, lui compris. Seuls comptent les imports relatifs, les seuls qui mènent à un fichier du dépôt.
-  const IMPORT = /(?:from|import)\s*\(?\s*['"](\.{1,2}\/[^'"]+)['"]/g;
+  // Les modules que `entry` importe, de proche en proche, lui compris. Seuls comptent les chemins relatifs, les seuls qui mènent à un fichier
+  // du dépôt : ceux de `from`, de `import` (nu ou `import()`) et de `new URL` (comme HAR-4 vise le banc), entre ', " ou accents graves.
+  const IMPORT = /(?:from|import|new URL)\s*\(?\s*['"`](\.{1,2}\/[^'"`]+)['"`]/g;
+  const isFile = (f: string) => existsSync(f) && statSync(f).isFile();
   const importClosure = (entry: string): string[] => {
     const seen = new Set<string>();
     const pending = [entry];
     for (let file = pending.pop(); file !== undefined; file = pending.pop()) {
       if (seen.has(file)) continue;
       seen.add(file);
-      if (existsSync(file)) for (const [, rel] of readFileSync(file, 'utf8').matchAll(IMPORT)) pending.push(join(dirname(file), rel));
+      if (isFile(file)) for (const [, rel] of readFileSync(file, 'utf8').matchAll(IMPORT)) pending.push(join(dirname(file), rel));
     }
     return [...seen];
   };
@@ -432,6 +435,38 @@ describe('harnais', () => {
     assert.ok(commandsReached(exemple, ['contract']).some((c) => LOOP.test(c)), 'témoin : le parcours ne suit pas npm run de proche en proche');
     assert.ok(commandsReached({ ...exemple, b: 'echo', precontract: exemple.c }, ['contract']).some((c) => LOOP.test(c)), 'témoin : le parcours oublie le crochet pre');
     assert.ok(!commandsReached(exemple, ['d']).some((c) => LOOP.test(c)), 'témoin : le parcours atteint un script qu’aucun npm run ne lance');
+
+    // Témoins du parcours des imports, sur des fichiers écrits sous tmpdir() : la fermeture est transitive (a → b → c : un seul niveau
+    // laissait passer `bench.ts` qui importe la boucle), et chaque forme d'un chemin relatif y est vue (une forme ignorée laissait passer
+    // la boucle lancée par un `new URL(…, import.meta.url)` donné à `spawnSync`, comme HAR-4 lance le banc, ou importée par un `import()`
+    // entre accents graves). Un chemin qui nomme un dossier (le `new URL('../..', …)` de ts/src/cli.test.ts) ne se lit pas, et un import nu
+    // (`node:fs`) ne se suit pas. Les sources de ces témoins sont des chaînes : le motif les lit aussi ici, sans mener à un fichier de la boucle.
+    const dossier = mkdtempSync(join(tmpdir(), 'fib-har6-'));
+    try {
+      const ecrire = (nom: string, source = 'export {};\n') => writeFileSync(join(dossier, nom), source);
+      const fermeture = (nom: string) => importClosure(join(dossier, nom)).map((f) => relative(dossier, f)).sort();
+      ecrire('a.ts', "import { b } from './b.ts';\n");
+      ecrire('b.ts', 'import "./c.ts";\n');
+      ecrire('c.ts');
+      assert.deepEqual(fermeture('a.ts'), ['a.ts', 'b.ts', 'c.ts'], 'témoin : la fermeture des imports n’est pas transitive');
+      ecrire('t.ts');
+      const formes: Record<string, string> = {
+        from: "import { t } from './t.ts';",
+        'import nu': 'import "./t.ts";',
+        'import()': "export const t = () => import('./t.ts');",
+        'import() entre accents graves': 'export const t = () => import(`./t.ts`);',
+        'new URL': "export const t = new URL('./t.ts', import.meta.url);",
+      };
+      for (const [forme, source] of Object.entries(formes)) {
+        ecrire('f.ts', `${source}\n`);
+        assert.deepEqual(fermeture('f.ts'), ['f.ts', 't.ts'], `témoin : le parcours des imports ignore la forme « ${forme} »`);
+      }
+      mkdirSync(join(dossier, 'd'));
+      ecrire('f.ts', "import { x } from 'node:fs';\nexport const d = new URL('./d', import.meta.url);\n");
+      assert.deepEqual(fermeture('f.ts'), ['d', 'f.ts'], 'témoin : un import nu se suit, ou un chemin qui nomme un dossier se lit');
+    } finally {
+      rmSync(dossier, { recursive: true, force: true });
+    }
 
     const { scripts } = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { scripts: Record<string, string> };
     const roots = Object.keys(scripts).filter((name) => name === 'contract' || name.startsWith('check'));
