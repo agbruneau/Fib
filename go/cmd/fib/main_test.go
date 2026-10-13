@@ -15,21 +15,22 @@ import (
 	"fib"
 )
 
-// writeCounter n'implémente que Write : il compte les appels et les octets reçus, ce qu'un appel système coûterait.
-type writeCounter struct{ calls, bytes int }
+// writeCounter, le puits d'écriture de PERF-GO-6, 9 et 10, n'implémente que Write : il garde le texte de chaque appel,
+// dans l'ordre. len(chunks) est le nombre d'appels, ce qu'un appel système coûterait; size, le total des octets reçus.
+type writeCounter struct{ chunks []string }
 
 func (w *writeCounter) Write(p []byte) (int, error) {
-	w.calls++
-	w.bytes += len(p)
+	// string(p) copie : l'appelant, bufio.Writer en tête, réutilise p dès le retour.
+	w.chunks = append(w.chunks, string(p))
 	return len(p), nil
 }
 
-// recordWriter n'implémente que Write : il garde le contenu de chaque appel, dans l'ordre.
-type recordWriter struct{ calls []string }
-
-func (w *recordWriter) Write(p []byte) (int, error) {
-	w.calls = append(w.calls, string(p))
-	return len(p), nil
+func (w *writeCounter) size() int {
+	n := 0
+	for _, chunk := range w.chunks {
+		n += len(chunk)
+	}
+	return n
 }
 
 // minBlock : la moitié du tampon de 64 Kio de run, soit un facteur 2 de marge sur ses appels à Write.
@@ -41,13 +42,14 @@ func TestPERFGO6_ListeEcriteParBlocs(t *testing.T) {
 	if code := run([]string{"--list", "10000"}, &w, io.Discard, fib.Fib); code != 0 {
 		t.Fatalf("run --list 10000 rend le code %d, attendu 0", code)
 	}
-	if w.bytes == 0 {
+	size := w.size()
+	if size == 0 {
 		t.Fatal("run --list 10000 n'écrit aucun octet sur stdout")
 	}
-	maxCalls := (w.bytes + minBlock - 1) / minBlock
+	maxCalls := (size + minBlock - 1) / minBlock
 	t.Run(fmt.Sprintf("PERF-GO-6 : --list 10000 écrit sur stdout par blocs d'au moins %d octets", minBlock), func(t *testing.T) {
-		if w.calls > maxCalls {
-			t.Errorf("--list 10000 fait %d appels à Write pour %d octets, attendu %d au plus", w.calls, w.bytes, maxCalls)
+		if calls := len(w.chunks); calls > maxCalls {
+			t.Errorf("--list 10000 fait %d appels à Write pour %d octets, attendu %d au plus", calls, size, maxCalls)
 		}
 	})
 }
@@ -125,17 +127,17 @@ func TestPERFGO9_UneDiscordanceRend3SansStdoutNiDuree(t *testing.T) {
 				}
 				return new(big.Int).Add(v, big.NewInt(1)), nil
 			}
-			var stdout, stderr recordWriter
+			var stdout, stderr writeCounter
 			if code := run([]string{"--time", "--algo", "all", "10"}, &stdout, &stderr, term); code != 3 {
 				t.Errorf("run --time --algo all 10 rend le code %d, attendu 3", code)
 			}
-			if len(stdout.calls) != 0 {
-				t.Errorf("stdout reçoit %d appels à Write, attendu aucun : %q", len(stdout.calls), stdout.calls)
+			if len(stdout.chunks) != 0 {
+				t.Errorf("stdout reçoit %d appels à Write, attendu aucun : %q", len(stdout.chunks), stdout.chunks)
 			}
-			if len(stderr.calls) != 1 {
-				t.Fatalf("stderr reçoit %d appels à Write, attendu un seul : %q", len(stderr.calls), stderr.calls)
+			if len(stderr.chunks) != 1 {
+				t.Fatalf("stderr reçoit %d appels à Write, attendu un seul : %q", len(stderr.chunks), stderr.chunks)
 			}
-			line := stderr.calls[0]
+			line := stderr.chunks[0]
 			if !strings.HasPrefix(line, "fib: ") {
 				t.Errorf("stderr ne commence pas par « fib: » : %q", line)
 			}
@@ -170,13 +172,13 @@ func TestPERFGO10_LAlgorithmeNommeEstCeluiQuiCalcule(t *testing.T) {
 				called = append(called, algo)
 				return fib.Fib(n, algo)
 			}
-			var stdout, stderr recordWriter
+			var stdout, stderr writeCounter
 			if code := run(args, &stdout, &stderr, term); code != 0 {
 				t.Fatalf("run %s rend le code %d, attendu 0", strings.Join(args, " "), code)
 			}
 			var named []string
-			for _, call := range stderr.calls {
-				for line := range strings.Lines(call) {
+			for _, chunk := range stderr.chunks {
+				for line := range strings.Lines(chunk) {
 					algo, _, _ := strings.Cut(line, " ")
 					named = append(named, algo)
 				}
