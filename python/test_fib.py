@@ -1,7 +1,7 @@
 """Seam 1 : la bibliothèque. Les attendus viennent de l'oracle (contracts/b000045.txt) ou de faits mathématiques.
 Les gardes PERF-PY-n, hors seams (ADR-0004), protègent les optimisations que les cas BIB et CLI ne visent pas
-(PERF-PY-20 et 23 protègent les correctifs F10 et CLI-V04). Chaque test porte son identifiant en tête de sa docstring :
-grep BIB-05 python/."""
+(PERF-PY-20, 23 et 29 protègent les correctifs F10 et CLI-V04). Chaque test porte son identifiant en tête de sa
+docstring : grep BIB-05 python/."""
 import decimal
 import math
 import os
@@ -141,13 +141,21 @@ def spying(noted):
     return wrap
 
 
+# Flux hostiles : l'encodage de PYTHONIOENCODING=utf-16 et la fin de ligne de Windows (\r\n), que CPython ne donne pas
+# sous Linux. Le bloc __main__ doit les ramener à l'ASCII et à \n (F10).
+HOSTILE = "import io, sys\n" + "".join(
+    f"sys.{name} = io.TextIOWrapper(sys.{name}.buffer, 'utf-16', newline='\\r\\n')\n" for name in ("stdout", "stderr")
+)
+
+
 def run_main_block(args, absent=()):
-    """Exécute le bloc __main__ de fib.py dans python -I -S -c, après avoir mis à None les flux de `absent` : l'état où
-    CPython laisse sys.stdout ou sys.stderr quand le fd 1 ou 2 est fermé au lancement ou, sous Windows, quand son
-    handle est invalide. Pas de runpy : il importe os lui-même. Une exception du bloc s'écrit sur le vrai stderr."""
+    """Exécute le bloc __main__ de fib.py dans python -I -S -c, sur des flux hostiles (HOSTILE), après avoir mis à None
+    les flux de `absent` : l'état où CPython laisse sys.stdout ou sys.stderr quand le fd 1 ou 2 est fermé au lancement
+    ou, sous Windows, quand son handle est invalide. Pas de runpy : il importe os lui-même. Une exception du bloc
+    s'écrit sur le vrai stderr."""
     code = "".join(
         [
-            "import sys\n",
+            HOSTILE,
             *(f"sys.{name} = None\n" for name in absent),
             f"path = {str(FIB)!r}\n",
             "try:\n",
@@ -448,10 +456,11 @@ class TestFib(unittest.TestCase):
                 self.assertEqual(spy.called, sliced)
 
     def test_PERF_PY_20_pythonioencoding_ne_change_pas_les_octets_hors_de_python_I(self):
-        """PERF-PY-20 : hors catalogue, garde du correctif F10 (ASCII et fin de ligne \\n quel que soit l'environnement),
-        et non d'une optimisation; le ticket du contrat ajoute ce cas au catalogue (§ 6). CLI-V03 ne peut pas le voir :
+        """PERF-PY-20 : hors catalogue, garde du correctif F10 (ASCII quel que soit l'environnement), et non d'une
+        optimisation; le ticket du contrat ajoute ce cas au catalogue (§ 6). CLI-V03 ne peut pas le voir :
         le contrat lance python -I, qui ignore PYTHONIOENCODING. Ici, sans -I, sans les variables PYTHON* du test et
-        avec PYTHONIOENCODING=utf-16 : sans reconfigure(encoding="ascii"), la sortie passerait en UTF-16."""
+        avec PYTHONIOENCODING=utf-16 : sans reconfigure(encoding="ascii"), la sortie passerait en UTF-16. La fin de
+        ligne \\n, que CPython écrit déjà sous Linux, est gardée par PERF-PY-29."""
         env = {name: value for name, value in os.environ.items() if not name.startswith("PYTHON")}
         env["PYTHONIOENCODING"] = "utf-16"
         run = subprocess.run([sys.executable, "-S", str(HERE / "fib.py"), "--time", "50"], capture_output=True, env=env)
@@ -490,7 +499,8 @@ class TestFib(unittest.TestCase):
         et non d'une optimisation; le contrat saute CLI-V04 sous Windows, où CPython met aussi un flux à None quand son
         handle est invalide (catalogue § 6). Sans le puits, reconfigure lève AttributeError avant main : code 1.
         stderr absent : stdout et le code sont ceux de F1 et de F9. stdout absent (hors contrat, effet de bord du
-        correctif) : le code reste 2, avec une seule ligne fib: sur stderr."""
+        correctif) : le code reste 2, avec une seule ligne fib: sur stderr, en ASCII. L'autre flux est hostile
+        (run_main_block), comme sous Windows."""
         for args, out, code in ((["10"], b"55\n", 0), (["--bogus", "5"], b"", 2)):
             with self.subTest(absent="stderr", args=args):
                 run = run_main_block(args, ["stderr"])
@@ -498,7 +508,7 @@ class TestFib(unittest.TestCase):
         with self.subTest(absent="stdout", args=["--bogus", "5"]):
             run = run_main_block(["--bogus", "5"], ["stdout"])
             self.assertEqual(run.returncode, 2, run.stderr)
-            self.assertRegex(run.stderr, rb"\Afib: [^\n]*\n\Z")
+            self.assertRegex(run.stderr, rb"\Afib: [ -~]*\n\Z")
 
     def test_PERF_PY_24_le_lancement_normal_de_la_cli_n_ajoute_pas_os_au_demarrage_nu(self):
         """PERF-PY-24 : hors catalogue, garde de l'optimisation de l'import os paresseux du bloc __main__ (2,5 ms de
@@ -662,6 +672,29 @@ class TestFib(unittest.TestCase):
                     *args,
                 )
                 self.assertEqual(run.returncode, 0, run.stderr)
+
+    def test_PERF_PY_29_des_flux_utf_16_en_crlf_sortent_en_ascii_et_en_lf(self):
+        """PERF-PY-29 : hors catalogue, garde du correctif F10 (fin de ligne \\n quel que soit l'environnement), et non
+        d'une optimisation. Le contrat ne la voit que sous Windows : sous Linux, CPython écrit déjà \\n, donc
+        newline="\\n" retiré, ou limité à stdout ou à stderr, y reste vert, y compris sous PERF-PY-20. Le bloc
+        __main__ tourne sur deux flux hostiles (run_main_block) : stdout, stderr et le code sont ceux du contrat, en
+        ASCII et sans \\r. Témoin : les mêmes flux, sans fib.py, écrivent de l'UTF-16 en \\r\\n, sinon la garde
+        serait aveugle; il rougit si HOSTILE n'installe plus ses flux. Mutants rouges : newline="\\n" retiré, limité à
+        stdout, limité à stderr (PERF-PY-23 rougit aussi sous chacun, et sous le deuxième par son seul regex [ -~]).
+        Le mutant encoding="utf-8" reste vert : il est équivalent, la CLI n'écrit que de l'ASCII."""
+        probe = HOSTILE + "sys.stdout.write('a\\n'); sys.stderr.write('b\\n')\n"
+        witness = subprocess.run([sys.executable, "-I", "-S", "-c", probe], capture_output=True)
+        # sur un tube, l'encodeur n'écrit pas de BOM : l'UTF-16 se reconnaît au décodage
+        self.assertEqual((witness.stdout.decode("utf-16"), witness.stderr.decode("utf-16")), ("a\r\n", "b\r\n"))
+        for args, out, err, code in (
+            (["--list", "3"], "".join(f"{term}\n" for term in oracle_text()[:4]), rb"\A\Z", 0),
+            (["--time", "50"], f"{oracle_text()[50]}\n", rb"\Afast \d+\.\d{3} ms\n\Z", 0),
+            (["--bogus", "5"], "", rb"\Afib: [ -~]*\n\Z", 2),
+        ):
+            with self.subTest(args=args):
+                run = run_main_block(args)
+                self.assertEqual((run.stdout, run.returncode), (out.encode("ascii"), code), run.stderr)
+                self.assertRegex(run.stderr, err)
 
 
 if __name__ == "__main__":
