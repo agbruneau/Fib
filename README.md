@@ -21,8 +21,10 @@ Fib est un terrain d'essai académique. Il sert à explorer, avec Claude Code, l
 | Étape 9 du PRD § 9, `diagnosing-bugs` : écart du stderr fermé en Python ([agbruneau/Fib#16](https://github.com/agbruneau/Fib/issues/16)), puis `/code-review` | 2026-10-12 | fait |
 | Étape 10 du PRD § 9, `/improve-codebase-architecture` et `codebase-design` : rapport, puis la CLI TypeScript appelable dans le processus ([agbruneau/Fib#20](https://github.com/agbruneau/Fib/issues/20)) et `/code-review` | 2026-10-13 | fait |
 | Étape 11 du PRD § 9 : `/handoff`, document de reprise hors dépôt | 2026-10-13 | fait |
+| Horloge `process.hrtime` en TypeScript ([agbruneau/Fib#21](https://github.com/agbruneau/Fib/issues/21)) et garde du préchargement de `decimal` en Python ([agbruneau/Fib#25](https://github.com/agbruneau/Fib/issues/25)), puis `/code-review` | 2026-10-13 | fait |
+| Pistes A, C, D et E de l'étape 10 : conception en workflow, une série de questions, puis tickets #27 à #36 livrés en trois vagues (lancement commun et contrôles du harnais, A/B apparié, boucle différentielle, discordance et algorithme exécuté gardés dans les quatre langages, gardes Python), puis `/code-review` | 2026-10-13 | fait |
 
-Les quatre implémentations passent `npm run check` sous Windows 11, avec Python 3.14, et sous Linux (2026-10-12), avec Go 1.26, Rust 1.97, Node 22 et Python 3.13. Python 3.12 n'est pas vérifié.
+Les quatre implémentations passent `npm run check` sous Windows 11, avec Python 3.14 (2026-10-12), et sous Linux (2026-10-13), avec Go 1.26, Rust 1.97, Node 22.22 et Python 3.13. La suite Python passe aussi sous Python 3.12; le contrat sous 3.12 n'est pas vérifié.
 
 | Implémentation | Grand entier |
 |---|---|
