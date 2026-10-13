@@ -1,6 +1,6 @@
 # PRD — Fib : calculateur Fibonacci académique en quatre langages
 
-Version 1.12 · 2026-10-13 · André-Guy Bruneau. Révisée par `/grill-with-docs`, par un audit, par le catalogue de cas de test, par l'implémentation des tickets #2 à #5, par l'audit et la refactorisation du 2026-10-11, par l'optimisation des performances (ADR-0004), par la borne d'un terme à 1 000 000 et le bilan des résultats, puis par l'étape 9 (`diagnosing-bugs`, #16), par les cas hors contrat (#18), par l'étape 10 (#20) et par l'étape 11 (`/handoff`) : le vocabulaire est dans `CONTEXT.md`, les décisions durables dans `docs/adr/`.
+Version 1.13 · 2026-10-13 · André-Guy Bruneau. Révisée par `/grill-with-docs`, par un audit, par le catalogue de cas de test, par l'implémentation des tickets #2 à #5, par l'audit et la refactorisation du 2026-10-11, par l'optimisation des performances (ADR-0004), par la borne d'un terme à 1 000 000 et le bilan des résultats, puis par l'étape 9 (`diagnosing-bugs`, #16), par les cas hors contrat (#18), par l'étape 10 (#20), par l'étape 11 (`/handoff`) et par les gardes du code 3 et de l'algorithme exécuté en Go, Rust et Python (#36) : le vocabulaire est dans `CONTEXT.md`, les décisions durables dans `docs/adr/`.
 
 ## 1. Contexte et objectifs
 
@@ -180,7 +180,7 @@ Les tests de garde `PERF-<ID>-<n>` (ADR-0004) peuvent viser une fonction privée
 - BIB-01 à BIB-14 : la bibliothèque, dans chaque langage (seam 1); BIB-14 est sans objet en Rust.
 - les cas CLI : le contrat de la CLI, joué sur chaque implémentation (seam 2). Des assertions communes s'appliquent à chaque cas : code de sortie, stdout octet pour octet, stderr, format ASCII.
 
-Le chemin de la discordance (code 3) dans la CLI n'a pas de cas de test, puisque aucun cas ne peut la provoquer. BIB-08 vérifie que les algorithmes concordent. En TypeScript, PERF-TS-7 éprouve ce chemin par l'interface dans le processus (`run(args, io)`, avec un `fib` discordant); il reste sans test automatique en Go, Rust et Python.
+Le chemin de la discordance (code 3) dans la CLI n'a pas de cas de test, puisque aucun cas ne peut la provoquer. BIB-08 vérifie que les algorithmes concordent. En TypeScript, PERF-TS-7 éprouve ce chemin par l'interface dans le processus (`run(args, io)`, avec un `fib` discordant); PERF-GO-9 et PERF-RS-11 l'éprouvent de même par `run`, avec un calcul discordant passé en paramètre; PERF-PY-26 par `main`, avec un algorithme discordant substitué dans la table `_ALGOS`.
 
 **Acceptation globale**
 
