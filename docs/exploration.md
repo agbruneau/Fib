@@ -277,6 +277,32 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
   - Distinguer, dans `CONTEXT.md`, l'interface au sens de `codebase-design` du contrat, pour que les deux vocabulaires cohabitent.
   - Garder les candidats A, C et D comme pistes d'architecture, et décider de la garde manquante du préchargement de `decimal`.
 
+## 2026-10-13 — `/handoff` (étape 11)
+
+- **Contexte** : la skill, lue dans `mattpocock/skills` faute de plugin, porte `disable-model-invocation: true`. Elle se lance donc par le propriétaire, ici par sa consigne « passe à l'étape 11 avec /handoff après #20 ». Elle demande quatre choses :
+  - un document hors du dépôt, dans le dossier temporaire du système ;
+  - une section de skills suggérées ;
+  - des renvois aux artefacts au lieu de redites ;
+  - le caviardage des données sensibles.
+  
+  Sans argument, le document vise la suite du dépôt, #21 en tête.
+- **Produit** : un document de reprise d'environ 900 mots, envoyé au propriétaire. Il renvoie au README, au PRD § 9, au journal, aux tickets et aux PR. En propre, il ne garde que ce qu'aucun artefact versionné ne contient :
+  - les pistes A, C, D et E du rapport de l'étape 10, et ses petits constats hors approfondissement ;
+  - les pièges de l'environnement infonuagique ;
+  - l'étendue de l'autorisation de fusion.
+- **A aidé** :
+  - La règle « renvoyer, ne pas redire » a forcé un inventaire. Il a montré ce qui ne vivait que dans la session : les pistes d'un rapport resté hors dépôt, et le savoir opératoire (GraphQL refusé, SHA complet pour fusionner, `/code-review` sur une plage et non un SHA).
+  - Relire chaque renvoi avant l'envoi a corrigé deux constats périmés :
+    - `stderrClosed` était déjà nommé dans `run` ; seul un appel passe encore `{}, true` ;
+    - #21 prévoit une fermeture en `wontfix`.
+- **Friction** :
+  - « Hors du dépôt, dans le dossier temporaire » se heurte à la session infonuagique : `/tmp` disparaît avec le conteneur. Le document ne survit que parce qu'il a été envoyé au propriétaire, et une session future ne le trouvera pas sans lui.
+  - Le PRD § 9 nomme le document de reprise comme livrable de l'étape, mais la skill l'exclut du dépôt. Le livrable n'est donc pas versionné ; seule sa trace l'est, ici.
+  - Le document est un instantané. Rédigé juste avant #21, il est déjà en partie dépassé quand la même session traite #21 ; il le dit en ouverture.
+- **À changer** :
+  - En session infonuagique, consigner les pistes orphelines dans un artefact durable (ticket de suivi ou page publiée) dès l'étape qui les produit, pour que la reprise n'en dépende pas.
+  - Faire de la section « Pièges de l'environnement » une page de `docs/agents/`, puisqu'elle vaut pour toute session.
+
 ## Bilan au 2026-10-13
 
 | Skill | Usage |
@@ -292,7 +318,7 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
 | `/code-review` | utilisée trois fois le 2026-10-11, axes Standards et Spec : après la refactorisation, après l'optimisation, après la borne à 1 000 000; puis une fois le 2026-10-12, sur les tickets #6 à #14 |
 | `diagnosing-bugs` | utilisée à l'étape 9 (#16), lue dans `mattpocock/skills` faute de plugin; précédée d'une boucle différentielle pour trouver l'écart |
 | `/improve-codebase-architecture`, `codebase-design`, `grilling` | utilisées à l'étape 10 (#20), lues dans `mattpocock/skills` : rapport de 5 candidats, *design it twice* à 4 prototypes, 2 tours de *grilling* |
-| `/handoff` | à venir (étape 11 du PRD) |
+| `/handoff` | utilisée à l'étape 11, lue dans `mattpocock/skills` : document de reprise hors dépôt, envoyé au propriétaire |
 
 Hors skill : l'audit du PRD (2026-10-10), l'audit en workflow du 2026-10-11 (auditeurs en lecture seule), puis l'optimisation des performances et la borne à 1 000 000, confiées à des sous-agents `fib-dev`, et enfin l'épreuve des cas de test en workflow.
 
