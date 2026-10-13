@@ -114,7 +114,8 @@ export function fibList(n: number): string[] {
   return terms;
 }
 
-// Exportée pour les seules gardes (PERF-TS-10), qui lisent l'aiguillage : la seam du PRD § 5 reste fib et fibList.
+// Exportée pour les seules gardes (PERF-TS-10) : les tests du nom lisent la table, trois tests y substituent des espions
+// (elle doit rester modifiable : un `Object.freeze` les ferait rougir à tort). La seam du PRD § 5 reste fib et fibList.
 export const algos: Record<Algo, (n: number) => bigint> = { iterative, matrix, fast };
 
 /** Rend F(n) par l'algorithme algo.
