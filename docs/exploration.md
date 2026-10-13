@@ -405,6 +405,12 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
     - `/code-review` a rendu 9 constats, dont un biais réel : 101 paires donnent une alternance déséquilibrée (51 contre 50), et la médiane garde l'effet d'ordre. Il fallait un nombre pair de paires.
     - Il a aussi relevé que l'orchestrateur avait corrigé lui-même un commentaire de `python/fib.py`, hors du circuit `fib-dev`.
     - La fusion de #29 a conflité dans cinq fichiers, parce que #29 et la correction de #28 réécrivaient `extract` en même temps. La résolution est revenue à un `fib-dev`.
+    - Une dernière `/code-review` sur cette fusion a rendu 14 constats, dont 13 retenus et corrigés :
+      - HAR-6 ne voyait ni les tests lancés par un glob, ni `node --run`, ni `npm test`, ni une URL relative sans `./` ;
+      - la boucle sortait en 0 sans rien chercher sous Windows ;
+      - la parité des paires n'était imposée que dans `main`.
+    - Son vérificateur a aligné le marqueur de la boucle sur X-4 (`[^\x20-\x7e]`). 136 mutants ont été joués, puis 53 sur la projection.
+    - Le lancement parallèle des quatre CLI dans la boucle a été écarté : c'est un outil de recherche, et ses 62 s par défaut ne sont pas un enjeu.
 - **A aidé** :
   - Le critique adverse par piste a évité deux refactorisations sans gain, D et E, sur preuve par mutants et par instructions, non par opinion.
   - Une seule série de questions a suffi, parce que chaque option portait son coût mesuré.
