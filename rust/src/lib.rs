@@ -39,7 +39,7 @@ pub fn fib(n: u64, algo: Algo) -> BigUint {
 }
 
 /// L'aiguillage seul, séparé de `fib` pour qu'un test compare les adresses (PERF-RS-13) : les trois fonctions rendent
-/// les mêmes valeurs, et rien d'autre ne trahit une coquille ici.
+/// les mêmes valeurs, et aucun test de valeur ne trahit une coquille ici.
 fn algorithm(algo: Algo) -> fn(u64) -> BigUint {
     match algo {
         Algo::Iterative => iterative,
@@ -227,9 +227,9 @@ mod tests {
     // de la fonction distingue une coquille d'aiguillage. La garde ne compare donc ni valeur calculée ni durée, et
     // vérifie d'abord que les trois adresses diffèrent, sans quoi l'égalité passerait à vide. Rouge sous les six
     // échanges d'une branche de `algorithm` : chacun des trois noms vers l'une des deux autres fonctions, dont
-    // `Algo::Matrix => fast`. Survivant connu, laissé à la revue : `fib` qui n'appelle pas `algorithm` mais
-    // `iterative(n)` en dur, que ni les valeurs ni l'adresse ne trahissent (`matrix(n)` ou `fast(n)` en dur rougissent
-    // PERF-RS-9, qui compte les allocations d'`iterative`).
+    // `Algo::Matrix => fast`. `fib` qui contourne `algorithm` (`iterative(n)` en dur) ne rougit aucun test, mais clippy
+    // `-D warnings` le refuse (`algo` inutilisé ; `algorithm`, `matrix` et `fast` morts) ; `matrix(n)` ou `fast(n)` en
+    // dur rougissent en plus PERF-RS-9, qui compte les allocations d'`iterative`.
     #[test]
     fn perf_rs_13_chaque_algorithme_est_aiguille_vers_sa_propre_fonction() {
         type Term = fn(u64) -> BigUint;
