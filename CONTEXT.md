@@ -73,7 +73,7 @@ Un test propre à une implémentation, hors du catalogue de cas, qui protège ce
 _Avoid_ : test de performance
 
 **Contrôle du harnais** :
-Un test du test de contrat lui-même, qui ne lance aucune implémentation et rougit quand le harnais ferait passer un cas à vide. Le harnais est le code qui compile et lance les quatre CLI, pour le contrat comme pour le banc d'essai.
+Un test du harnais lui-même, qui ne lance aucune implémentation et rougit quand le harnais ferait passer un cas à vide ou fausserait une mesure. Le harnais est le code qui compile et lance les quatre CLI, pour le contrat comme pour le banc d'essai.
 _Avoid_ : test de garde, test du runner
 
 **Banc d'essai** :
