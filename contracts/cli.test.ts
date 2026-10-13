@@ -3,13 +3,13 @@
 import { before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import cp, { spawnSync } from 'node:child_process';
-import fs, { existsSync, lstatSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
+import fs, { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { abPairs, abRound, main, measure, pair, paired, parseArgs, rounds } from './bench.ts';
-import { build, closeStderr, command, IDS, launch, present, type LaunchOptions } from './lancement.ts';
+import { build, closeStderr, command, IDS, launch, present, ROOT, type LaunchOptions } from './lancement.ts';
 import { CHECKS, lines, terms } from './oracle.ts';
 
 const USAGE = `usage: fib [--algo iterative|matrix|fast|all] [--time] N
@@ -256,7 +256,7 @@ describe('oracle', () => {
 });
 
 // Les contrôles du harnais, joués une fois pour les quatre CLI : ils éprouvent le test de contrat lui-même et rougissent
-// quand il ferait passer un cas à vide. La sonde du fd 2 lance un vrai processus; HAR-1 à HAR-3 et HAR-5 n'en lancent aucun.
+// quand il ferait passer un cas à vide. La sonde du fd 2 lance un vrai processus; HAR-1 à HAR-3, HAR-5 et HAR-6 n'en lancent aucun.
 describe('harnais', () => {
   // Si `2>&-` cessait de fermer le fd 2, CLI-V04 passerait à vide. Une redirection vers un fd fermé échoue (code non nul).
   test('CLI-V04 : le harnais ferme le fd 2', { skip: noShell }, () => {
@@ -441,11 +441,12 @@ describe('harnais', () => {
       assert.throws(() => parseArgs(['py', '--contre', ...mauvais]), /--contre demande une révision/, `--contre ${JSON.stringify(mauvais)} accepté`);
     }
 
-    // Le défaut de --runs : 11 pour le banc, 101 sous --contre (au moins 101 paires pour un écart de quelques pour cent, ADR-0004),
-    // quel que soit l'ordre des options; un --runs explicite l'emporte, avant ou après --contre.
+    // Le défaut de --runs : 11 pour le banc, 100 sous --contre (une centaine de paires pour un écart de quelques pour cent, ADR-0004, et un
+    // nombre pair : l'ordre alterne, donc un nombre impair de paires donne à un côté une paire de plus qui part le premier, et la médiane
+    // retombe dans ce groupe), quel que soit l'ordre des options; un --runs explicite l'emporte, avant ou après --contre.
     assert.equal(parseArgs(['py']).runs, 11, 'le défaut du banc a changé');
-    assert.equal(parseArgs(['py', '--contre', 'HEAD']).runs, 101, 'l’A/B n’a pas son défaut de 101 paires');
-    assert.equal(parseArgs(['--contre', 'HEAD', 'py']).runs, 101, 'le défaut de l’A/B dépend de l’ordre des options');
+    assert.equal(parseArgs(['py', '--contre', 'HEAD']).runs, 100, 'l’A/B n’a pas son défaut de 100 paires');
+    assert.equal(parseArgs(['--contre', 'HEAD', 'py']).runs, 100, 'le défaut de l’A/B dépend de l’ordre des options');
     assert.equal(parseArgs(['py', '--runs', '5', '--contre', 'HEAD']).runs, 5, 'un --runs avant --contre est écrasé');
     assert.equal(parseArgs(['py', '--contre', 'HEAD', '--runs', '5']).runs, 5, 'un --runs après --contre est écrasé');
 
@@ -524,26 +525,40 @@ describe('harnais', () => {
     // git, donc seuls `git rev-parse`, `git ls-tree`, deux builds et les lancements de mesure passent par l'espion. `abPairs` ne garde pas, seul, la
     // racine que `versus` lui passe : un `abPairs(id, runs, ROOT)` dans `versus` laisserait HAR-5 vert, et l'A/B comparerait le dépôt à lui-même.
     // Un `build(id, rev)` retiré ou remplacé par `build(id)` y survivrait aussi, et ne se verrait qu'à une extraction neuve.
+    // L'ordre alterne (A part le premier aux tours pairs), donc seul un nombre pair de paires le répartit à égalité : sur un nombre impair,
+    // un côté part le premier dans une paire de plus, et la médiane des différences retombe dans ce groupe avec son effet d'ordre. Un --runs
+    // impair est arrondi au pair supérieur, et le banc le dit sur stderr (`--runs 1` : 2 paires, `--runs 3` : 4; `--runs 2` : 2, sans mot).
     const base = mkdtempSync(join(tmpdir(), 'fib-har5-ab-'));
     try {
       const rev = join(base, sha);
       mkdirSync(rev);
-      const ab = banc(['go', '--runs', '1', '--contre', 'HEAD'], arbre('go', 'rust', 'ts', 'python'), base);
-      assert.deepEqual([ab.code, ab.stderr], [0, ''], 'l’A/B doit réussir sans rien écrire sur stderr');
-      assert.match(ab.stdout, /^A\/B apparié sur 1 paire [^\n]*A = HEAD \(aaaaaaa\), B = /, 'l’en-tête ne nomme pas REF et son SHA court');
-      // Aucun appel git hors la lecture de la révision : la révision déjà extraite est réutilisée.
-      seulementLecture(ab.calls.filter((c) => c.file === 'git'));
-      // Un build part de la racine de la révision, l'autre du dépôt, dans un ordre quelconque.
-      assert.deepEqual(ab.calls.filter((c) => c.file === 'go').map((c) => c.options.cwd).sort(), [depot, rev].sort(), 'les deux builds ne partent pas du dépôt et de la révision');
-      // 1 tour de chauffe et 1 tour gardé : 2 × S rendez-vous, deux lancements chacun; la moitié, A, part de la racine de la révision.
-      const mesures = ab.calls.filter((c) => c.file !== 'git' && c.file !== 'go');
-      assert.equal(mesures.length, 2 * 2 * S, 'l’A/B ne joue pas 1 tour de chauffe et 1 tour gardé de chaque scénario, deux lancements chacun');
-      const de = (racine: string) => mesures.filter((c) => c.options.cwd === racine && c.file === command('go', racine)[0]);
-      assert.equal(de(rev).length, 2 * S, 'la moitié des lancements (A) ne part pas de la racine de la révision, avec son binaire');
-      assert.equal(de(depot).length, 2 * S, 'la moitié des lancements (B) ne part pas du dépôt, avec son binaire');
-      const lignes = ab.stdout.split('\n');
-      assert.equal(lignes.length, 2 + S, 'l’A/B n’écrit pas son en-tête, ses colonnes et une ligne par scénario');
-      for (const ligne of lignes.slice(2)) assert.match(ligne, /\/1$/, `une ligne du tableau ne compte pas 1 paire : ${ligne}`);
+      for (const [demande, paires] of [[1, 2], [2, 2], [3, 4]]) {
+        const ou = `--runs ${demande}`;
+        const ab = banc(['go', '--runs', String(demande), '--contre', 'HEAD'], arbre('go', 'rust', 'ts', 'python'), base);
+        const dit = demande === paires ? '' : `bench: --runs ${demande} est impair sous --contre, arrondi à ${paires} paires : A et B doivent partir le premier à égalité`;
+        assert.deepEqual([ab.code, ab.stderr], [0, dit], `${ou} : l’A/B doit réussir, et ne dire l’arrondi que pour un nombre impair`);
+        assert.match(ab.stdout, new RegExp(`^A/B apparié sur ${paires} paires [^\\n]*A = HEAD \\(aaaaaaa\\), B = `), `${ou} : l’en-tête ne nomme pas ${paires} paires, REF et son SHA court`);
+        // Aucun appel git hors la lecture de la révision : la révision déjà extraite est réutilisée.
+        seulementLecture(ab.calls.filter((c) => c.file === 'git'));
+        // Un build part de la racine de la révision, l'autre du dépôt, dans un ordre quelconque.
+        assert.deepEqual(ab.calls.filter((c) => c.file === 'go').map((c) => c.options.cwd).sort(), [depot, rev].sort(), `${ou} : les deux builds ne partent pas du dépôt et de la révision`);
+        // 1 tour de chauffe et `paires` tours gardés : (paires + 1) × S rendez-vous, deux lancements chacun; la moitié, A, part de la racine de la révision.
+        const mesures = ab.calls.filter((c) => c.file !== 'git' && c.file !== 'go');
+        assert.equal(mesures.length, 2 * (paires + 1) * S, `${ou} : l’A/B ne joue pas 1 tour de chauffe et ${paires} tours gardés de chaque scénario, deux lancements chacun`);
+        const de = (racine: string) => mesures.filter((c) => c.options.cwd === racine && c.file === command('go', racine)[0]);
+        assert.equal(de(rev).length, (paires + 1) * S, `${ou} : la moitié des lancements (A) ne part pas de la racine de la révision, avec son binaire`);
+        assert.equal(de(depot).length, (paires + 1) * S, `${ou} : la moitié des lancements (B) ne part pas du dépôt, avec son binaire`);
+        // Dans les tours gardés (1 à paires), chaque côté part le premier dans la moitié des paires de chaque scénario : le rendez-vous r × S + s
+        // est la paire de lancements 2k et 2k + 1, et le tour 0, écarté, ne compte pas.
+        for (let s = 0; s < S; s++) {
+          let aDabord = 0;
+          for (let r = 1; r <= paires; r++) if (mesures[2 * (r * S + s)].options.cwd === rev) aDabord++;
+          assert.equal(aDabord, paires / 2, `${ou}, scénario ${s} : A ne part pas le premier dans la moitié des paires`);
+        }
+        const lignes = ab.stdout.split('\n');
+        assert.equal(lignes.length, 2 + S, `${ou} : l’A/B n’écrit pas son en-tête, ses colonnes et une ligne par scénario`);
+        for (const ligne of lignes.slice(2)) assert.match(ligne, new RegExp(`/${paires}$`), `${ou} : une ligne du tableau ne compte pas ${paires} paires : ${ligne}`);
+      }
     } finally {
       fs.rmSync(base, { recursive: true, force: true });
     }
@@ -593,6 +608,97 @@ describe('harnais', () => {
       assert.throws(() => parseArgs(['--nettoyer', ...avec]), /--nettoyer s’emploie seul/, `--nettoyer ${avec.join(' ')} accepté`);
       assert.throws(() => parseArgs([...avec, '--nettoyer']), /--nettoyer s’emploie seul/, `${avec.join(' ')} --nettoyer accepté`);
     }
+  });
+
+  // HAR-6 : ADR-0001. La boucle différentielle (`contracts/differentiel.ts`) est un outil de recherche. Si le contrat la lançait ou
+  // l'importait, un écart entre implémentations deviendrait un verdict du contrat, sans attendu pour le trancher : l'oracle par vote
+  // que l'ADR-0001 écarte. Aucun script `check*` ni `contract` ne l'atteint, en suivant de proche en proche les `npm run <script>`
+  // (avec les crochets `pre` et `post` que npm joue) puis les modules que ces commandes lancent, et le test de contrat ne l'importe
+  // pas, même par un module qu'il importe. Le prototype d'A-2 laissait passer un `contract` qui lançait `npm run recherche`, un script
+  // qui lançait la boucle : 117 sur 117. Le contrôle ne lance rien : il lit package.json et les sources, et ses témoins des imports
+  // n'écrivent que des fichiers d'essai sous tmpdir(), qu'ils retirent.
+  const LOOP = /differentiel/;
+  // Une commande lance un script par `npm run <script>`, `npm run-script <script>` ou leurs alias `rum` et `urn`, avec des options
+  // avant ou après, et le nom entre guillemets ou non.
+  const NPM_RUN = /\bnpm\s+(?:-\S+\s+)*(?:run-script|run|rum|urn)\s+(?:-\S+\s+)*["']?([^\s;&|<>()"']+)/g;
+  // Les commandes des scripts atteints depuis `roots` : les leurs, et de proche en proche celles des scripts qu'elles lancent.
+  const commandsReached = (scripts: Record<string, string>, roots: readonly string[]): string[] => {
+    const seen = new Set<string>();
+    const visit = (name: string): void => {
+      if (seen.has(name) || !Object.hasOwn(scripts, name)) return;
+      seen.add(name);
+      visit(`pre${name}`);
+      visit(`post${name}`);
+      for (const [, next] of scripts[name].matchAll(NPM_RUN)) visit(next);
+    };
+    roots.forEach(visit);
+    return [...seen].map((name) => scripts[name]);
+  };
+  // Les modules que `entry` importe, de proche en proche, lui compris. Seuls comptent les chemins relatifs, les seuls qui mènent à un fichier
+  // du dépôt : ceux de `from`, de `import` (nu ou `import()`) et de `new URL` (comme HAR-4 vise le banc), entre ', " ou accents graves.
+  const IMPORT = /(?:from|import|new URL)\s*\(?\s*['"`](\.{1,2}\/[^'"`]+)['"`]/g;
+  const isFile = (f: string) => existsSync(f) && statSync(f).isFile();
+  const importClosure = (entry: string): string[] => {
+    const seen = new Set<string>();
+    const pending = [entry];
+    for (let file = pending.pop(); file !== undefined; file = pending.pop()) {
+      if (seen.has(file)) continue;
+      seen.add(file);
+      if (isFile(file)) for (const [, rel] of readFileSync(file, 'utf8').matchAll(IMPORT)) pending.push(join(dirname(file), rel));
+    }
+    return [...seen];
+  };
+
+  test('HAR-6 : la boucle différentielle reste hors de check*, de contract et du test de contrat', () => {
+    // Témoins du parcours des scripts : il suit `npm run` de proche en proche, avec ses options et ses crochets, et ne déborde pas.
+    const exemple = { precontract: 'echo', contract: 'node a.ts && npm run "b"', b: 'npm --silent run-script c -- x', c: 'node contracts/differentiel.ts', d: 'echo' };
+    assert.ok(commandsReached(exemple, ['contract']).some((c) => LOOP.test(c)), 'témoin : le parcours ne suit pas npm run de proche en proche');
+    assert.ok(commandsReached({ ...exemple, b: 'echo', precontract: exemple.c }, ['contract']).some((c) => LOOP.test(c)), 'témoin : le parcours oublie le crochet pre');
+    assert.ok(!commandsReached(exemple, ['d']).some((c) => LOOP.test(c)), 'témoin : le parcours atteint un script qu’aucun npm run ne lance');
+
+    // Témoins du parcours des imports, sur des fichiers écrits sous tmpdir() : la fermeture est transitive (a → b → c : un seul niveau
+    // laissait passer `bench.ts` qui importe la boucle), et chaque forme d'un chemin relatif y est vue (une forme ignorée laissait passer
+    // la boucle lancée par un `new URL(…, import.meta.url)` donné à `spawnSync`, comme HAR-4 lance le banc, ou importée par un `import()`
+    // entre accents graves). Un chemin qui nomme un dossier (le `new URL('../..', …)` de ts/src/cli.test.ts) ne se lit pas, et un import nu
+    // (`node:fs`) ne se suit pas. Les sources de ces témoins sont des chaînes : le motif les lit aussi ici, sans mener à un fichier de la boucle.
+    const dossier = mkdtempSync(join(tmpdir(), 'fib-har6-'));
+    try {
+      const ecrire = (nom: string, source = 'export {};\n') => writeFileSync(join(dossier, nom), source);
+      const fermeture = (nom: string) => importClosure(join(dossier, nom)).map((f) => relative(dossier, f)).sort();
+      ecrire('a.ts', "import { b } from './b.ts';\n");
+      ecrire('b.ts', 'import "./c.ts";\n');
+      ecrire('c.ts');
+      assert.deepEqual(fermeture('a.ts'), ['a.ts', 'b.ts', 'c.ts'], 'témoin : la fermeture des imports n’est pas transitive');
+      ecrire('t.ts');
+      const formes: Record<string, string> = {
+        from: "import { t } from './t.ts';",
+        'import nu': 'import "./t.ts";',
+        'import()': "export const t = () => import('./t.ts');",
+        'import() entre accents graves': 'export const t = () => import(`./t.ts`);',
+        'new URL': "export const t = new URL('./t.ts', import.meta.url);",
+      };
+      for (const [forme, source] of Object.entries(formes)) {
+        ecrire('f.ts', `${source}\n`);
+        assert.deepEqual(fermeture('f.ts'), ['f.ts', 't.ts'], `témoin : le parcours des imports ignore la forme « ${forme} »`);
+      }
+      mkdirSync(join(dossier, 'd'));
+      ecrire('f.ts', "import { x } from 'node:fs';\nexport const d = new URL('./d', import.meta.url);\n");
+      assert.deepEqual(fermeture('f.ts'), ['d', 'f.ts'], 'témoin : un import nu se suit, ou un chemin qui nomme un dossier se lit');
+    } finally {
+      rmSync(dossier, { recursive: true, force: true });
+    }
+
+    const { scripts } = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { scripts: Record<string, string> };
+    const roots = Object.keys(scripts).filter((name) => name === 'contract' || name.startsWith('check'));
+    const commands = commandsReached(scripts, roots);
+    assert.ok(commandsReached(scripts, ['check']).some((c) => c.includes('contracts/cli.test.ts')), 'témoin : le parcours de package.json ne voit pas le test de contrat');
+    assert.deepEqual(commands.filter((c) => LOOP.test(c)), [], 'un script check* ou contract atteint la boucle');
+
+    // Le test de contrat, et chaque module ou script que ces commandes lancent, avec leurs imports.
+    const launched = commands.flatMap((c) => c.split(/\s+/)).map((t) => join(ROOT, t.replace(/^["']|["']$/g, ''))).filter((f) => /\.[cm]?[jt]s$/.test(f) && existsSync(f));
+    const reached = [...new Set([fileURLToPath(import.meta.url), ...launched].flatMap(importClosure))];
+    assert.ok(reached.includes(join(ROOT, 'contracts', 'lancement.ts')), 'témoin : le parcours des imports ne voit pas lancement.ts');
+    assert.deepEqual(reached.map((f) => relative(ROOT, f)).filter((f) => LOOP.test(f)), [], 'le test de contrat atteint la boucle par un import');
   });
 });
 

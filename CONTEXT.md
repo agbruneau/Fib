@@ -81,9 +81,13 @@ La mesure du temps de réponse de chaque implémentation sur des scénarios fixe
 _Avoid_ : benchmark
 
 **A/B apparié** :
-Le banc d'essai joué contre une révision (`--contre REF`) : la révision et l'arbre de travail se lancent en alternance, et l'écart retenu est la médiane des différences par paire, sur le seul temps total, 101 paires par défaut (la médiane d'un nombre pair de valeurs est la moyenne des deux éléments centraux). Il tranche des écarts que les médianes de deux passes séparées noient dans leur bruit.
+Le banc d'essai joué contre une révision (`--contre REF`) : la révision et l'arbre de travail se lancent en alternance, et l'écart retenu est la médiane des différences par paire, sur le seul temps total, 100 paires par défaut, toujours en nombre pair pour que chaque côté parte le premier aussi souvent (la médiane d'un nombre pair de valeurs est la moyenne des deux éléments centraux). Il tranche des écarts que les médianes de deux passes séparées noient dans leur bruit.
 _Avoid_ : benchmark comparatif, deux passes du banc
 
 **Travail de démarrage** :
 Un changement qui touche ce que la CLI fait avant de calculer : imports, chargement des modules, point d'entrée, préparation des flux. Son effet se mesure par l'A/B apparié (ADR-0004).
 _Avoid_ : cold start
+
+**Boucle différentielle** :
+L'outil de recherche (`npm run differentiel`) qui lance les implémentations d'une même révision sur les mêmes entrées et regroupe celles dont les sorties diffèrent. Elle n'a ni référence, ni majorité, ni attendu : elle trouve un écart, que le PRD § 4 puis un cas du catalogue tranchent. Elle reste hors de `check` et du contrat (ADR-0001).
+_Avoid_ : fuzzing, oracle par vote

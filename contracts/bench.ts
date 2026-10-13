@@ -1,11 +1,11 @@
 // Banc d'essai des CLI (ADR-0004) : médiane du temps total du processus et du calcul rapporté par --time.
 // Usage : node contracts/bench.ts [go|rust|ts|py …] [--runs N] [--contre REF] | --nettoyer. Compile puis lance par contracts/lancement.ts, comme le contrat.
 // --contre REF : A/B apparié, la révision REF (A) contre l'arbre de travail (B), lancés en alternance (le travail d'un démarrage, ADR-0004).
+// Un nombre pair de paires seulement (100 par défaut) : un --runs impair est arrondi au pair supérieur, et dit sur stderr.
 // --nettoyer : vide .build/revisions/, où l'A/B extrait ses révisions, sans suivre le lien vers node_modules qu'elles portent.
-import { spawnSync } from 'node:child_process';
-import { existsSync, lstatSync, mkdirSync, readdirSync, renameSync, rmSync, symlinkSync, unlinkSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, rmSync, unlinkSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import { build, dirOf, IDS, launch, present, ROOT } from './lancement.ts';
+import { build, extract, IDS, launch, present, resolve, REVISIONS } from './lancement.ts';
 
 const SCENARIOS: [name: string, args: string[]][] = [
   ['petit (10)', ['10']],
@@ -90,55 +90,6 @@ export function rounds<T>(runs: number, one: (i: number, args: string[]) => T): 
 // et la racine de la révision. Exportée pour le harnais (HAR-5), sans build ni extraction.
 export const abPairs = (id: string, runs: number, root: string): [a: number, b: number][][] => rounds(runs, (i, args) => abRound(i, id, args, root));
 
-// Les seuls chemins du build (PRD § 5) : une révision extraite n'emporte ni CLAUDE.md ni .claude/, qu'une session lancée sous
-// .build/ lirait comme des instructions. package.json y reste : son "type": "module" fait de .build/ts/cli.js un module ES.
-const BUILD_PATHS = ['go/', 'rust/', 'ts/', 'python/', 'package.json', ':(glob)tsconfig*.json'];
-
-// Où s'extraient les révisions de l'A/B : sous .build/, ignoré par git. `--nettoyer` les supprime.
-const REVISIONS = join(ROOT, '.build', 'revisions');
-
-// Résout ref en SHA, puis vérifie que la révision a le dossier de chaque langage de ids : avant toute extraction et tout build, car un
-// langage absent de ref ne se découvre sinon qu'au milieu de l'A/B, après les langages qui le précèdent. Elle ne lit la révision que par
-// `git rev-parse` et `git ls-tree`. Lève une erreur d'une ligne, que main écrit en `bench: …`.
-function resolve(ref: string, ids: readonly string[]): string {
-  const git = (...args: string[]) => spawnSync('git', args, { cwd: ROOT, encoding: 'utf8' });
-  const resolved = git('rev-parse', '--verify', '--quiet', `${ref}^{commit}`);
-  if (resolved.status !== 0) throw new Error(`révision introuvable : ${ref}`);
-  const sha = resolved.stdout.trim();
-  const tree = git('ls-tree', '-d', '-z', '--name-only', sha);
-  if (tree.status !== 0) throw new Error(`git ls-tree ${sha} a échoué (code ${tree.status}) : ${tree.stderr}${tree.error ?? ''}`);
-  const dirs = tree.stdout.split('\0');
-  const absent = ids.filter((id) => !dirs.includes(dirOf(id)));
-  if (absent.length) throw new Error(`${absent.join(', ')} : dossier absent de ${ref}`);
-  return sha;
-}
-
-// Extrait la révision sha sous revisions/<sha> et rend sa racine. Une fois : si le dossier existe, il est réutilisé, avec
-// ses binaires déjà construits. L'extraction passe par un index à part (GIT_INDEX_FILE) et un dossier provisoire renommé à la fin :
-// ni l'index ni la liste des worktrees ne changent, et une extraction interrompue ne laisse pas un dossier à moitié rempli.
-function extract(sha: string, revisions: string): string {
-  const git = (args: string[], env: Record<string, string> = {}, input?: string) => {
-    const r = spawnSync('git', args, { cwd: ROOT, encoding: 'utf8', env: { ...process.env, ...env }, input });
-    if (r.status !== 0) throw new Error(`git ${args.join(' ')} a échoué (code ${r.status}) : ${r.stderr}${r.error ?? ''}`);
-    return r.stdout;
-  };
-  const dest = join(revisions, sha);
-  if (existsSync(dest)) return dest;
-  const part = `${dest}.part`;
-  const index = `${dest}.index`;
-  rmSync(part, { recursive: true, force: true });
-  rmSync(index, { force: true });
-  mkdirSync(part, { recursive: true });
-  const env = { GIT_INDEX_FILE: index };
-  git(['read-tree', sha], env);
-  git(['checkout-index', '-z', '--stdin', `--prefix=${part}/`], env, git(['ls-files', '-z', '--', ...BUILD_PATHS], env));
-  rmSync(index);
-  // tsc et les @types y sont cherchés dans node_modules : la révision emprunte ceux de ce dépôt (jonction sous Windows).
-  symlinkSync(join(ROOT, 'node_modules'), join(part, 'node_modules'), 'junction');
-  renameSync(part, dest);
-  return dest;
-}
-
 // Supprime les révisions extraites et rend le nombre d'entrées supprimées. Chaque révision porte un lien (jonction sous Windows) vers le
 // node_modules de ce dépôt, et `Remove-Item -Recurse` de Windows PowerShell 5.1 peut le traverser et vider sa cible : le lien est donc
 // détaché d'abord (unlink retire le lien, jamais sa cible), puis le dossier tombe sans rien à traverser. Rien d'autre sous .build/ n'est touché.
@@ -160,11 +111,13 @@ function clean(revisions: string): number {
 
 const USAGE = 'usage : node contracts/bench.ts [go|rust|ts|py …] [--runs N] [--contre REF] | --nettoyer';
 
-// Les exécutions par scénario sans --runs : 11 pour le banc, des médianes qui suffisent à situer un temps. Un A/B en veut 101 paires, soit
-// 202 lancements par scénario, un des 6 tours de 201 lancements qui ont tranché l'horloge de #21 : l'erreur de la médiane des différences
-// décroît en 1/√n, donc d'un facteur 3 environ sur 11 paires, ce qui sépare un écart de quelques pour cent du bruit. ADR-0004.
+// Les exécutions par scénario sans --runs : 11 pour le banc, des médianes qui suffisent à situer un temps. Un A/B en veut 100 paires, soit
+// 200 lancements par scénario, l'ordre de grandeur des 6 tours de 201 lancements qui ont tranché l'horloge de #21 : l'erreur de la médiane
+// des différences décroît en 1/√n, donc d'un facteur 3 environ sur 11 paires, ce qui sépare un écart de quelques pour cent du bruit.
+// Un nombre PAIR : l'ordre alterne, et sur un nombre impair de paires un côté part le premier une fois de plus, la médiane retombe dans ce
+// groupe et l'effet d'ordre que l'alternance annule revient (+0,27 ms sur 101 paires, 0,00 sur 100, en simulation). ADR-0004.
 const RUNS = 11;
-const RUNS_AB = 101;
+const RUNS_AB = 100;
 
 // Les identifiants demandés (aucun : les implémentations présentes), le nombre d'exécutions par scénario, et la révision REF d'un A/B
 // (absente sans `--contre`, donc sans clé). Toute erreur levée ici est une erreur d'usage. `--runs` veut des chiffres décimaux
@@ -268,7 +221,11 @@ export function main(argv: readonly string[], revisions: string = REVISIONS): nu
     console.error(`bench: ${(e as Error).message}`);
     return 1;
   }
-  versus(ids, runs, ref, rev);
+  // Un --runs impair est arrondi au pair supérieur, et dit : sur un nombre impair de paires, un côté part le premier une fois de plus et la
+  // médiane des différences garde cet effet d'ordre. Après la lecture de la révision (une erreur reste seule sur stderr), avant tout build.
+  const pairs = runs + (runs % 2);
+  if (pairs !== runs) console.error(`bench: --runs ${runs} est impair sous --contre, arrondi à ${pairs} paires : A et B doivent partir le premier à égalité`);
+  versus(ids, pairs, ref, rev);
   return 0;
 }
 

@@ -149,7 +149,7 @@ npm run differentiel
 - `check` vérifie les quatre langages.
 - `bench` compile, puis mesure le temps total et le temps de calcul de chaque langage sur sept scénarios, dont un terme à 1 000 000. Il prend aussi des identifiants de langage; sans `--runs`, il fait 11 exécutions.
 - `differentiel` lance la boucle différentielle, un outil de recherche hors de `check` et de `contract` (ADR-0001) : elle joue les quatre CLI sur les mêmes entrées et rend les écarts, sans attendu ni référence, en code 1 s'il y en a.
-- `bench -- <id> --contre REF` mesure un travail de démarrage par un A/B apparié : la révision REF, extraite sous `.build/revisions/` (à vider par `npm run bench -- --nettoyer`, jamais par `Remove-Item -Recurse` : chaque révision porte un lien vers `node_modules`), contre l'arbre de travail, lancées en alternance, avec la médiane des différences par paire (ADR-0004). Sans `--runs`, l'A/B fait 101 paires.
+- `bench -- <id> --contre REF` mesure un travail de démarrage par un A/B apparié : la révision REF, extraite sous `.build/revisions/` (à vider par `npm run bench -- --nettoyer`, jamais par `Remove-Item -Recurse` : chaque révision porte un lien vers `node_modules`), contre l'arbre de travail, lancées en alternance, avec la médiane des différences par paire (ADR-0004). Sans `--runs`, l'A/B fait 100 paires ; un `--runs` impair est arrondi au pair supérieur, pour que chaque côté parte le premier aussi souvent.
 
 ## Prérequis
 

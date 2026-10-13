@@ -1,11 +1,12 @@
 // Lancement d'une implémentation : le seul lieu des commandes de build et de lancement (PRD § 5). Le test de contrat et
-// le banc d'essai l'appellent tous deux : le banc mesure ainsi ce que le contrat vérifie.
+// le banc d'essai l'appellent tous deux : le banc mesure ainsi ce que le contrat vérifie. La boucle différentielle, un outil
+// de recherche hors du contrat, s'en sert aussi, et le banc comme elle résolvent puis extraient une révision (`resolve`, `extract`).
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync, rmSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// La racine de ce dépôt : la racine par défaut de tout lancement. Le banc y range aussi les révisions de son A/B.
+// La racine de ce dépôt : la racine par défaut de tout lancement. Les révisions de l'A/B du banc et de la boucle y sont aussi rangées.
 export const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const exe = process.platform === 'win32' ? '.exe' : '';
 
@@ -93,4 +94,53 @@ export function launch(id: string, args: readonly string[], { env, stderrClosed 
   const ms = Number(process.hrtime.bigint() - start) / 1e6;
   if (r.error) throw new Error(`${id} ${args.join(' ')} : ${r.error.message}`, { cause: r.error });
   return { code: r.status, out: r.stdout, err: r.stderr, ms };
+}
+
+// Les seuls chemins du build (PRD § 5) : une révision extraite n'emporte ni CLAUDE.md ni .claude/, qu'une session lancée sous
+// .build/ lirait comme des instructions. package.json y reste : son "type": "module" fait de .build/ts/cli.js un module ES.
+const BUILD_PATHS = ['go/', 'rust/', 'ts/', 'python/', 'package.json', ':(glob)tsconfig*.json'];
+
+// Où s'extraient les révisions du banc (l'A/B) et de la boucle différentielle : sous .build/, ignoré par git. `--nettoyer` les supprime.
+export const REVISIONS = join(ROOT, '.build', 'revisions');
+
+// Résout ref en SHA, puis vérifie que la révision a le dossier de chaque langage de ids : avant toute extraction et tout build, car un
+// langage absent de ref ne se découvre sinon qu'au milieu de l'A/B, après les langages qui le précèdent. Elle ne lit la révision que par
+// `git rev-parse` et `git ls-tree`. Lève une erreur d'une ligne, que le banc et la boucle écrivent sans pile.
+export function resolve(ref: string, ids: readonly string[]): string {
+  const git = (...args: string[]) => spawnSync('git', args, { cwd: ROOT, encoding: 'utf8' });
+  const resolved = git('rev-parse', '--verify', '--quiet', `${ref}^{commit}`);
+  if (resolved.status !== 0) throw new Error(`révision introuvable : ${ref}`);
+  const sha = resolved.stdout.trim();
+  const tree = git('ls-tree', '-d', '-z', '--name-only', sha);
+  if (tree.status !== 0) throw new Error(`git ls-tree ${sha} a échoué (code ${tree.status}) : ${tree.stderr}${tree.error ?? ''}`);
+  const dirs = tree.stdout.split('\0');
+  const absent = ids.filter((id) => !dirs.includes(dirOf(id)));
+  if (absent.length) throw new Error(`${absent.join(', ')} : dossier absent de ${ref}`);
+  return sha;
+}
+
+// Extrait la révision sha (rendue par `resolve`) sous revisions/<sha> et rend sa racine. Une fois : si le dossier existe, il est réutilisé,
+// avec ses binaires déjà construits. L'extraction passe par un index à part (GIT_INDEX_FILE) et un dossier provisoire renommé à la fin :
+// ni l'index ni la liste des worktrees ne changent, et une extraction interrompue ne laisse pas un dossier à moitié rempli.
+export function extract(sha: string, revisions: string): string {
+  const git = (args: string[], env: Record<string, string> = {}, input?: string) => {
+    const r = spawnSync('git', args, { cwd: ROOT, encoding: 'utf8', env: { ...process.env, ...env }, input });
+    if (r.status !== 0) throw new Error(`git ${args.join(' ')} a échoué (code ${r.status}) : ${r.stderr}${r.error ?? ''}`);
+    return r.stdout;
+  };
+  const dest = join(revisions, sha);
+  if (existsSync(dest)) return dest;
+  const part = `${dest}.part`;
+  const index = `${dest}.index`;
+  rmSync(part, { recursive: true, force: true });
+  rmSync(index, { force: true });
+  mkdirSync(part, { recursive: true });
+  const env = { GIT_INDEX_FILE: index };
+  git(['read-tree', sha], env);
+  git(['checkout-index', '-z', '--stdin', `--prefix=${part}/`], env, git(['ls-files', '-z', '--', ...BUILD_PATHS], env));
+  rmSync(index);
+  // tsc et les @types y sont cherchés dans node_modules : la révision emprunte ceux de ce dépôt (jonction sous Windows).
+  symlinkSync(join(ROOT, 'node_modules'), join(part, 'node_modules'), 'junction');
+  renameSync(part, dest);
+  return dest;
 }
