@@ -3,12 +3,13 @@
 import { before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import cp, { spawnSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { abRound, measure, pair, paired, parseArgs } from './bench.ts';
-import { build, closeStderr, command, IDS, launch, present, type LaunchOptions } from './lancement.ts';
+import { build, closeStderr, command, IDS, launch, present, ROOT, type LaunchOptions } from './lancement.ts';
 import { CHECKS, lines, terms } from './oracle.ts';
 
 const USAGE = `usage: fib [--algo iterative|matrix|fast|all] [--time] N
@@ -255,7 +256,7 @@ describe('oracle', () => {
 });
 
 // Les contrôles du harnais, joués une fois pour les quatre CLI : ils éprouvent le test de contrat lui-même et rougissent
-// quand il ferait passer un cas à vide. La sonde du fd 2 lance un vrai processus; HAR-1 à HAR-3 et HAR-5 n'en lancent aucun.
+// quand il ferait passer un cas à vide. La sonde du fd 2 lance un vrai processus; HAR-1 à HAR-3, HAR-5 et HAR-6 n'en lancent aucun.
 describe('harnais', () => {
   // Si `2>&-` cessait de fermer le fd 2, CLI-V04 passerait à vide. Une redirection vers un fd fermé échoue (code non nul).
   test('CLI-V04 : le harnais ferme le fd 2', { skip: noShell }, () => {
@@ -387,6 +388,62 @@ describe('harnais', () => {
     for (const mauvais of [[], [''], ['-x'], ['--runs', '3']]) {
       assert.throws(() => parseArgs(['py', '--contre', ...mauvais]), /--contre demande une révision/, `--contre ${JSON.stringify(mauvais)} accepté`);
     }
+  });
+
+  // HAR-6 : ADR-0001. La boucle différentielle (`contracts/differentiel.ts`) est un outil de recherche. Si le contrat la lançait ou
+  // l'importait, un écart entre implémentations deviendrait un verdict du contrat, sans attendu pour le trancher : l'oracle par vote
+  // que l'ADR-0001 écarte. Aucun script `check*` ni `contract` ne l'atteint, en suivant de proche en proche les `npm run <script>`
+  // (avec les crochets `pre` et `post` que npm joue) puis les modules que ces commandes lancent, et le test de contrat ne l'importe
+  // pas, même par un module qu'il importe. Le prototype d'A-2 laissait passer un `contract` qui lançait `npm run recherche`, un script
+  // qui lançait la boucle : 117 sur 117. Le contrôle ne lance rien : il lit package.json et les sources.
+  const LOOP = /differentiel/;
+  // Une commande lance un script par `npm run <script>`, `npm run-script <script>` ou leurs alias `rum` et `urn`, avec des options
+  // avant ou après, et le nom entre guillemets ou non.
+  const NPM_RUN = /\bnpm\s+(?:-\S+\s+)*(?:run-script|run|rum|urn)\s+(?:-\S+\s+)*["']?([^\s;&|<>()"']+)/g;
+  // Les commandes des scripts atteints depuis `roots` : les leurs, et de proche en proche celles des scripts qu'elles lancent.
+  const commandsReached = (scripts: Record<string, string>, roots: readonly string[]): string[] => {
+    const seen = new Set<string>();
+    const visit = (name: string): void => {
+      if (seen.has(name) || !Object.hasOwn(scripts, name)) return;
+      seen.add(name);
+      visit(`pre${name}`);
+      visit(`post${name}`);
+      for (const [, next] of scripts[name].matchAll(NPM_RUN)) visit(next);
+    };
+    roots.forEach(visit);
+    return [...seen].map((name) => scripts[name]);
+  };
+  // Les modules que `entry` importe, de proche en proche, lui compris. Seuls comptent les imports relatifs, les seuls qui mènent à un fichier du dépôt.
+  const IMPORT = /(?:from|import)\s*\(?\s*['"](\.{1,2}\/[^'"]+)['"]/g;
+  const importClosure = (entry: string): string[] => {
+    const seen = new Set<string>();
+    const pending = [entry];
+    for (let file = pending.pop(); file !== undefined; file = pending.pop()) {
+      if (seen.has(file)) continue;
+      seen.add(file);
+      if (existsSync(file)) for (const [, rel] of readFileSync(file, 'utf8').matchAll(IMPORT)) pending.push(join(dirname(file), rel));
+    }
+    return [...seen];
+  };
+
+  test('HAR-6 : la boucle différentielle reste hors de check*, de contract et du test de contrat', () => {
+    // Témoins du parcours des scripts : il suit `npm run` de proche en proche, avec ses options et ses crochets, et ne déborde pas.
+    const exemple = { precontract: 'echo', contract: 'node a.ts && npm run "b"', b: 'npm --silent run-script c -- x', c: 'node contracts/differentiel.ts', d: 'echo' };
+    assert.ok(commandsReached(exemple, ['contract']).some((c) => LOOP.test(c)), 'témoin : le parcours ne suit pas npm run de proche en proche');
+    assert.ok(commandsReached({ ...exemple, b: 'echo', precontract: exemple.c }, ['contract']).some((c) => LOOP.test(c)), 'témoin : le parcours oublie le crochet pre');
+    assert.ok(!commandsReached(exemple, ['d']).some((c) => LOOP.test(c)), 'témoin : le parcours atteint un script qu’aucun npm run ne lance');
+
+    const { scripts } = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { scripts: Record<string, string> };
+    const roots = Object.keys(scripts).filter((name) => name === 'contract' || name.startsWith('check'));
+    const commands = commandsReached(scripts, roots);
+    assert.ok(commandsReached(scripts, ['check']).some((c) => c.includes('contracts/cli.test.ts')), 'témoin : le parcours de package.json ne voit pas le test de contrat');
+    assert.deepEqual(commands.filter((c) => LOOP.test(c)), [], 'un script check* ou contract atteint la boucle');
+
+    // Le test de contrat, et chaque module ou script que ces commandes lancent, avec leurs imports.
+    const launched = commands.flatMap((c) => c.split(/\s+/)).map((t) => join(ROOT, t.replace(/^["']|["']$/g, ''))).filter((f) => /\.[cm]?[jt]s$/.test(f) && existsSync(f));
+    const reached = [...new Set([fileURLToPath(import.meta.url), ...launched].flatMap(importClosure))];
+    assert.ok(reached.includes(join(ROOT, 'contracts', 'lancement.ts')), 'témoin : le parcours des imports ne voit pas lancement.ts');
+    assert.deepEqual(reached.map((f) => relative(ROOT, f)).filter((f) => LOOP.test(f)), [], 'le test de contrat atteint la boucle par un import');
   });
 });
 

@@ -1,10 +1,8 @@
 // Banc d'essai des CLI (ADR-0004) : médiane du temps total du processus et du calcul rapporté par --time.
 // Usage : node contracts/bench.ts [go|rust|ts|py …] [--runs N] [--contre REF]. Compile puis lance par contracts/lancement.ts, comme le contrat.
 // --contre REF : A/B apparié, la révision REF (A) contre l'arbre de travail (B), lancés en alternance (le travail d'un démarrage, ADR-0004).
-import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, renameSync, rmSync, symlinkSync } from 'node:fs';
-import { basename, join } from 'node:path';
-import { build, launch, present, ROOT } from './lancement.ts';
+import { basename } from 'node:path';
+import { build, extract, launch, present } from './lancement.ts';
 
 const SCENARIOS: [name: string, args: string[]][] = [
   ['petit (10)', ['10']],
@@ -51,39 +49,6 @@ export function paired(pairs: readonly (readonly [a: number, b: number])[]): { a
 // ce dépôt, l'A/B comparerait l'arbre de travail à lui-même. Exportée pour le harnais (HAR-5).
 export const abRound = (i: number, id: string, args: readonly string[], root: string): [a: number, b: number] =>
   pair(i, () => measure(id, args, root).wall, () => measure(id, args).wall);
-
-// Les seuls chemins du build (PRD § 5) : une révision extraite n'emporte ni CLAUDE.md ni .claude/, qu'une session lancée sous
-// .build/ lirait comme des instructions. package.json y reste : son "type": "module" fait de .build/ts/cli.js un module ES.
-const BUILD_PATHS = ['go/', 'rust/', 'ts/', 'python/', 'package.json', ':(glob)tsconfig*.json'];
-
-// Extrait la révision ref sous .build/revisions/<sha> et rend sa racine. Une fois : si le dossier existe, il est réutilisé, avec
-// ses binaires déjà construits. L'extraction passe par un index à part (GIT_INDEX_FILE) et un dossier provisoire renommé à la fin :
-// ni l'index ni la liste des worktrees ne changent, et une extraction interrompue ne laisse pas un dossier à moitié rempli.
-function extract(ref: string): string {
-  const git = (args: string[], env: Record<string, string> = {}, input?: string) => {
-    const r = spawnSync('git', args, { cwd: ROOT, encoding: 'utf8', env: { ...process.env, ...env }, input });
-    if (r.status !== 0) throw new Error(`git ${args.join(' ')} a échoué (code ${r.status}) : ${r.stderr}${r.error ?? ''}`);
-    return r.stdout;
-  };
-  const resolved = spawnSync('git', ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], { cwd: ROOT, encoding: 'utf8' });
-  if (resolved.status !== 0) throw new Error(`révision introuvable : ${ref}`);
-  const sha = resolved.stdout.trim();
-  const dest = join(ROOT, '.build', 'revisions', sha);
-  if (existsSync(dest)) return dest;
-  const part = `${dest}.part`;
-  const index = `${dest}.index`;
-  rmSync(part, { recursive: true, force: true });
-  rmSync(index, { force: true });
-  mkdirSync(part, { recursive: true });
-  const env = { GIT_INDEX_FILE: index };
-  git(['read-tree', sha], env);
-  git(['checkout-index', '-z', '--stdin', `--prefix=${part}/`], env, git(['ls-files', '-z', '--', ...BUILD_PATHS], env));
-  rmSync(index);
-  // tsc et les @types y sont cherchés dans node_modules : la révision emprunte ceux de ce dépôt (jonction sous Windows).
-  symlinkSync(join(ROOT, 'node_modules'), join(part, 'node_modules'), 'junction');
-  renameSync(part, dest);
-  return dest;
-}
 
 const USAGE = 'usage : node contracts/bench.ts [go|rust|ts|py …] [--runs N] [--contre REF]';
 

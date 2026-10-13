@@ -87,3 +87,7 @@ _Avoid_ : benchmark comparatif, deux passes du banc
 **Travail de démarrage** :
 Un changement qui touche ce que la CLI fait avant de calculer : imports, chargement des modules, point d'entrée, préparation des flux. Son effet se mesure par l'A/B apparié (ADR-0004).
 _Avoid_ : optimisation du démarrage, cold start
+
+**Boucle différentielle** :
+L'outil de recherche (`npm run differentiel`) qui lance les implémentations d'une même révision sur les mêmes entrées et regroupe celles dont les sorties diffèrent. Elle n'a ni référence, ni majorité, ni attendu : elle trouve un écart, que le PRD § 4 puis un cas du catalogue tranchent. Elle reste hors de `check` et du contrat (ADR-0001).
+_Avoid_ : fuzzing, oracle par vote
