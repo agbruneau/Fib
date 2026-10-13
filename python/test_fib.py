@@ -12,7 +12,7 @@ from functools import cache
 from pathlib import Path
 from unittest import mock
 
-from fib import DECIMAL_FROM, STR_FROM_BITS, _fib_decimal, _text, compute, fib, fib_list, main
+from fib import DECIMAL_FROM, MAX_LIST, MAX_TERM, STR_FROM_BITS, _fib_decimal, _text, compute, fib, fib_list, main
 
 ALGOS = ("iterative", "matrix", "fast")
 HERE = Path(__file__).resolve().parent
@@ -112,16 +112,65 @@ def importtime_modules(*argv):
     return run, {row.rpartition(b"|")[2].strip().decode("ascii") for row in rows}
 
 
+def run_fib(code, *args):
+    """Lance `import fib` puis `code` dans python -I -S -c : les options du contrat, mais fib.main s'appelle depuis
+    `code`, donc sans le bloc __main__. sys.argv[2:] vaut args. stdout va au puits (--list 10000 écrit 10 Mo), stderr
+    revient en texte, avec un délai maximal."""
+    prelude = "import sys; sys.path.insert(0, sys.argv[1]); import fib\n"
+    command = [sys.executable, "-I", "-S", "-c", prelude + code, str(HERE), *args]
+    return subprocess.run(
+        command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, encoding="ascii", errors="replace", timeout=60
+    )
+
+
+# Sondes de PERF-PY-25. spy remplace time.perf_counter, que compute lit pour chronométrer, et note à chaque lecture si
+# decimal est dans sys.modules et combien de modules s'y trouvent, sans lire d'attribut du module : un module paresseux
+# ne se charge pas à cause d'elle. report() écrit sur stderr « marques/lectures » : une marque par fenêtre (une paire de
+# lectures, départ puis arrivée), 1 si decimal est chargé au départ et que sys.modules n'a pas grandi jusqu'à l'arrivée,
+# sinon 0, et 0 pour une lecture orpheline; puis le nombre de lectures.
+SPY_PRELUDE = (
+    "import time\n"
+    "clock, seen = time.perf_counter, []\n"
+    "def spy():\n"
+    "    seen.append(('decimal' in sys.modules, len(sys.modules)))\n"
+    "    return clock()\n"
+    "def report():\n"
+    "    marks = ['1' if d0 and n0 == n1 else '0' for (d0, n0), (_, n1) in zip(seen[::2], seen[1::2])]\n"
+    "    sys.stderr.write(''.join(marks) + '0' * (len(seen) % 2) + '/' + str(len(seen)))\n"
+    "time.perf_counter = spy\n"
+)
+# La CLI sur les arguments de la sonde, puis son rapport.
+SPY_CLI = "code = fib.main(sys.argv[2:])\nreport()\nsys.exit(code)\n"
+# Le témoin joue trois fenêtres, chacune prouvant une moitié du prédicat de report(). (A) decimal absent, rien ne se
+# charge : 0. Entre les fenêtres, _fib_decimal charge decimal, ce qu'un contrôle vérifie. (C) decimal chargé, mais
+# sys.modules grandit dans la fenêtre, comme sous un module paresseux ou un import en cours : 0. (D) decimal chargé,
+# sys.modules stable : 1.
+SPY_WITNESS = (
+    "spy(); spy()\n"
+    "fib._fib_decimal(10, 'fast')\n"
+    "assert 'decimal' in sys.modules\n"
+    "spy(); sys.modules['probe'] = sys; spy()\n"
+    "spy(); spy()\n"
+    "report()\n"
+)
+
+
+def clock_reads_with_decimal(body, *args):
+    """Lance SPY_PRELUDE puis body par run_fib; rend le processus et son rapport, les caractères qui suivent le dernier
+    saut de ligne de stderr (les lignes --time le précèdent)."""
+    run = run_fib(SPY_PRELUDE + body, *args)
+    return run, run.stderr.rpartition("\n")[2]
+
+
 class TestFib(unittest.TestCase):
     def assert_no_heavy_import(self, args):
-        """Lance fib.main(args) dans un processus à part, comme le contrat lance la CLI (python -I -S), puis vérifie que
-        ni re, ni decimal, ni _pylong n'ont été chargés."""
+        """Lance fib.main(args) dans un processus à part (run_fib), puis vérifie que ni re, ni decimal, ni _pylong n'ont
+        été chargés."""
         code = (
-            "import sys; sys.path.insert(0, sys.argv[1]); import fib\n"
             "assert fib.main(sys.argv[2:]) == 0\n"
             "assert not {'re', 'decimal', '_pylong'} & set(sys.modules), sorted(sys.modules)"
         )
-        run = subprocess.run([sys.executable, "-I", "-S", "-c", code, str(HERE), *args], capture_output=True, text=True)
+        run = run_fib(code, *args)
         self.assertEqual(run.returncode, 0, run.stderr)
 
     def test_BIB_01_fib_0_iterative_vaut_0(self):
@@ -412,6 +461,50 @@ class TestFib(unittest.TestCase):
         run, names = importtime_modules(str(FIB), "10")
         self.assertEqual(run.stdout, b"55\n")
         self.assertNotIn("os", names - bare)
+
+    def test_PERF_PY_25_decimal_est_deja_charge_quand_le_chronometre_demarre_par_list_fast_et_matrix(self):
+        """PERF-PY-25 : hors catalogue, garde de l'optimisation du préchargement de decimal par compute, hors du
+        chronomètre (sans lui, la ligne --time de fast à 170 000 passe de 5,8 à 10,4 ms : médiane de 21 lancements de
+        python -I -S, CPython 3.13, 2026-10-13; npm run bench n'a pas ce scénario). Un interpréteur neuf espionne
+        time.perf_counter (SPY_PRELUDE) : decimal doit être chargé avant chaque chronomètre, par --list et par un
+        terme en Decimal, et rester absent des entrées qui n'en servent pas. Mutants rouges : import retiré, déplacé
+        dans la fenêtre, limité à as_list ou à use_decimal, paresseux (LazyLoader); n > 100_000, iterative oublié.
+        Dépend de _decimal, l'accélérateur C des CPython officiels : sans lui (repli sur _pydecimal), des conversions
+        int et str chargent _pylong dans la fenêtre, et la garde rougit à tort."""
+        run, report = clock_reads_with_decimal(SPY_WITNESS)
+        self.assertEqual((run.returncode, report), (0, "001/6"), run.stderr)
+        cases = (
+            # les bornes de chaque chemin, avec --time, la ligne que le préchargement protège
+            ["--time", "--list", "0"],
+            ["--time", "--list", str(MAX_LIST)],
+            ["--time", str(DECIMAL_FROM)],
+            ["--time", str(MAX_TERM)],
+            ["--time", "--algo", "matrix", str(DECIMAL_FROM)],
+            ["--time", "--algo", "matrix", str(MAX_TERM)],
+            # des points impairs et intérieurs : les bornes sont toutes paires et multiples de 10
+            ["--time", "--list", "1"],
+            ["--time", str(DECIMAL_FROM + 1)],
+            ["--time", "--algo", "matrix", str(MAX_TERM - 1)],
+            # sans --time : compute chronomètre aussi sans lui
+            ["--list", "10"],
+            [str(DECIMAL_FROM)],
+            ["--algo", "matrix", str(DECIMAL_FROM)],
+        )
+        for args in cases:
+            with self.subTest(args=args):
+                run, report = clock_reads_with_decimal(SPY_CLI, *args)
+                self.assertEqual(run.returncode, 0, run.stderr)
+                marks, _, reads = report.partition("/")
+                self.assertRegex(marks, r"\A1+\Z", f"rapport brut {report!r} (marques/lectures), {reads} lectures")
+        # l'autre côté de la condition : ces entrées calculent en int, decimal ne doit pas se charger pour elles
+        for args in (
+            ["--algo", "fast", str(DECIMAL_FROM - 1)],
+            ["--algo", "matrix", str(DECIMAL_FROM - 1)],
+            ["--algo", "iterative", str(DECIMAL_FROM)],
+            ["--algo", "all", str(DECIMAL_FROM)],
+        ):
+            with self.subTest(sans_decimal=args):
+                self.assert_no_heavy_import(args)
 
 
 if __name__ == "__main__":

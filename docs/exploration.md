@@ -327,6 +327,39 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
   - Ajouter au banc un mode apparié entre deux builds, puisqu'un gain de démarrage de quelques pour cent est sous son bruit.
   - Demander au `fib-dev`, pour toute garde de modules chargés, un prédicat positif sur ce que l'optimisation évite.
 
+## 2026-10-13 — Garde PERF-PY-25 du préchargement de `decimal` (#25), en workflow, puis `/code-review`
+
+- **Contexte** : l'étape 10 avait relevé qu'une optimisation de l'ADR-0004 n'avait pas de garde. `compute` importe `decimal` hors du chronomètre, et sans cet import tous les tests restaient verts. Le propriétaire a demandé la garde ; l'orchestrateur a écrit le ticket.
+- **Démarche** : un workflow `ultracode`.
+  - Un `fib-dev` écrit la garde, puis trois vérificateurs adverses, chacun dans son worktree, l'éprouvent par exécution : mutants, robustesse et spec.
+  - Deux tours de correction suivent.
+  - Le premier lancement s'est arrêté au bout d'une minute, quand un message du propriétaire a interrompu le tour en cours. Le même script a été relancé.
+- **Résultat** : un interpréteur neuf espionne `time.perf_counter`. Avant chaque chronomètre, `decimal` doit être chargé, et `sys.modules` ne doit pas grandir dans la fenêtre. Sans préchargement, la ligne `--time` de `fast` à 170 000 passe de 5,8 à 10,4 ms (`python -I -S`, médiane de 21 lancements).
+  - Tour 1 : 3 défauts. La garde ne voyait ni un module paresseux (`LazyLoader`), ni une condition juste en un seul point, et ne passait jamais `--time`.
+  - Tour 2 : les points testés étaient tous pairs.
+  - Tour 3 : le vérificateur trouve encore une condition en résidu ou en bande qui survit entre les points. C'est une limite de tout test par échantillons ; l'orchestrateur l'a écartée.
+- **`/code-review`** : 10 constats, tous retenus en tout ou en partie.
+  - Le plus sérieux : l'autre côté de la condition n'était pas gardé. Un préchargement trop large (`n > 100_000`, ou `iterative` non exclu) passait les 39 tests et coûtait environ 5 ms de démarrage à des entrées qui n'utilisent pas `decimal`. Deux vérificateurs l'avaient vu, mais classé « mineur, hors mandat ».
+  - La docstring avait gonflé à 23 lignes, chaque tour y empilant ses mutants ; elle revient à 8.
+  - Corrigés aussi :
+    - la réserve sur l'accélérateur C `_decimal` ;
+    - un message d'échec qui donne le rapport brut ;
+    - un lanceur partagé avec PERF-PY-8 ;
+    - un témoin à trois fenêtres ;
+    - le code mort `env`.
+  - Au README, PERF-PY-20 et 23 sont désormais présentées comme gardes de correctifs.
+  - Au total, 23 mutants sont rouges sous Python 3.12 et 3.13.
+- **A aidé** :
+  - La vérification par exécution a trouvé ce qu'une relecture laisse passer : un module paresseux qui trompe un `in sys.modules`.
+  - Le témoin prouve chaque moitié du prédicat, et pas seulement que la garde tourne.
+- **Friction** :
+  - Le vérificateur de mutants ne converge pas sur une garde par échantillons : chaque tour invente une condition plus tordue. Il a fallu trancher.
+  - Le workflow a coûté environ 1,06 million de jetons et 59 minutes, puis une revue et un tour de corrections.
+  - Un message du propriétaire pendant un workflow en arrière-plan l'a interrompu, sans avertissement visible.
+- **À changer** :
+  - Donner au vérificateur de mutants un critère d'arrêt : un mutant compte s'il est une modification plausible du code, pas une condition arbitraire.
+  - Demander dès le ticket les deux côtés d'une condition d'optimisation : là où elle doit agir, et là où elle ne doit rien coûter.
+
 ## Bilan au 2026-10-13
 
 | Skill | Usage |
@@ -339,7 +372,7 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
 | `/implement` | remplacée par l'agent `fib-dev`, qui applique `tdd` directement |
 | `resolving-merge-conflicts` | non nécessaire : aucune des 41 fusions n'a conflicté |
 | `research`, `prototype` | non utilisées; un `prototype` aurait détecté plus tôt le piège de `go run` |
-| `/code-review` | utilisée trois fois le 2026-10-11, axes Standards et Spec : après la refactorisation, après l'optimisation, après la borne à 1 000 000; puis le 2026-10-12, sur les tickets #6 à #14 et sur #16; puis le 2026-10-13, sur #20 et #21 |
+| `/code-review` | utilisée trois fois le 2026-10-11, axes Standards et Spec : après la refactorisation, après l'optimisation, après la borne à 1 000 000; puis le 2026-10-12, sur les tickets #6 à #14 et sur #16; puis le 2026-10-13, sur #20, #21 et #25 |
 | `diagnosing-bugs` | utilisée à l'étape 9 (#16), lue dans `mattpocock/skills` faute de plugin; précédée d'une boucle différentielle pour trouver l'écart |
 | `/improve-codebase-architecture`, `codebase-design`, `grilling` | utilisées à l'étape 10 (#20), lues dans `mattpocock/skills` : rapport de 5 candidats, *design it twice* à 4 prototypes, 2 tours de *grilling* |
 | `/handoff` | utilisée à l'étape 11, lue dans `mattpocock/skills` : document de reprise hors dépôt, envoyé au propriétaire |
