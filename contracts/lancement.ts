@@ -103,6 +103,16 @@ const BUILD_PATHS = ['go/', 'rust/', 'ts/', 'python/', 'package.json', ':(glob)t
 // Où s'extraient les révisions du banc (l'A/B) et de la boucle différentielle : sous .build/, ignoré par git. `--nettoyer` les supprime.
 export const REVISIONS = join(ROOT, '.build', 'revisions');
 
+// La validation des valeurs d'option que le banc (`--runs`, `--contre`) et la boucle différentielle (`--jetons`, `--revision`) lisent de même.
+// Chacune rend la valeur valide ou undefined, et l'appelant écrit l'erreur d'usage avec le nom de son option. Un entier ne s'écrit qu'en chiffres
+// décimaux, et sûr : Number() accepte aussi '', ' 3', '1e3' et '0x10', et rend NaN, 0 ou une boucle sans fin pour le reste.
+export const decimalInt = (value: string | undefined): number | undefined =>
+  value !== undefined && /^[0-9]+$/.test(value) && Number.isSafeInteger(Number(value)) ? Number(value) : undefined;
+// Une révision ne ressemble pas à une option, que git lirait comme telle (`--help`), et n'est pas vide.
+export const revisionArg = (value: string | undefined): string | undefined => (value === undefined || value === '' || value.startsWith('-') ? undefined : value);
+// La valeur reçue, telle que l'erreur d'usage la rapporte.
+export const shown = (value: string | undefined): string => (value === undefined ? 'aucune valeur' : JSON.stringify(value));
+
 // Résout ref en SHA, puis vérifie que la révision a le dossier de chaque langage de ids : avant toute extraction et tout build, car un
 // langage absent de ref ne se découvre sinon qu'au milieu de l'A/B, après les langages qui le précèdent. Elle ne lit la révision que par
 // `git rev-parse` et `git ls-tree`. Lève une erreur d'une ligne, que le banc et la boucle écrivent sans pile.
