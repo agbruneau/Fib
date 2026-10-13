@@ -86,4 +86,4 @@ _Avoid_ : benchmark comparatif, deux passes du banc
 
 **Travail de démarrage** :
 Un changement qui touche ce que la CLI fait avant de calculer : imports, chargement des modules, point d'entrée, préparation des flux. Son effet se mesure par l'A/B apparié (ADR-0004).
-_Avoid_ : optimisation du démarrage, cold start
+_Avoid_ : cold start

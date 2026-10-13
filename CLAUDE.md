@@ -23,6 +23,7 @@ Ce dépôt demande la délégation : la règle globale « ne lance un sous-agent
 - `npm run check:<go|rust|ts|py>` : un langage, avec son contrat.
 - `npm run contract` : le contrat des implémentations présentes.
 - `npm run check` : les quatre langages, vert depuis le 2026-10-10.
+- `npm run differentiel [-- go|rust|ts|py …] [--dimension …] [--jetons K] [--revision REF]` : la boucle différentielle, un outil de recherche (ADR-0001), hors de `check` et de `contract`; code 1 s'il y a un écart, qu'on tranche ensuite par le PRD § 4 et `diagnosing-bugs`.
 - `npm run bench [-- go|rust|ts|py …] [--runs N] [--contre REF] | --nettoyer` : le banc d'essai, médianes du temps de réponse (ADR-0004). Toute mesure de performance passe par lui. `--contre REF` en fait un A/B apparié de REF contre l'arbre de travail, la mesure d'un travail de démarrage; la révision s'extrait sous `.build/revisions/`, à vider par `npm run bench -- --nettoyer`, jamais par `Remove-Item -Recurse`.
 
 Les scripts vivent dans `package.json`, créé par le ticket #2 (PRD § 9). Sous Windows, Rust passe par une override rustup GNU propre à ce dossier (PRD § 5). L'oracle se régénère avec `python contracts/generer_oracle.py` (`contracts/README.md`).

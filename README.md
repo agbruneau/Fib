@@ -53,16 +53,16 @@ Temps total du processus, en millisecondes, médianes de 15 exécutions (`npm ru
 **Qualité.**
 
 - L'audit, en 8 dimensions (les quatre langages, contrat, cohérence, test différentiel, documentation), a rendu 233 constats, dont 36 réfutés par un vérificateur sceptique. Il n'a trouvé aucune erreur de calcul et un seul écart au contrat : Python laissait `PYTHONIOENCODING` changer l'encodage de sa sortie. L'écart est corrigé et gardé par PERF-PY-20 : CLI-V03 ne peut pas le voir, car `python -I` ignore la variable. Un test différentiel de 121 vecteurs hors catalogue n'a trouvé aucun écart entre les quatre implémentations. Le 2026-10-12, une boucle différentielle d'environ 170 000 entrées en a trouvé un : avec stderr fermé, Python sortait en code 1, stdout vide. Il est corrigé et gardé par CLI-V04 et PERF-PY-23. Elle a aussi relevé des comportements que le contrat ne tranchait pas, comme un stdout qui refuse l'écriture : ils sont désormais hors contrat (PRD § 4, [agbruneau/Fib#18](https://github.com/agbruneau/Fib/issues/18)).
-- Chaque langage passe les 99 cas CLI du contrat (CLI-V04 se saute sous Windows), ORA-01 à ORA-06 sur l'oracle et six contrôles du harnais, la sonde du fd 2 et HAR-1 à HAR-5 (111 tests par langage), BIB-01 à BIB-14 sur sa bibliothèque (BIB-14 est sans objet en Rust), et des tests de garde de ses optimisations : 10 en Go, 12 en Rust, 9 en TypeScript, 28 en Python, dont PERF-PY-20 et PERF-PY-23, qui gardent des correctifs (F10 et CLI-V04). D'autres gardes tiennent des exigences que le contrat ne sait pas provoquer. La discordance (F3) est gardée dans les quatre langages (PERF-TS-7, PERF-GO-9, PERF-RS-11, PERF-PY-26), ainsi que l'algorithme réellement exécuté (F2, F6 : PERF-TS-8, PERF-GO-10, PERF-RS-12, PERF-PY-27). La durée réellement mesurée ne l'est qu'en TypeScript (PERF-TS-8).
+- Chaque langage passe les 99 cas CLI du contrat (CLI-V04 se saute sous Windows), ORA-01 à ORA-06 sur l'oracle et sept contrôles du harnais, la sonde du fd 2 et HAR-1 à HAR-6 (112 tests par langage), BIB-01 à BIB-14 sur sa bibliothèque (BIB-14 est sans objet en Rust), et des tests de garde de ses optimisations : 10 en Go, 12 en Rust, 9 en TypeScript, 29 en Python, dont PERF-PY-20, PERF-PY-23 et PERF-PY-29, qui gardent des correctifs (F10 et CLI-V04). D'autres gardes tiennent des exigences que le contrat ne sait pas provoquer. La discordance (F3) est gardée dans les quatre langages (PERF-TS-7, PERF-GO-9, PERF-RS-11, PERF-PY-26), ainsi que l'algorithme réellement exécuté (F2, F6 : PERF-TS-8, PERF-GO-10, PERF-RS-12, PERF-PY-27). La durée réellement mesurée ne l'est qu'en TypeScript (PERF-TS-8).
 - Une revue `/code-review` a suivi chacun des cinq chantiers. Ces revues ont trouvé, entre autres, une violation du PRD § 7 en Rust (lignes vides de l'oracle) et un `matrix` TypeScript qui refaisait l'ancien `fast`. Les constats sont corrigés.
 
 **Coût.**
 
 | Lignes de code (`wc -l`, hors fichiers de test) | Go | Rust | TypeScript | Python |
 |---|---|---|---|---|
-| avant → final | 255 → 382 | 205 → 409 | 151 → 266 | 158 → 268 |
+| avant → final | 255 → 385 | 205 → 469 | 151 → 266 | 158 → 270 |
 
-- Rust compte aussi ses tests unitaires : 34 lignes dans `lib.rs` et 44 dans `main.rs` (PERF-RS-8). La cible d'environ 200 lignes (PRD, A3) est remplacée par l'ADR-0004.
+- Rust compte aussi ses tests unitaires : 34 lignes dans `lib.rs` et 102 dans `main.rs` (PERF-RS-8, 11 et 12). La cible d'environ 200 lignes (PRD, A3) est remplacée par l'ADR-0004.
 - `iterative` reste en O(n²) opérations sur les mots : à 1 000 000, il prend environ 1,6 s en Go et 5 s en Python, ce que F8 accepte.
 
 Le détail des décisions et des mesures est dans l'[ADR-0004](docs/adr/0004-performance-du-calcul.md).
@@ -141,12 +141,14 @@ npm run check
 ```bash
 npm run bench -- --runs 15
 npm run bench -- py --contre main
+npm run differentiel
 ```
 
 - `check:<id>` vérifie un langage (`go`, `rust`, `ts` ou `py`) : analyse statique, tests du langage, puis contrat.
 - `contract` compile Go, Rust et TypeScript, puis joue le contrat sur les implémentations présentes.
 - `check` vérifie les quatre langages.
 - `bench` compile, puis mesure le temps total et le temps de calcul de chaque langage sur sept scénarios, dont un terme à 1 000 000. Il prend aussi des identifiants de langage; sans `--runs`, il fait 11 exécutions.
+- `differentiel` lance la boucle différentielle, un outil de recherche hors de `check` et de `contract` (ADR-0001) : elle joue les quatre CLI sur les mêmes entrées et rend les écarts, sans attendu ni référence, en code 1 s'il y en a.
 - `bench -- <id> --contre REF` mesure un travail de démarrage par un A/B apparié : la révision REF, extraite sous `.build/revisions/` (à vider par `npm run bench -- --nettoyer`, jamais par `Remove-Item -Recurse` : chaque révision porte un lien vers `node_modules`), contre l'arbre de travail, lancées en alternance, avec la médiane des différences par paire (ADR-0004). Sans `--runs`, l'A/B fait 101 paires.
 
 ## Prérequis
@@ -174,7 +176,7 @@ Fib/
 │   ├── agents/          configuration des skills de Matt Pocock
 │   ├── cas-de-test.md   catalogue des cas de test (TDD)
 │   └── exploration.md   journal des skills utilisées
-├── contracts/           oracle, lancement commun des CLI (lancement.ts), test de contrat et banc d'essai (bench.ts)
+├── contracts/           oracle, lancement commun des CLI (lancement.ts), test de contrat, banc d'essai (bench.ts) et boucle différentielle (differentiel.ts)
 ├── go/  rust/  ts/  python/
 ├── .build/              Go et TypeScript compilés (ignoré par git)
 ├── package.json         point d'entrée des vérifications
