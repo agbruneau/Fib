@@ -112,6 +112,34 @@ def importtime_modules(*argv):
     return run, {row.rpartition(b"|")[2].strip().decode("ascii") for row in rows}
 
 
+# Sondes de PERF-PY-25 : time.perf_counter, que compute lit pour chronométrer, note à chaque lecture si decimal est déjà
+# dans sys.modules; report() écrit ces notes sur stderr, un caractère par lecture (1 chargé, 0 non).
+SPY_PRELUDE = (
+    "import sys, time\n"
+    "clock, seen = time.perf_counter, []\n"
+    "def spy():\n"
+    "    seen.append('decimal' in sys.modules)\n"
+    "    return clock()\n"
+    "def report():\n"
+    "    sys.stderr.write(''.join('1' if loaded else '0' for loaded in seen))\n"
+    "time.perf_counter = spy\n"
+    "sys.path.insert(0, sys.argv[1]); import fib\n"
+)
+# La CLI sur les arguments de la sonde, puis son rapport. Le témoin lit l'horloge de part et d'autre d'un chemin Decimal
+# que rien n'a préchargé.
+SPY_CLI = "code = fib.main(sys.argv[2:])\nreport()\nsys.exit(code)\n"
+SPY_WITNESS = "spy(); fib._fib_decimal(fib.DECIMAL_FROM, 'fast'); spy()\nreport()\n"
+
+
+def clock_reads_with_decimal(body, *args):
+    """Lance SPY_PRELUDE puis body dans python -I -S -c (comme le contrat lance la CLI); rend le processus et son
+    rapport. Sans variable PYTHON* (-I les ignore déjà : la garde ne doit pas en dépendre), et avec un délai maximal."""
+    env = {name: value for name, value in os.environ.items() if not name.startswith("PYTHON")}
+    command = [sys.executable, "-I", "-S", "-c", SPY_PRELUDE + body, str(HERE), *args]
+    run = subprocess.run(command, capture_output=True, env=env, timeout=60)
+    return run, run.stderr.decode("ascii", "replace")
+
+
 class TestFib(unittest.TestCase):
     def assert_no_heavy_import(self, args):
         """Lance fib.main(args) dans un processus à part, comme le contrat lance la CLI (python -I -S), puis vérifie que
@@ -412,6 +440,25 @@ class TestFib(unittest.TestCase):
         run, names = importtime_modules(str(FIB), "10")
         self.assertEqual(run.stdout, b"55\n")
         self.assertNotIn("os", names - bare)
+
+    def test_PERF_PY_25_decimal_est_deja_charge_quand_le_chronometre_demarre_par_list_fast_et_matrix(self):
+        """PERF-PY-25 : hors catalogue, garde de l'optimisation du préchargement de decimal par compute, hors du
+        chronomètre (sans lui, la ligne --time de fast à 170 000 passe de 6 à 9,5 ms : médianes de 21 lancements de
+        python -I, deux séries, 6,6 → 9,5 et 5,8 → 9,6 ms, 2026-10-13); les autres tests et le contrat restent verts
+        sans lui. Déterministe, sans seuil de durée : un interpréteur neuf (python -I -S, comme le contrat) espionne
+        time.perf_counter et note, à chaque lecture, si decimal est déjà dans sys.modules; toutes les lectures doivent
+        le voir chargé. Couvre --list, et un terme en Decimal dès DECIMAL_FROM, sans iterative, par fast puis matrix.
+        Mutants qui la rougissent : `import decimal` retiré de compute; déplacé dans la fenêtre du chronomètre (dans
+        timed après start, ou dans la lambda); limité à as_list; limité à use_decimal. Témoin : sans préchargement, le
+        même espion voit decimal se charger entre deux lectures (01, non 11), et l'interpréteur nu ne l'a pas chargé :
+        un 1 ne peut venir que du préchargement."""
+        run, report = clock_reads_with_decimal(SPY_WITNESS)
+        self.assertEqual((run.returncode, report), (0, "01"), run.stderr)
+        for args in (["--list", "10"], [str(DECIMAL_FROM)], ["--algo", "matrix", str(DECIMAL_FROM)]):
+            with self.subTest(args=args):
+                run, report = clock_reads_with_decimal(SPY_CLI, *args)
+                self.assertEqual(run.returncode, 0, run.stderr)
+                self.assertRegex(report, r"\A1+\Z", "decimal chargé à chaque lecture (1), non pendant la mesure (0)")
 
 
 if __name__ == "__main__":
