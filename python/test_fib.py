@@ -633,7 +633,7 @@ class TestFib(unittest.TestCase):
         Comme PERF-PY-26 et 27, elle suppose que _ALGOS reste le seul aiguillage : sans lui, le quatrième signal devient
         aveugle (PERF-PY-27 rougit alors).
         Quatre signaux, dans un interpréteur neuf (PERF-PY-5 a déjà chargé _pylong ici) lancé par run_fib, à des indices
-        de toute la plage, des deux côtés de F(288 000) et pour chacun des deux algorithmes : un int s'écrirait par les
+        de toute la plage, des deux côtés de F(288 086) et pour chacun des deux algorithmes : un int s'écrirait par les
         tranches de _text (divmod, quadratique) jusqu'à STR_FROM_BITS bits, puis par str(), qui importe _pylong (10 ms,
         PRD § 5); un int converti par Decimal(int), conversion binaire → décimale quadratique que _fib_decimal dit
         éviter, ne passe ni par l'un ni par l'autre. Le divmod de fib est donc espionné, _pylong ne doit pas se charger,
@@ -708,7 +708,7 @@ class TestFib(unittest.TestCase):
                     (witness.returncode, witness.stderr), (1, "Decimal accepte\nalgorithme sans Decimal pour kind\n")
                 )
         # DECIMAL_FROM, l'intérieur de la sous-plage des tranches (F(250 001) compte 173 561 bits), juste au-delà de
-        # F(288 000) (F(300 001) en compte 208 273), le milieu de celle de str() (F(600 000) en compte 416 544) et
+        # F(288 086) (F(300 001) en compte 208 273), le milieu de celle de str() (F(600 000) en compte 416 544) et
         # MAX_TERM : les mêmes pour fast et pour matrix, puisqu'une bande sans Decimal peut n'exclure que l'un des deux
         spies = kind_spy + convert_spy + spy
         for args in (

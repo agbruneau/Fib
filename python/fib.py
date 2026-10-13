@@ -200,7 +200,7 @@ def _text(x):
 
 
 # Mesuré : à cet indice, l'import de decimal (5 ms) coûte autant que l'écriture par tranches, quadratique au-delà.
-# Couplage : F(169 999) compte environ 118 000 bits, donc STR_FROM_BITS ne joue qu'avec iterative et all, dès F(288 000)
+# Couplage : F(169 999) compte environ 118 000 bits, donc STR_FROM_BITS ne joue qu'avec iterative et all, dès F(288 086)
 DECIMAL_FROM = 170_000
 
 
