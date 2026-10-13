@@ -4,25 +4,29 @@
 // PRD § 4, puis par un cas du catalogue. Elle compare les implémentations d'une même révision, jamais deux révisions d'une même.
 // Usage : node contracts/differentiel.ts [go|rust|ts|py …] [--dimension grammaire|valeurs|environnement|descripteurs]…
 //         [--jetons K] [--revision REF]
-// Code 0 sans écart, 1 avec au moins un écart, 2 pour une erreur d'usage, 3 si le témoin rougit ou si une extraction, un build
-// ou un lancement échoue : le code 1 est le seul verdict.
+// Code 0 sans écart, 1 avec au moins un écart, 2 pour une erreur d'usage, 3 si le témoin rougit, si la sélection ne produit aucune
+// entrée ou si une extraction, un build ou un lancement échoue : le code 1 est le seul verdict.
 // Hors contrat, donc hors de la boucle (PRD § 4) : un stdout fermé ou dont l'écriture échoue, un argument qui n'est pas de l'Unicode
 // valide, les limites de ressources, les flux fusionnés. Leurs écarts sont permis, et aucune entrée ne les provoque.
 import assert from 'node:assert/strict';
 import { basename } from 'node:path';
-import { build, extract, IDS, launch, present, resolve, REVISIONS, type LaunchOptions } from './lancement.ts';
+import { build, decimalInt, extract, IDS, launch, present, resolve, REVISIONS, revisionArg, shown, type LaunchOptions } from './lancement.ts';
 
 type Run = ReturnType<typeof launch>;
 
 // Une entrée : les arguments de la CLI, et l'état dans lequel la lancer.
 type Entry = { args: string[]; env?: LaunchOptions['env']; stderrClosed?: boolean };
 
+// Ce que F10 interdit à stdout et à stderr : un octet de plus de 127 (hors ASCII), ESC (une séquence ANSI) et le retour chariot (des fins de
+// ligne `\n` partout). Le reste de l'ASCII est permis, la tabulation comprise. Les flux se lisent en latin1 : un octet égale un caractère.
+const BREACHES_F10 = /[^\x00-\x7f]|[\x1b\r]/;
+
 // Ce que le contrat fixe d'une exécution : le code, stdout à l'octet et stderr ligne à ligne. Le texte qui suit `fib: ` est libre
-// (F9), mais marqué s'il sort de l'ASCII imprimable (F10) : ni octet de plus de 127, ni ESC, ni retour chariot. La valeur d'une
-// durée varie par nature : elle est masquée, et l'algorithme chronométré reste (F6). Toute autre ligne se compare au texte.
+// (F9), mais marqué s'il enfreint F10. La valeur d'une durée varie par nature : elle est masquée, et l'algorithme chronométré reste
+// (F6). Toute autre ligne se compare au texte.
 function project({ code, out, err }: Pick<Run, 'code' | 'out' | 'err'>): string {
   const line = (l: string) => {
-    if (l.startsWith('fib: ')) return /^[\x20-\x7e]*$/.test(l) ? 'fib: …' : 'fib: … (hors ASCII)';
+    if (l.startsWith('fib: ')) return BREACHES_F10.test(l) ? 'fib: … (hors F10)' : 'fib: …';
     return l.replace(/^(fast|iterative|matrix) [0-9]+\.[0-9]{3} ms$/, '$1 … ms');
   };
   return JSON.stringify([code, out, err.split('\n').map(line)]);
@@ -48,10 +52,13 @@ const diverges = (groups: readonly string[][]) => groups.length > 1;
 function witness(): void {
   const p = (code: number | null, out: string, err: string) => project({ code, out, err });
   assert.equal(p(2, '', 'fib: a\n'), p(2, '', 'fib: b\n'), 'le texte qui suit fib: est libre (F9)');
-  assert.notEqual(p(2, '', 'fib: a\n'), p(2, '', 'fib: \x1b[31ma\n'), 'mais il est marqué hors ASCII (F10) : ESC');
+  assert.notEqual(p(2, '', 'fib: a\n'), p(2, '', 'fib: \x1b[31ma\n'), 'mais il est marqué hors F10 : ESC');
   assert.notEqual(p(2, '', 'fib: a\n'), p(2, '', 'fib: \xe9\n'), 'un octet de plus de 127');
   assert.notEqual(p(2, '', 'fib: a\n'), p(2, '', 'fib: a\r\n'), 'un retour chariot');
   assert.equal(p(2, '', 'fib: \xe9\n'), p(2, '', 'fib: \xe8\n'), 'le marqueur tient lieu de texte');
+  assert.equal(p(2, '', 'fib: a\n'), p(2, '', 'fib: a\tb\n'), 'une tabulation est de l’ASCII : F10 ne l’interdit pas, elle reste du texte libre');
+  assert.equal(p(2, '', 'fib: a\n'), p(2, '', 'fib: a\x7f\x01\n'), 'DEL et les autres caractères de contrôle ASCII non plus');
+  assert.equal(p(2, '', 'fib: \xe9\n'), p(2, '', 'fib: \x1b[0m\r\xe8\xe8\n'), 'une infraction à F10 vaut une autre : le marqueur est le même');
   assert.equal(p(0, '55\n', 'fast 0.010 ms\n'), p(0, '55\n', 'fast 1.250 ms\n'), 'la valeur d’une durée varie (F6)');
   assert.notEqual(p(0, '55\n', 'fast 0.010 ms\n'), p(0, '55\n', 'matrix 0.010 ms\n'), 'mais l’algorithme chronométré compte');
   assert.notEqual(p(0, '55\n', 'fast 0.010 ms\n'), p(0, '55\n', 'fast 0.01 ms\n'), 'et le format : trois décimales');
@@ -74,17 +81,52 @@ function witness(): void {
   const agree = new Map([['go', 'x'], ['py', 'x']]);
   assert.deepEqual(group(agree), [['go', 'py']], 'un accord est un seul groupe');
   assert.ok(diverges(group(odd)) && diverges(group(three)) && !diverges(group(agree)), 'un écart, c’est plus d’un groupe');
+
+  // Les suites de jetons : de 0 à K, par longueur puis dans l'ordre des jetons, et le niveau K + 1, que rien ne joue, n'est jamais construit.
+  // Le niveau suivant se construit par un `map` sur les jetons, une fois par suite du niveau courant : 1 + 2 suites sous K = 2 avec deux jetons.
+  let built = 0;
+  const counted = new Proxy(['a', 'b'], { get: (target, key, receiver) => (key === 'map' && built++, Reflect.get(target, key, receiver)) });
+  assert.deepEqual([...grammar(2, counted)].map(({ args }) => args.join('')), ['', 'a', 'b', 'aa', 'ab', 'ba', 'bb'], 'toutes les suites de 0 à K jetons, par longueur');
+  assert.equal(built, 3, 'le niveau K + 1 est construit pour rien');
+  assert.deepEqual([...grammar(0, ['a', 'b'])].map(({ args }) => args), [[]], 'K = 0 : la seule suite vide');
+
+  // La sélection : une dimension peut ne rien produire (les descripteurs sous Windows), pas toute la sélection. Une recherche sans entrée sortirait
+  // en 0, « sans écart », sans avoir rien cherché.
+  assert.throws(() => selection(['descripteurs'], 2, 'win32'), /aucune entrée/, 'une sélection sans entrée doit échouer, non sortir en « sans écart »');
+  assert.equal(selection(['descripteurs'], 2, 'linux')[0][1].length, SHORT_ARGS.length, 'les descripteurs jouent les lignes de commande courtes, sous POSIX');
+  assert.ok(selection(['descripteurs'], 2, 'linux')[0][1].every((entry) => entry.stderrClosed === true), 'les descripteurs ferment le fd 2 (CLI-V04)');
+  assert.deepEqual(selection([], 2, 'win32').map(([name, entries]) => [name, entries.length > 0]), [['grammaire', true], ['valeurs', true], ['environnement', true], ['descripteurs', false]], 'par défaut, une dimension vide ne rougit pas');
+  assert.deepEqual(selection(['descripteurs', 'valeurs'], 2, 'win32').map(([name]) => name), ['descripteurs', 'valeurs'], 'une dimension vide parmi d’autres ne rougit pas');
+
+  // Les arguments : chaque erreur d'usage se lève dans parseArgs, donc avant ce témoin, toute extraction et tout build (code 2).
+  const refused = (args: string[], message: RegExp, why: string) => assert.throws(() => parseArgs(args), message, why);
+  assert.deepEqual(parseArgs([]), { ids: [], dimensions: [], tokens: 2, ref: undefined }, 'sans argument : les implémentations présentes, toutes les dimensions, K = 2');
+  assert.equal(parseArgs(['--jetons', '0']).tokens, 0, '--jetons 0 est permis : la seule suite vide');
+  assert.equal(parseArgs(['--jetons', '3']).tokens, 3, '--jetons rend son entier');
+  for (const value of ['', '-1', '2.5', '1e3', '0x10', ' 3', 'abc', '9007199254740993']) refused(['--jetons', value], /--jetons demande/, `--jetons ${JSON.stringify(value)} accepté`);
+  refused(['--jetons'], /--jetons demande .*aucune valeur/, '--jetons sans valeur accepté');
+  assert.equal(parseArgs(['--revision', 'HEAD~1']).ref, 'HEAD~1', '--revision rend sa révision');
+  for (const value of ['', '-x', '--help']) refused(['--revision', value], /--revision demande/, `--revision ${JSON.stringify(value)} accepté`);
+  refused(['--revision'], /--revision demande .*aucune valeur/, '--revision sans valeur accepté');
+  assert.deepEqual(parseArgs(['py', 'go', 'py', '--dimension', 'valeurs', '--dimension', 'valeurs']).ids, ['py', 'go'], 'un identifiant répété ne compte qu’une fois');
+  refused(['--dimension', 'x'], /--dimension demande/, 'une dimension inconnue acceptée');
+  refused(['perl'], /implémentation inconnue/, 'un identifiant inconnu accepté');
+  refused(['--bogus'], /option inconnue/, 'une option inconnue acceptée');
+  // Une seule implémentation demandée n'a rien à comparer : une erreur d'usage, avant la résolution de --revision, non un échec en code 3 après elle.
+  for (const args of [['go'], ['go', 'go'], ['py', '--revision', 'HEAD'], ['--dimension', 'valeurs', 'ts']]) refused(args, /au moins deux implémentations/, `${args.join(' ')} : une seule implémentation acceptée`);
+  assert.deepEqual(parseArgs(['go', 'py']).ids, ['go', 'py'], 'deux implémentations suffisent');
 }
 
 // Les jetons de la grammaire (PRD § 4, règles 1 à 6) : des valides, des invalides, des ambigus. Toutes les suites de 0 à K jetons.
 const TOKENS = ['5', '007', '', 'abc', '-1', '-', '--', '-h', '--help', '--list', '--time', '--algo', '--algo=fast', '--algo=', 'all',
   'matrix', 'FAST', '--bogus', '10001', '5 6'];
 
-function* grammar(k: number): Generator<Entry> {
+function* grammar(k: number, tokens: readonly string[] = TOKENS): Generator<Entry> {
   let sequences: string[][] = [[]];
   for (let length = 0; length <= k; length++) {
     for (const args of sequences) yield { args };
-    sequences = sequences.flatMap((s) => TOKENS.map((t) => [...s, t]));
+    // Le niveau suivant ne se construit que s'il se joue : celui de K + 1 compterait 20 fois plus de suites que celui de K, pour rien.
+    if (length < k) sequences = sequences.flatMap((s) => tokens.map((t) => [...s, t]));
   }
 }
 
@@ -119,14 +161,31 @@ function* environment(): Generator<Entry> {
 }
 
 // L'état des descripteurs au lancement : la dimension qui a trouvé l'écart de l'étape 9 (CLI-V04). POSIX seulement.
-function* descriptors(): Generator<Entry> {
-  if (process.platform !== 'win32') for (const args of SHORT_ARGS) yield { args, stderrClosed: true };
+function* descriptors(platform: NodeJS.Platform): Generator<Entry> {
+  if (platform !== 'win32') for (const args of SHORT_ARGS) yield { args, stderrClosed: true };
 }
 
-const DIMENSIONS: Record<string, (k: number) => Iterable<Entry>> = { grammaire: grammar, valeurs: values, environnement: environment, descripteurs: descriptors };
+const DIMENSIONS: Record<string, (tokens: number, platform: NodeJS.Platform) => Iterable<Entry>> = {
+  grammaire: (tokens) => grammar(tokens),
+  valeurs: () => values(),
+  environnement: () => environment(),
+  descripteurs: (_, platform) => descriptors(platform),
+};
 
-// Un aperçu pour le diagnostic, tronqué à 24 octets de stdout et 100 de stderr : la boucle ne recopie jamais une sortie entière,
-// qui pourrait servir d'attendu.
+// Les entrées à jouer, par dimension : les demandées, ou les quatre dans l'ordre ci-dessus. Une dimension peut ne rien produire (les
+// descripteurs sous Windows), mais non toute la sélection : une recherche sans entrée sortirait en 0, « sans écart », sans rien chercher.
+function selection(dimensions: readonly string[], tokens: number, platform: NodeJS.Platform = process.platform): [name: string, entries: Entry[]][] {
+  const chosen = (dimensions.length ? dimensions : Object.keys(DIMENSIONS)).map((name): [string, Entry[]] => [name, [...DIMENSIONS[name](tokens, platform)]]);
+  if (chosen.every(([, entries]) => entries.length === 0)) {
+    throw new Error(`la sélection (${chosen.map(([name]) => name).join(', ')}) ne produit aucune entrée sous ${platform} : les descripteurs sont POSIX seulement`);
+  }
+  return chosen;
+}
+
+// Un aperçu pour le diagnostic : la longueur de stdout et ses 24 premiers octets, les 100 premiers de stderr. Il garde le rapport court
+// (`--list 10000` écrit 10 Mo) et ne peut pas servir de fichier d'attendus, que la boucle ne lit ni ne compare. Une sortie plus courte s'y lit
+// en entier, et c'est voulu : l'écart d'une fin de ligne, d'une espace ou d'un chiffre se voit dans `55\n`, non dans une empreinte, et
+// presque tous les écarts tiennent dans une sortie courte. Tronquer toujours les rendrait illisibles.
 const preview = (r: Run) => `code ${r.code}, stdout ${r.out.length} o ${JSON.stringify(r.out.slice(0, 24))}, stderr ${JSON.stringify(r.err.slice(0, 100))}`;
 
 const describeEntry = ({ args, env, stderrClosed }: Entry) =>
@@ -142,14 +201,14 @@ const USAGE = 'usage : node contracts/differentiel.ts [go|rust|ts|py …] [--dim
 
 type Options = { ids: string[]; dimensions: string[]; tokens: number; ref?: string };
 
-// Toute erreur levée ici est une erreur d'usage. `--jetons` veut des chiffres décimaux seulement (Number() accepte aussi '', '1e3'
-// et '0x10'), et `--revision` une révision qui ne ressemble pas à une option, que git lirait comme telle.
+// Toute erreur levée ici est une erreur d'usage (code 2, avant le témoin, la résolution de --revision et tout build). `--jetons` veut un
+// entier en chiffres décimaux et `--revision` une révision qui ne ressemble pas à une option : lancement.ts les valide, comme pour le banc.
+// Une seule implémentation demandée n'a rien à comparer; sans aucune, ce sont les présentes (une seule présente, c'est le code 3 de la recherche).
 function parseArgs(args: readonly string[]): Options {
   const ids: string[] = [];
   const dimensions: string[] = [];
   let tokens = 2;
   let ref: string | undefined;
-  const shown = (value: string | undefined) => (value === undefined ? 'aucune valeur' : JSON.stringify(value));
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--dimension') {
@@ -160,20 +219,20 @@ function parseArgs(args: readonly string[]): Options {
       if (!dimensions.includes(value)) dimensions.push(value);
     } else if (arg === '--jetons') {
       const value = args[++i];
-      if (value === undefined || !/^[0-9]+$/.test(value) || !Number.isSafeInteger(Number(value))) {
-        throw new Error(`--jetons demande un entier d’au moins 0 (reçu : ${shown(value)})`);
-      }
-      tokens = Number(value);
+      const k = decimalInt(value);
+      if (k === undefined) throw new Error(`--jetons demande un entier d’au moins 0 (reçu : ${shown(value)})`);
+      tokens = k;
     } else if (arg === '--revision') {
       const value = args[++i];
-      if (value === undefined || value === '' || value.startsWith('-')) throw new Error(`--revision demande une révision (reçu : ${shown(value)})`);
-      ref = value;
+      ref = revisionArg(value);
+      if (ref === undefined) throw new Error(`--revision demande une révision (reçu : ${shown(value)})`);
     } else if (IDS.includes(arg)) {
       if (!ids.includes(arg)) ids.push(arg);
     } else {
       throw new Error(`${arg.startsWith('-') ? 'option' : 'implémentation'} inconnue : ${arg}`);
     }
   }
+  if (ids.length === 1) throw new Error(`il faut au moins deux implémentations à comparer (reçu : ${ids[0]})`);
   return { ids, dimensions, tokens, ref };
 }
 
@@ -181,7 +240,9 @@ const count = (n: number, word: string) => `${n} ${word}${n > 1 ? 's' : ''}`;
 
 // La recherche : chaque entrée de chaque dimension se lance sur les mêmes implémentations, d'une même racine.
 function search({ ids: asked, dimensions, tokens, ref }: Options): number {
-  // La résolution d'abord : une révision introuvable, ou sans le dossier d'un langage demandé, échoue avant toute extraction.
+  // La sélection d'abord : une sélection sans entrée échoue avant toute résolution, extraction et build.
+  const plan = selection(dimensions, tokens);
+  // La résolution ensuite : une révision introuvable, ou sans le dossier d'un langage demandé, échoue avant toute extraction.
   const root = ref === undefined ? undefined : extract(resolve(ref, asked), REVISIONS);
   const available = present(root);
   const ids = asked.length ? asked : available;
@@ -193,10 +254,10 @@ function search({ ids: asked, dimensions, tokens, ref }: Options): number {
 
   let entries = 0;
   let gaps = 0;
-  for (const name of dimensions.length ? dimensions : Object.keys(DIMENSIONS)) {
+  for (const [name, list] of plan) {
     let n = 0;
     let g = 0;
-    for (const entry of DIMENSIONS[name](tokens)) {
+    for (const entry of list) {
       n++;
       const runs = new Map<string, Run>();
       for (const id of ids) runs.set(id, launch(id, entry.args, { env: entry.env, stderrClosed: entry.stderrClosed, root }));
@@ -238,8 +299,11 @@ function main(argv: readonly string[]): number {
   }
 }
 
-// Un Node sans import.meta.main (< 22.18, 23.x, 24.0 et 24.1) laisserait la boucle sans effet, en code 0, donc « sans écart » : échouer,
-// en nommant la version (le garde-fou du banc, PRD § 5). Le code 3, non l'erreur non rattrapée de Node : son code 1 serait un verdict.
+// Un Node qui charge ce `.ts` mais n'a pas import.meta.main (23.6 et la suite de la ligne 23, 24.0 et 24.1, ou 22.6 à 22.17 et 23.0 à 23.5
+// lancés avec --experimental-strip-types) laisserait la boucle sans effet, en code 0, donc « sans écart » : échouer, en nommant la version
+// (le garde-fou du banc, PRD § 5). Le code 3, non l'erreur non rattrapée de Node : son code 1 serait un verdict. Ce garde ne couvre pas un
+// Node qui ne charge pas le `.ts` (avant 22.18 sans ce drapeau, 23.0 à 23.5) : il sort de lui-même en 1, ERR_UNKNOWN_FILE_EXTENSION sur
+// stderr, avant la première ligne d'ici, et ce 1 n'est pas un verdict. La contrainte du PRD (`^22.18 || >=24.2`) écarte les deux cas.
 if (import.meta.main === undefined) {
   console.error('differentiel: la boucle demande Node ^22.18 ou >=24.2 (import.meta.main est absent)');
   process.exitCode = 3;

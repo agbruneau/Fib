@@ -3,10 +3,10 @@
 import { before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import cp, { spawnSync } from 'node:child_process';
-import fs, { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import fs, { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { abPairs, abRound, main, measure, pair, paired, parseArgs, rounds } from './bench.ts';
 import { build, closeStderr, command, IDS, launch, present, ROOT, type LaunchOptions } from './lancement.ts';
@@ -333,7 +333,7 @@ describe('harnais', () => {
   // dans cell() : le banc refuse maintenant par une erreur d'usage (code 2, sur stderr), avant tout build. Le processus du banc
   // lancé ici ne construit ni ne lance aucune implémentation.
   test('HAR-4 : --runs demande un entier d’au moins 1', () => {
-    for (const mauvais of [[], [''], ['0'], ['-1'], ['2.5'], ['1e3'], ['0x10'], [' 3'], ['abc'], ['go']]) {
+    for (const mauvais of [[], [''], ['0'], ['-1'], ['2.5'], ['1e3'], ['0x10'], [' 3'], ['abc'], ['go'], ['9007199254740993'], ['99999999999999999999']]) {
       assert.throws(() => parseArgs(['py', '--runs', ...mauvais]), /--runs demande un entier/, `--runs ${JSON.stringify(mauvais)} accepté`);
     }
     assert.deepEqual(parseArgs([]), { runs: 11, ids: [] });
@@ -414,6 +414,15 @@ describe('harnais', () => {
       assert.equal(i, Math.floor(k / S), `rendez-vous ${k} : les scénarios ne s’entrelacent pas par tour`);
       assert.deepEqual(args, vus[k % S][1], `rendez-vous ${k} : les scénarios ne se suivent pas dans le même ordre à chaque tour`);
     });
+
+    // L'A/B ne joue qu'un nombre pair de paires, et abPairs, là où vit l'alternance, le refuse avant de lancer quoi que ce soit : sur un nombre
+    // impair, un côté part le premier dans une paire de plus, et la médiane des différences retombe dans ce groupe. `main` arrondit au pair
+    // supérieur avant de l'appeler (ci-dessous), mais un autre appelant (`versus`, un test) ne l'arrondirait pas. Nul, négatif ou décimal : de même.
+    for (const mauvais of [1, 3, 101, 0, -2, 2.5, Number.NaN]) {
+      const lances: Call[] = [];
+      assert.throws(() => spy(() => abPairs('go', mauvais, revision), (c) => (lances.push(c), {})), /un nombre pair de paires, au moins 2 \(reçu : /, `abPairs accepte ${mauvais} paires`);
+      assert.equal(lances.length, 0, `abPairs lance ${lances.length} mesures avant de refuser ${mauvais} paires`);
+    }
 
     // L'A/B joue cette politique par abRound : chaque rendez-vous passe l'indice du tour et la racine de la révision. 3 tours (0, 1 et 2),
     // donc les deux parités; deux paires gardées par scénario. Un tour pair lance A (la révision) d'abord, un tour impair B d'abord.
@@ -612,15 +621,25 @@ describe('harnais', () => {
 
   // HAR-6 : ADR-0001. La boucle différentielle (`contracts/differentiel.ts`) est un outil de recherche. Si le contrat la lançait ou
   // l'importait, un écart entre implémentations deviendrait un verdict du contrat, sans attendu pour le trancher : l'oracle par vote
-  // que l'ADR-0001 écarte. Aucun script `check*` ni `contract` ne l'atteint, en suivant de proche en proche les `npm run <script>`
-  // (avec les crochets `pre` et `post` que npm joue) puis les modules que ces commandes lancent, et le test de contrat ne l'importe
-  // pas, même par un module qu'il importe. Le prototype d'A-2 laissait passer un `contract` qui lançait `npm run recherche`, un script
-  // qui lançait la boucle : 117 sur 117. Le contrôle ne lance rien : il lit package.json et les sources, et ses témoins des imports
+  // que l'ADR-0001 écarte. Aucun script `check*` ni `contract` ne l'atteint, en suivant de proche en proche les scripts qu'ils lancent
+  // (`npm run`, `node --run`, `npm test` et ses pairs, avec les crochets `pre` et `post` que npm joue) puis les fichiers que ces
+  // commandes lancent, globs développés (le `node --test "ts/**/*.test.ts"` de check:ts), et le test de contrat ne l'importe pas, même
+  // par un module qu'il importe. Le prototype d'A-2 laissait passer un `contract` qui lançait `npm run recherche`, un script qui lançait
+  // la boucle : 117 sur 117. Le contrôle ne lance rien : il lit package.json et les sources, et ses témoins des globs et des imports
   // n'écrivent que des fichiers d'essai sous tmpdir(), qu'ils retirent.
   const LOOP = /differentiel/;
-  // Une commande lance un script par `npm run <script>`, `npm run-script <script>` ou leurs alias `rum` et `urn`, avec des options
-  // avant ou après, et le nom entre guillemets ou non.
+  // Les scripts qu'une commande lance. `npm run <script>`, `npm run-script <script>` et leurs alias `rum` et `urn`, avec des options avant
+  // ou après et le nom entre guillemets ou non; `node --run <script>` (ou `--run=<script>`); et les scripts que npm nomme lui-même :
+  // `npm test` (`tst`, `t`), `npm start`, `npm stop` et `npm restart`, qui joue `restart` ou, à défaut, `stop` puis `start`.
   const NPM_RUN = /\bnpm\s+(?:-\S+\s+)*(?:run-script|run|rum|urn)\s+(?:-\S+\s+)*["']?([^\s;&|<>()"']+)/g;
+  const NODE_RUN = /\bnode\s+(?:-\S+\s+)*--run(?:=|\s+)["']?([^\s;&|<>()"']+)/g;
+  const NPM_NAMED = /\bnpm\s+(?:-\S+\s+)*(test|tst|t|start|stop|restart)(?![\w:.-])/g;
+  const NAMED: Record<string, string[]> = { test: ['test'], tst: ['test'], t: ['test'], start: ['start'], stop: ['stop'], restart: ['restart', 'stop', 'start'] };
+  const launchedScripts = (command: string): string[] => [
+    ...[...command.matchAll(NPM_RUN)].map((m) => m[1]),
+    ...[...command.matchAll(NODE_RUN)].map((m) => m[1]),
+    ...[...command.matchAll(NPM_NAMED)].flatMap((m) => NAMED[m[1]]),
+  ];
   // Les commandes des scripts atteints depuis `roots` : les leurs, et de proche en proche celles des scripts qu'elles lancent.
   const commandsReached = (scripts: Record<string, string>, roots: readonly string[]): string[] => {
     const seen = new Set<string>();
@@ -629,22 +648,51 @@ describe('harnais', () => {
       seen.add(name);
       visit(`pre${name}`);
       visit(`post${name}`);
-      for (const [, next] of scripts[name].matchAll(NPM_RUN)) visit(next);
+      launchedScripts(scripts[name]).forEach(visit);
     };
     roots.forEach(visit);
     return [...seen].map((name) => scripts[name]);
   };
-  // Les modules que `entry` importe, de proche en proche, lui compris. Seuls comptent les chemins relatifs, les seuls qui mènent à un fichier
-  // du dépôt : ceux de `from`, de `import` (nu ou `import()`) et de `new URL` (comme HAR-4 vise le banc), entre ', " ou accents graves.
-  const IMPORT = /(?:from|import|new URL)\s*\(?\s*['"`](\.{1,2}\/[^'"`]+)['"`]/g;
   const isFile = (f: string) => existsSync(f) && statSync(f).isFile();
+  // Les fichiers sous `dir`, sans les dossiers que le parcours d'un glob n'a pas à lire : dépendances, historique, sorties de build.
+  const SKIPPED = new Set(['node_modules', '.git', '.build', 'target']);
+  const filesUnder = (dir: string): string[] =>
+    existsSync(dir)
+      ? readdirSync(dir, { withFileTypes: true }).flatMap((e) => (SKIPPED.has(e.name) ? [] : e.isDirectory() ? filesUnder(join(dir, e.name)) : [join(dir, e.name)]))
+      : [];
+  // Les fichiers qu'un jeton de commande nomme sous `root` : lui-même s'il n'a ni `*` ni `?`, sinon ceux que le glob désigne. `**` vaut zéro
+  // dossier ou plus, `*` et `?` ne franchissent pas un `/`. Ni `[…]` ni `{…}` : ce sont des caractères comme les autres (lacune du catalogue).
+  const expandGlob = (token: string, root: string): string[] => {
+    const parts = token.split('/');
+    const at = parts.findIndex((part) => /[*?]/.test(part));
+    if (at === -1) return [join(root, token)];
+    const base = join(root, ...parts.slice(0, at));
+    const source = parts.slice(at).join('/').replace(/\*\*\/|\*\*|\*|\?|[.+^${}()|[\]\\]/g, (m) => (m === '**/' ? '(?:.*/)?' : m === '**' ? '.*' : m === '*' ? '[^/]*' : m === '?' ? '[^/]' : `\\${m}`));
+    const pattern = new RegExp(`^${source}$`);
+    return filesUnder(base).filter((f) => pattern.test(relative(base, f).split(sep).join('/')));
+  };
+  // Les fichiers `.ts` et `.js` que ces commandes lancent : chaque jeton d'une commande, guillemets retirés, glob développé.
+  const launchedFiles = (commands: readonly string[], root: string): string[] =>
+    commands
+      .flatMap((c) => c.split(/\s+/))
+      .map((t) => t.replace(/^["']|["']$/g, ''))
+      .filter(Boolean)
+      .flatMap((t) => expandGlob(t, root))
+      .filter((f) => /\.[cm]?[jt]s$/.test(f) && isFile(f));
+  // Les chemins relatifs que `source` nomme. Ceux d'un `from`, d'un `import` (nu ou `import()`) et d'un `import.meta.resolve()` demandent
+  // `./` ou `../` : sans eux, c'est un paquet. Celui d'un `new URL(…)` (comme HAR-4 vise le banc) se lit relativement à son second
+  // argument, préfixe ou non, tant qu'il n'est ni un schéma (`node:`, `file:`) ni un chemin absolu. Entre ', " ou accents graves.
+  const IMPORT = /(?:\bfrom|\bimport|\bimport\.meta\.resolve)\s*\(?\s*['"`](\.{1,2}\/[^'"`]+)['"`]/g;
+  const NEW_URL = /\bnew\s+URL\s*\(\s*['"`](?!\/)([^'"`:]+)['"`]/g;
+  const relatives = (source: string): string[] => [...source.matchAll(IMPORT), ...source.matchAll(NEW_URL)].map((m) => m[1]);
+  // Les modules que `entry` importe, de proche en proche, lui compris. Seuls comptent les chemins qui mènent à un fichier du dépôt.
   const importClosure = (entry: string): string[] => {
     const seen = new Set<string>();
     const pending = [entry];
     for (let file = pending.pop(); file !== undefined; file = pending.pop()) {
       if (seen.has(file)) continue;
       seen.add(file);
-      if (isFile(file)) for (const [, rel] of readFileSync(file, 'utf8').matchAll(IMPORT)) pending.push(join(dirname(file), rel));
+      if (isFile(file)) for (const rel of relatives(readFileSync(file, 'utf8'))) pending.push(join(dirname(file), rel));
     }
     return [...seen];
   };
@@ -655,6 +703,37 @@ describe('harnais', () => {
     assert.ok(commandsReached(exemple, ['contract']).some((c) => LOOP.test(c)), 'témoin : le parcours ne suit pas npm run de proche en proche');
     assert.ok(commandsReached({ ...exemple, b: 'echo', precontract: exemple.c }, ['contract']).some((c) => LOOP.test(c)), 'témoin : le parcours oublie le crochet pre');
     assert.ok(!commandsReached(exemple, ['d']).some((c) => LOOP.test(c)), 'témoin : le parcours atteint un script qu’aucun npm run ne lance');
+    // Chaque façon de lancer un script, avec les crochets que npm joue autour : `cible` est le script que la commande lance, et il lance la boucle.
+    const BOUCLE = 'node contracts/differentiel.ts';
+    const lancements: [forme: string, commande: string, cible: string][] = [
+      ['npm run', 'npm run cible', 'cible'],
+      ['npm run, nom entre guillemets', 'npm run "cible"', 'cible'],
+      ['npm rum', 'npm rum cible', 'cible'],
+      ['npm urn', 'npm urn cible', 'cible'],
+      ['node --run', 'node --run cible', 'cible'],
+      ['node --run=', 'node --run=cible', 'cible'],
+      ['node --run, option avant', 'node --no-warnings --run cible', 'cible'],
+      ['npm test', 'npm test', 'test'],
+      ['npm test --', 'npm --silent test -- x', 'test'],
+      ['npm tst', 'npm tst', 'test'],
+      ['npm t', 'npm t', 'test'],
+      ['npm start', 'npm start', 'start'],
+      ['npm stop', 'npm stop', 'stop'],
+      ['npm restart', 'npm restart', 'restart'],
+      ['npm restart, repli sur start', 'npm restart', 'start'],
+      ['npm restart, repli sur stop', 'npm restart', 'stop'],
+    ];
+    for (const [forme, commande, cible] of lancements) {
+      const atteint = (scripts: Record<string, string>) => commandsReached({ contract: `echo && ${commande}`, ...scripts }, ['contract']).some((c) => LOOP.test(c));
+      assert.ok(atteint({ [cible]: BOUCLE }), `témoin : le parcours ne suit pas « ${forme} »`);
+      for (const crochet of [`pre${cible}`, `post${cible}`]) {
+        assert.ok(atteint({ [cible]: 'echo', [crochet]: BOUCLE }), `témoin : le parcours oublie le crochet ${crochet} de « ${forme} »`);
+      }
+      assert.ok(!atteint({ [`${cible}x`]: BOUCLE, [`x${cible}`]: BOUCLE }), `témoin : « ${forme} » atteint un script au nom voisin`);
+    }
+    assert.ok(!commandsReached({ contract: 'npm token list', test: BOUCLE }, ['contract']).some((c) => LOOP.test(c)), 'témoin : npm token atteint le script test (t pour test)');
+    assert.ok(!commandsReached({ contract: 'npm run test:unit', test: BOUCLE }, ['contract']).some((c) => LOOP.test(c)), 'témoin : npm run test:unit atteint le script test');
+    assert.ok(!commandsReached({ contract: 'node contracts/cli.test.ts', test: BOUCLE }, ['contract']).some((c) => LOOP.test(c)), 'témoin : le parcours atteint test sans qu’aucune commande le lance');
 
     // Témoins du parcours des imports, sur des fichiers écrits sous tmpdir() : la fermeture est transitive (a → b → c : un seul niveau
     // laissait passer `bench.ts` qui importe la boucle), et chaque forme d'un chemin relatif y est vue (une forme ignorée laissait passer
@@ -676,6 +755,10 @@ describe('harnais', () => {
         'import()': "export const t = () => import('./t.ts');",
         'import() entre accents graves': 'export const t = () => import(`./t.ts`);',
         'new URL': "export const t = new URL('./t.ts', import.meta.url);",
+        'new URL sans préfixe': "export const t = new URL('t.ts', import.meta.url);",
+        'new URL entre guillemets doubles et espaces': 'export const t = new  URL( "t.ts" , import.meta.url);',
+        'import.meta.resolve': "export const t = import.meta.resolve('./t.ts');",
+        'import.meta.resolve entre guillemets doubles': 'export const t = import.meta.resolve( "./t.ts" );',
       };
       for (const [forme, source] of Object.entries(formes)) {
         ecrire('f.ts', `${source}\n`);
@@ -688,17 +771,45 @@ describe('harnais', () => {
       rmSync(dossier, { recursive: true, force: true });
     }
 
+    // Témoins du développement des globs, sur des fichiers écrits sous tmpdir() : `node --test "ts/**/*.test.ts"` (check:ts) lance des fichiers
+    // qu'aucun jeton ne nomme, et un jeton dont le fichier n'existe pas était filtré. `**` vaut zéro dossier ou plus, `*` et `?` s'arrêtent
+    // au `/`, les points sont des points, les dossiers de dépendances ne se lisent pas, et un jeton sans joker se rend tel quel.
+    const arbre = mkdtempSync(join(tmpdir(), 'fib-har6-glob-'));
+    try {
+      for (const dir of ['d/sub/deep', 'd/node_modules', 'e']) mkdirSync(join(arbre, dir), { recursive: true });
+      const fichiers = ['d/a.test.ts', 'd/x.ts', 'd/x.ts.txt', 'd/xtestxts', 'd/sub/b.test.ts', 'd/sub/deep/c.test.ts', 'd/node_modules/n.test.ts', 'e/f.js', 'f.js'];
+      for (const f of fichiers) writeFileSync(join(arbre, f), 'export {};\n');
+      const developpe = (token: string) => expandGlob(token, arbre).map((f) => relative(arbre, f).split(sep).join('/')).sort();
+      assert.deepEqual(developpe('d/**/*.test.ts'), ['d/a.test.ts', 'd/sub/b.test.ts', 'd/sub/deep/c.test.ts'], 'témoin : ** ne vaut pas zéro dossier ou plus, ou un point est un joker, ou node_modules se lit');
+      assert.deepEqual(developpe('d/*.test.ts'), ['d/a.test.ts'], 'témoin : * franchit un /');
+      assert.deepEqual(developpe('d/sub/?.test.ts'), ['d/sub/b.test.ts'], 'témoin : ? ne vaut pas un caractère');
+      assert.deepEqual(developpe('d/sub/??.test.ts'), [], 'témoin : ? vaut zéro ou plusieurs caractères');
+      assert.deepEqual(developpe('d?sub/b.test.ts'), [], 'témoin : ? franchit un /');
+      assert.deepEqual(developpe('d/sub/**'), ['d/sub/b.test.ts', 'd/sub/deep/c.test.ts'], 'témoin : ** final ne désigne pas tout le dossier');
+      assert.deepEqual(developpe('**/f.js'), ['e/f.js', 'f.js'], 'témoin : ** en tête ne vaut pas zéro dossier ou plus');
+      assert.deepEqual(developpe('d/x.ts'), ['d/x.ts'], 'témoin : un jeton sans joker n’est pas rendu tel quel');
+      assert.deepEqual(developpe('absent/**/*.ts'), [], 'témoin : un glob sous un dossier absent rend des fichiers');
+      // Les fichiers que des commandes lancent : un jeton entre guillemets, un glob développé, un jeton qui n'est pas un script.
+      const lances = launchedFiles(['tsc --noEmit && node --test "d/**/*.test.ts"', 'node e/f.js absent.ts', 'echo d/x.ts.txt d/*.json'], arbre).map((f) => relative(arbre, f).split(sep).join('/')).sort();
+      assert.deepEqual(lances, ['d/a.test.ts', 'd/sub/b.test.ts', 'd/sub/deep/c.test.ts', 'e/f.js'], 'témoin : les fichiers que des commandes lancent, globs compris');
+    } finally {
+      rmSync(arbre, { recursive: true, force: true });
+    }
+
     const { scripts } = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { scripts: Record<string, string> };
     const roots = Object.keys(scripts).filter((name) => name === 'contract' || name.startsWith('check'));
     const commands = commandsReached(scripts, roots);
     assert.ok(commandsReached(scripts, ['check']).some((c) => c.includes('contracts/cli.test.ts')), 'témoin : le parcours de package.json ne voit pas le test de contrat');
     assert.deepEqual(commands.filter((c) => LOOP.test(c)), [], 'un script check* ou contract atteint la boucle');
 
-    // Le test de contrat, et chaque module ou script que ces commandes lancent, avec leurs imports.
-    const launched = commands.flatMap((c) => c.split(/\s+/)).map((t) => join(ROOT, t.replace(/^["']|["']$/g, ''))).filter((f) => /\.[cm]?[jt]s$/.test(f) && existsSync(f));
+    // Le test de contrat, et chaque fichier que ces commandes lancent (globs développés), avec leurs imports.
+    const launched = launchedFiles(commands, ROOT);
     const reached = [...new Set([fileURLToPath(import.meta.url), ...launched].flatMap(importClosure))];
+    // Les fichiers que `check:ts` lance par un glob, puis ce qu'ils importent : `ts/src/cli.ts` n'est lancé par aucune commande, mais `ts/src/cli.test.ts` l'importe.
+    for (const f of [join('ts', 'src', 'cli.test.ts'), join('ts', 'src', 'fib.test.ts')]) assert.ok(launched.includes(join(ROOT, f)), `témoin : le glob de check:ts ne désigne pas ${f}`);
+    for (const f of [join('ts', 'src', 'cli.ts'), join('ts', 'src', 'fib.ts'), join('contracts', 'oracle.ts')]) assert.ok(reached.includes(join(ROOT, f)), `témoin : le parcours des imports ne voit pas ${f}`);
     assert.ok(reached.includes(join(ROOT, 'contracts', 'lancement.ts')), 'témoin : le parcours des imports ne voit pas lancement.ts');
-    assert.deepEqual(reached.map((f) => relative(ROOT, f)).filter((f) => LOOP.test(f)), [], 'le test de contrat atteint la boucle par un import');
+    assert.deepEqual(reached.map((f) => relative(ROOT, f)).filter((f) => LOOP.test(f)), [], 'un fichier que le contrat lance ou importe atteint la boucle par un import');
   });
 });
 

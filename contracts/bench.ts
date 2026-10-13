@@ -5,7 +5,7 @@
 // --nettoyer : vide .build/revisions/, où l'A/B extrait ses révisions, sans suivre le lien vers node_modules qu'elles portent.
 import { existsSync, lstatSync, readdirSync, rmSync, unlinkSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import { build, extract, IDS, launch, present, resolve, REVISIONS } from './lancement.ts';
+import { build, decimalInt, extract, IDS, launch, present, resolve, REVISIONS, revisionArg, shown } from './lancement.ts';
 
 const SCENARIOS: [name: string, args: string[]][] = [
   ['petit (10)', ['10']],
@@ -87,8 +87,14 @@ export function rounds<T>(runs: number, one: (i: number, args: string[]) => T): 
 }
 
 // Les paires [A, B] gardées d'un A/B, par scénario : rounds, dont chaque rendez-vous joue abRound avec l'indice du tour (qui règle l'ordre)
-// et la racine de la révision. Exportée pour le harnais (HAR-5), sans build ni extraction.
-export const abPairs = (id: string, runs: number, root: string): [a: number, b: number][][] => rounds(runs, (i, args) => abRound(i, id, args, root));
+// et la racine de la révision. Un nombre PAIR de paires, refusé sinon avant tout lancement : l'ordre alterne ici, et sur un nombre impair un côté
+// part le premier dans une paire de plus, où la médiane des différences retombe avec l'effet d'ordre que l'alternance annule (ADR-0004).
+// `main` arrondit au pair supérieur ce que l'utilisateur demande; un autre appelant doit donner un pair. Exportée pour le harnais (HAR-5),
+// sans build ni extraction.
+export function abPairs(id: string, runs: number, root: string): [a: number, b: number][][] {
+  if (!(runs >= 2 && runs % 2 === 0)) throw new Error(`un A/B joue un nombre pair de paires, au moins 2 (reçu : ${runs})`);
+  return rounds(runs, (i, args) => abRound(i, id, args, root));
+}
 
 // Supprime les révisions extraites et rend le nombre d'entrées supprimées. Chaque révision porte un lien (jonction sous Windows) vers le
 // node_modules de ce dépôt, et `Remove-Item -Recurse` de Windows PowerShell 5.1 peut le traverser et vider sa cible : le lien est donc
@@ -120,11 +126,11 @@ const RUNS = 11;
 const RUNS_AB = 100;
 
 // Les identifiants demandés (aucun : les implémentations présentes), le nombre d'exécutions par scénario, et la révision REF d'un A/B
-// (absente sans `--contre`, donc sans clé). Toute erreur levée ici est une erreur d'usage. `--runs` veut des chiffres décimaux
-// seulement : Number() accepte aussi '', ' 3', '1e3' et '0x10', et rend NaN, 0 ou une boucle sans fin pour le reste, que cell()
-// découvre trop tard. `--contre` veut une révision qui ne ressemble pas à une option, que git lirait comme telle. Tout autre argument
-// est un identifiant du PRD § 5 : un identifiant inconnu ou une option mal écrite sont refusés ici, avant tout build. `--nettoyer`
-// vide `.build/revisions/` et s'emploie seul (`clean: true`, absent sinon).
+// (absente sans `--contre`, donc sans clé). Toute erreur levée ici est une erreur d'usage. `--runs` veut des chiffres décimaux seulement
+// (sans quoi cell() découvre trop tard un NaN ou un 0) et `--contre` une révision qui ne ressemble pas à une option : lancement.ts les
+// valide pour le banc et pour la boucle (`decimalInt`, `revisionArg`). Tout autre argument est un identifiant du PRD § 5 : un identifiant
+// inconnu ou une option mal écrite sont refusés ici, avant tout build. `--nettoyer` vide `.build/revisions/` et s'emploie seul (`clean: true`,
+// absent sinon).
 export function parseArgs(args: readonly string[]): { runs: number; ids: string[]; ref?: string; clean?: true } {
   if (args.includes('--nettoyer')) {
     if (args.length > 1) throw new Error('--nettoyer s’emploie seul');
@@ -136,10 +142,8 @@ export function parseArgs(args: readonly string[]): { runs: number; ids: string[
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--contre') {
       const value = args[++i];
-      if (value === undefined || value === '' || value.startsWith('-')) {
-        throw new Error(`--contre demande une révision (reçu : ${value === undefined ? 'aucune valeur' : JSON.stringify(value)})`);
-      }
-      ref = value;
+      ref = revisionArg(value);
+      if (ref === undefined) throw new Error(`--contre demande une révision (reçu : ${shown(value)})`);
       continue;
     }
     if (args[i] !== '--runs') {
@@ -148,10 +152,8 @@ export function parseArgs(args: readonly string[]): { runs: number; ids: string[
       continue;
     }
     const value = args[++i];
-    const n = Number(value);
-    if (value === undefined || !/^[0-9]+$/.test(value) || !Number.isSafeInteger(n) || n < 1) {
-      throw new Error(`--runs demande un entier d’au moins 1 (reçu : ${value === undefined ? 'aucune valeur' : JSON.stringify(value)})`);
-    }
+    const n = decimalInt(value);
+    if (n === undefined || n < 1) throw new Error(`--runs demande un entier d’au moins 1 (reçu : ${shown(value)})`);
     runs = n;
   }
   runs ??= ref === undefined ? RUNS : RUNS_AB;
@@ -229,7 +231,9 @@ export function main(argv: readonly string[], revisions: string = REVISIONS): nu
   return 0;
 }
 
-// Un Node sans import.meta.main (< 22.18, 23.x, 24.0 et 24.1) laisserait le banc sans effet, en code 0 : échouer, en nommant la version
-// (le garde-fou de ts/src/cli.ts, PRD § 5). L'import par le test de contrat échoue de même : il demande le même Node.
+// Un Node qui charge ce `.ts` mais n'a pas import.meta.main (23.6 et la suite de la ligne 23, 24.0 et 24.1, ou 22.6 à 22.17 et 23.0 à 23.5
+// lancés avec --experimental-strip-types) laisserait le banc sans effet, en code 0 : échouer, en nommant la version (le garde-fou de
+// ts/src/cli.ts, PRD § 5). Un Node qui ne charge pas le `.ts` du tout (avant 22.18 sans ce drapeau) échoue de lui-même avant ce garde.
+// L'import par le test de contrat échoue de même : il demande le même Node.
 if (import.meta.main === undefined) throw new Error('le banc demande Node ^22.18 ou >=24.2 (import.meta.main est absent)');
 if (import.meta.main) process.exitCode = main(process.argv.slice(2));
