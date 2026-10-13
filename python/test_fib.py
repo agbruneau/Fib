@@ -19,7 +19,10 @@ from fib import (
     MAX_LIST,
     MAX_TERM,
     STR_FROM_BITS,
+    _fast,
     _fib_decimal,
+    _iterative,
+    _matrix,
     _text,
     compute,
     fib,
@@ -742,6 +745,21 @@ class TestFib(unittest.TestCase):
                 run = run_main_block(args)
                 self.assertEqual((run.stdout, run.returncode), (out.encode("ascii"), code), run.stderr)
                 self.assertRegex(run.stderr, err)
+
+    def test_PERF_PY_30_chaque_nom_d_algorithme_aiguille_vers_sa_propre_fonction(self):
+        """PERF-PY-30 : hors catalogue, garde de F2 et de F6, qui ferme la lacune de PERF-PY-27 (catalogue § 6) : l'espion
+        de PERF-PY-27 note le nom demandé, pas la fonction qui calcule derrière ce nom, et les trois algorithmes rendent
+        le même terme. Les trois noms de _ALGOS, seul aiguillage des algorithmes (fib() et le chemin Decimal,
+        _fib_decimal, la lisent), doivent donc être, par identité (assertIs), _iterative, _matrix et _fast. Aucune valeur
+        calculée (elles sont justes sous le mutant), aucune durée. Mutants rouges, les six échanges d'aiguillage, un
+        sous-test chacun : "iterative": _matrix, "iterative": _fast, "matrix": _iterative, "matrix": _fast,
+        "fast": _iterative, "fast": _matrix. Quatre d'entre eux ne rougissent qu'elle, ni le contrat ni les autres gardes;
+        sous "matrix": _iterative et "fast": _iterative, _iterative n'accepte pas kind, et les gardes du chemin Decimal
+        lèvent aussi (bruyant). Elle suppose que fib() et _fib_decimal lisent _ALGOS : une fib() qui aiguille sans la
+        table rougit PERF-PY-27 (P8n), qu'elle ne remplace pas."""
+        for name, function in {"iterative": _iterative, "matrix": _matrix, "fast": _fast}.items():
+            with self.subTest(algo=name):
+                self.assertIs(_ALGOS.get(name), function)
 
 
 if __name__ == "__main__":
