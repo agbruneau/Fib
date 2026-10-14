@@ -241,8 +241,8 @@ mod tests {
         for n in [10, MAX_TERM] {
             for (rest, expected) in cases {
                 let calls = RefCell::new(Vec::new());
-                let (index, shown) = (n.to_string(), format!("--time {} {n}", rest.join(" ")));
-                let argv = args(&[&["--time"][..], rest, &[&index]].concat());
+                let argv = args(&[&["--time"][..], rest, &[&n.to_string()]].concat());
+                let shown = argv.join(" ");
                 let Ok((lines, durations)) = run(&argv, |_, algo| {
                     calls.borrow_mut().push(algo);
                     BigUint::ZERO
@@ -271,16 +271,19 @@ mod tests {
     // PERF-RS-14 (F6), hors catalogue : la durée est mesurée; le contrat ne lit que le format (`0.000 ms` passe). Trois
     // tours de `--time --algo all 10`, un seul algorithme lent par tour : l'espion dort 20 ms, chronomètre son sommeil
     // par `Instant`, l'horloge de `timed`, puis délègue à `fib`. Témoin : ce sommeil chronométré vaut au moins
-    // SLEEP / 2 (sinon la garde tourne à vide). Les quatre lectures d'horloge sont emboîtées sur un fil : la ligne
-    // lente, plus l'arrondi de `{:.3}`, vaut au moins le sommeil, et les trois lignes au plus le temps mural de `run`,
-    // sans dépendre de la précision du sommeil. `--list <MAX_LIST>` ajoute que fib_list remplit presque seul le temps
-    // mural de `run` : la ligne va du vingtième au tout de ce temps. Rouge sous une durée 0.000 ou 1.234, le
-    // chronomètre lancé après le calcul, des secondes, des microsecondes, un départ commun (durées cumulées), des
-    // durées permutées, fib_list hors du chronomètre, `as_millis` et `subsec_millis`. Survivants connus, laissés à la
-    // revue : l'étendue exacte de la fenêtre du chronomètre (englober aussi la mise en forme du terme passerait); une
-    // durée qui perd ses secondes entières (`subsec_nanos`), car aucune ligne n'atteint 1 s, et trois sommeils d'une
-    // seconde coûteraient 3 s par passe; un facteur 1001 au lieu de 1000, une précision de 0,1 % que l'invariant ne
-    // promet pas.
+    // SLEEP / 2 (sinon la garde tourne à vide). Les fenêtres d'horloge (sommeil, `timed`, temps mural de `run`) sont
+    // emboîtées sur un fil : la ligne lente, plus l'arrondi de `{:.3}`, vaut au moins le sommeil, et les trois lignes
+    // au plus le temps mural de `run`, sans dépendre de la précision du sommeil. Les assertions des trois tours, et le
+    // plafond de `--list <MAX_LIST>` (la ligne vaut au plus le temps mural), sont exactes sous toute charge. Le
+    // plancher de `--list` ne l'est pas : la ligne vaut au moins le vingtième du temps mural, car fib_list le remplit
+    // presque seul, mais ce temps couvre aussi la construction des arguments, l'analyse et la libération du Vec de
+    // 10 001 chaînes, hors de la fenêtre chronométrée, et une suspension d'environ 19 fois la durée de fib_list hors de
+    // cette fenêtre rougirait la garde à tort. Rouge sous une durée 0.000 ou 1.234, le chronomètre lancé après le
+    // calcul, des secondes, des microsecondes, un départ commun (durées cumulées), des durées permutées, fib_list hors
+    // du chronomètre, `as_millis` et `subsec_millis`. Survivants connus, laissés à la revue : l'étendue exacte de la
+    // fenêtre du chronomètre (englober aussi la mise en forme du terme passerait); une durée qui perd ses secondes
+    // entières (`subsec_nanos`), car aucune ligne n'atteint 1 s, et trois sommeils d'une seconde coûteraient 3 s par
+    // passe; un facteur 1001 au lieu de 1000, une précision de 0,1 % que l'invariant ne promet pas.
     #[test]
     fn perf_rs_14_la_duree_de_chaque_ligne_est_mesuree() {
         const SLEEP: Duration = Duration::from_millis(20);
