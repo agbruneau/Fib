@@ -262,8 +262,11 @@ mod tests {
     /// Rend le temps mural de `run` (ms) et les lignes de durée (nom, ms), lus par l'horloge de `timed`.
     fn timed_run(argv: &[&str], term: impl Fn(u64, Algo) -> BigUint) -> (f64, Vec<(String, f64)>) {
         let start = Instant::now();
-        let Ok((_, text)) = run(&args(argv), term) else { panic!("{argv:?} : run devait réussir") };
+        let owned = args(argv);
+        let result = run(&owned, term);
+        // Lu avant toute libération : `result` garde les 10 001 chaînes de --list (~2 ms à libérer) jusqu'à la fin.
         let wall = start.elapsed().as_secs_f64() * 1000.0;
+        let Ok((_, text)) = result else { panic!("{argv:?} : run devait réussir") };
         let lines = text.lines().map(|l| l.split(' ').collect::<Vec<_>>());
         (wall, lines.map(|f| (f[0].to_string(), f[1].parse().expect("durée en ms"))).collect())
     }
@@ -276,14 +279,16 @@ mod tests {
     // au plus le temps mural de `run`, sans dépendre de la précision du sommeil. Les assertions des trois tours, et le
     // plafond de `--list <MAX_LIST>` (la ligne vaut au plus le temps mural), sont exactes sous toute charge. Le
     // plancher de `--list` ne l'est pas : la ligne vaut au moins le vingtième du temps mural, car fib_list le remplit
-    // presque seul, mais ce temps couvre aussi la construction des arguments, l'analyse et la libération du Vec de
-    // 10 001 chaînes, hors de la fenêtre chronométrée, et une suspension d'environ 19 fois la durée de fib_list hors de
-    // cette fenêtre rougirait la garde à tort. Rouge sous une durée 0.000 ou 1.234, le chronomètre lancé après le
-    // calcul, des secondes, des microsecondes, un départ commun (durées cumulées), des durées permutées, fib_list hors
-    // du chronomètre, `as_millis` et `subsec_millis`. Survivants connus, laissés à la revue : l'étendue exacte de la
-    // fenêtre du chronomètre (englober aussi la mise en forme du terme passerait); une durée qui perd ses secondes
-    // entières (`subsec_nanos`), car aucune ligne n'atteint 1 s, et trois sommeils d'une seconde coûteraient 3 s par
-    // passe; un facteur 1001 au lieu de 1000, une précision de 0,1 % que l'invariant ne promet pas.
+    // presque seul, mais ce temps couvre aussi la construction des arguments et l'analyse, hors de la fenêtre
+    // chronométrée, et une suspension d'environ 19 fois la durée de fib_list hors de cette fenêtre rougirait la garde
+    // à tort : la charge compte encore, mais moins, car `timed_run` lit le temps mural avant de libérer le Vec de
+    // 10 001 chaînes (~2 ms, d'après `mem::forget` dans `main`), que le test causerait sinon lui-même. Rouge sous une
+    // durée 0.000 ou 1.234, le chronomètre lancé après le calcul, des secondes, des microsecondes, un départ commun
+    // (durées cumulées), des durées permutées, fib_list hors du chronomètre, `as_millis` et `subsec_millis`. Survivants
+    // connus, laissés à la revue : l'étendue exacte de la fenêtre du chronomètre (englober aussi la mise en forme du
+    // terme passerait); une durée qui perd ses secondes entières (`subsec_nanos`), car aucune ligne n'atteint 1 s, et
+    // trois sommeils d'une seconde coûteraient 3 s par passe; un facteur 1001 au lieu de 1000, une précision de 0,1 %
+    // que l'invariant ne promet pas.
     #[test]
     fn perf_rs_14_la_duree_de_chaque_ligne_est_mesuree() {
         const SLEEP: Duration = Duration::from_millis(20);
