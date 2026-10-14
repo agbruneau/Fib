@@ -182,30 +182,38 @@ for (const n of SPIED_INDEXES) {
 // début de la source, et des espions, qui ne voient que l'aiguillage de `fib`). Un nom qui calcule par un autre algorithme rend les
 // mêmes valeurs, donc aucun cas de valeur ne le voit, et une expression de fonction nommée du même nom garde le début de la
 // source. Le texte brut de chaque entrée, `algos[algo].toString()`, ne nomme donc ni l'un des deux autres algorithmes, ni `fib`,
-// ni `fibList`, ni `algos`; son propre nom, celui de sa déclaration, est permis.
-// Le texte est lu brut, sans retirer les commentaires : le texte brut ne laisse rien cacher, ni un commentaire, ni un littéral
-// (chaîne, gabarit, regex) ne peut masquer un nom. Un retrait des commentaires par regex a été essayé et abandonné : chaque revue
-// y trouvait un survivant (une continuation de ligne dans une chaîne, un commentaire collé au code qui ouvre un faux bloc ou une
-// fausse chaîne, une fin de ligne en CR, U+2028 ou U+2029, un littéral regex tel que `/[ //]/` ou `/\/*/`).
+// ni `fibList`, ni `algos`, ni `this`; son propre nom, celui de sa déclaration, est permis. `this` est interdit parce que `fib`
+// appelle `algos[algo](n)` en méthode : `this` vaut `algos` dans chaque entrée, et `Object.values(this)[2](n)` délègue à `fast`
+// sans nommer personne.
+// Le texte est lu brut, sans retirer les commentaires : ni un commentaire, ni un littéral (chaîne, gabarit, regex) ne peut masquer
+// un nom écrit dans le texte. Ce qui reste hors de portée est ce que le texte ne nomme pas : la délégation par une fonction
+// auxiliaire ou par un nom calculé (survivants ci-dessous), et la liste de ces survivants n'est pas exhaustive. Un retrait des
+// commentaires par regex a été essayé et abandonné : chaque revue y trouvait un survivant (une continuation de ligne dans une
+// chaîne, un commentaire collé au code qui ouvre un faux bloc ou une fausse chaîne, une fin de ligne en CR, U+2028 ou U+2029, un
+// littéral regex tel que `/[ //]/` ou `/\/*/`).
 // Rougit : `return fast(n);` en tête de `matrix`; `const re = /\/\//; return fast(n);`; `const re = /[ //]/; return fast(n);`;
 // `const re = /\/*/; return fast(n); const end = /a*/;`; une continuation de ligne dans une chaîne (`const s = "a\`, un saut de
 // ligne, puis ` //"; if (s) return fast(n);`); un commentaire collé au code (`let q = 1;// voir /* ici`, un saut de ligne, puis
-// `if (q) return fast(n); /* fin */`, ou `let q = 1; // note if (q) return fast(n);`); un commentaire clos par CR, U+2028 ou U+2029;
+// `if (q) return fast(n); /* fin */`); un commentaire `//` clos par un saut de ligne CR, U+2028 ou U+2029, suivi de
+// `return fast(n);` (ces trois caractères sont du vrai code après le commentaire; le fichier les désigne ici par leur nom et ne
+// les contient pas); la délégation par `this`, qui passe tsc et toute la suite de valeurs :
+// `function matrix(this: unknown, n: number): bigint { if (n > 0) return Object.values(this as object)[2](n); …`;
 // `{ iterative, matrix: function matrix(n: number) { return fast(n); }, fast }` dans la table; `return fib(n, 'fast');`;
 // et `if (n < 64) return iterative(n);` en tête de `fast`.
 // Ce dernier rouge est voulu, non une erreur du test : F2 veut que chaque nom calcule par son propre algorithme à tout n, pas
 // seulement au-dessus d'un seuil. Un travail de performance qui aiguillerait les petits indices vers un autre algorithme
 // rougit ici avec raison; il doit d'abord changer F2 au PRD, puis ce test, au lieu d'assouplir le test seul.
 // Le prix du texte brut est un faux rouge, bruyant, jamais silencieux : un commentaire de l'un de ces corps qui nomme un autre
-// algorithme (`// plus lent que fast` dans `matrix`) fait rougir la garde. Il faut alors écrire le commentaire autrement, « le
-// doublement rapide » au lieu de `fast`, et non revenir à un retrait des commentaires.
+// algorithme (`// plus lent que fast` dans `matrix`, ou `let q = 1; // note if (q) return fast(n);`, où toute la fin de la ligne
+// est un vrai commentaire et où rien ne délègue) fait rougir la garde, de même qu'un commentaire qui contient `this`. Il faut
+// alors écrire le commentaire autrement, « le doublement rapide » au lieu de `fast`, et non revenir à un retrait des commentaires.
 // Survivants connus, laissés à la revue de code : une délégation par une fonction auxiliaire (`return viaFast(n);`, où `viaFast`,
 // définie hors de la table, rend `fast(n)`) ou par un nom calculé (`return pick('fa' + 'st')(n);`, où `pick` choisit dans un
 // objet défini hors de la table); le texte de l'entrée ne nomme alors aucun algorithme. Cette liste n'est pas exhaustive.
-const FORBIDDEN = [...ALGOS, 'fib', 'fibList', 'algos'];
+const FORBIDDEN = [...ALGOS, 'fib', 'fibList', 'algos', 'this'];
 
 for (const algo of ALGOS) {
-  test(`PERF-TS-10 : le corps de ${algo} ne nomme ni un autre algorithme, ni fib, ni fibList, ni algos`, () => {
+  test(`PERF-TS-10 : le corps de ${algo} ne nomme ni un autre algorithme, ni fib, ni fibList, ni algos, ni this`, () => {
     const source = algos[algo].toString();
     const named = FORBIDDEN.filter((name) => name !== algo && new RegExp(`\\b${name}\\b`, 'u').test(source));
     assert.deepEqual(named, [], source);
