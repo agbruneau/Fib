@@ -153,45 +153,56 @@ func TestPERFGO9_UneDiscordanceRend3SansStdoutNiDuree(t *testing.T) {
 	}
 }
 
-// PERF-GO-10, hors catalogue : garde de F2 et de F6 (catalogue § 6), pendant de PERF-TS-8 : l'algorithme que nomme une ligne
-// de durée est celui qui a calculé. Le calcul espion note l'algorithme qu'on lui demande, puis délègue à fib.Fib : les
-// algorithmes appelés doivent être ceux que nomment les lignes de durée, dans l'ordre, un appel chacun. Rouge sous : un
-// algorithme calculé par un autre (fast pour iterative, par exemple) que la ligne nomme quand même.
+// PERF-GO-10, hors catalogue : garde de F2 et de F6 (catalogue § 6), pendant de PERF-TS-8 et de PERF-TS-12 : l'algorithme que
+// nomme une ligne de durée est celui qui a calculé. Le calcul espion note l'algorithme qu'on lui demande et rend
+// big.NewInt(0), sans calculer : les algorithmes appelés doivent être ceux que nomment les lignes de durée, dans l'ordre, un
+// appel chacun. Chaque cas est joué à n = 10 et à n = maxTerm (1000000, la borne F8) : sans calcul, la borne ne coûte rien, et
+// un nom passé au calcul qui dépend de n se voit aux deux bouts de la plage. stdout reçoit le seul `0\n`, le terme que
+// l'espion a rendu. Rouge sous : un algorithme calculé par un autre (fast pour iterative, par exemple) que la ligne nomme
+// quand même, et, dans compute, `name := algo; if o.n > 10 && name == "matrix" { name = "fast" }` puis `term(o.n, name)`, la
+// ligne de durée gardant algo (vert avant que la garde joue n = maxTerm).
+// Survivant connu, laissé à la revue de code : un aiguillage qui dépend de n hors de ces deux indices, tel que
+// `o.n == 12345` ou `o.n > 10 && o.n < maxTerm`.
 func TestPERFGO10_LAlgorithmeNommeEstCeluiQuiCalcule(t *testing.T) {
-	for _, c := range []struct {
-		args  []string
-		algos []string
-	}{
-		{[]string{"10"}, []string{"fast"}},
-		{[]string{"--algo", "iterative", "10"}, []string{"iterative"}},
-		{[]string{"--algo", "matrix", "10"}, []string{"matrix"}},
-		{[]string{"--algo", "all", "10"}, []string{"fast", "iterative", "matrix"}},
-	} {
-		args := append([]string{"--time"}, c.args...)
-		t.Run(fmt.Sprintf("PERF-GO-10 : %s exécute %s", strings.Join(args, " "), strings.Join(c.algos, " puis ")), func(t *testing.T) {
-			var called []string
-			term := func(n int, algo string) (*big.Int, error) {
-				called = append(called, algo)
-				return fib.Fib(n, algo)
-			}
-			var stdout, stderr writeCounter
-			if code := run(args, &stdout, &stderr, term); code != 0 {
-				t.Fatalf("run %s rend le code %d, attendu 0", strings.Join(args, " "), code)
-			}
-			var named []string
-			for _, chunk := range stderr.chunks {
-				for line := range strings.Lines(chunk) {
-					algo, _, _ := strings.Cut(line, " ")
-					named = append(named, algo)
+	for _, n := range []int{10, maxTerm} {
+		for _, c := range []struct {
+			options []string
+			algos   []string
+		}{
+			{nil, []string{"fast"}},
+			{[]string{"--algo", "iterative"}, []string{"iterative"}},
+			{[]string{"--algo", "matrix"}, []string{"matrix"}},
+			{[]string{"--algo", "all"}, []string{"fast", "iterative", "matrix"}},
+		} {
+			args := append(append([]string{"--time"}, c.options...), strconv.Itoa(n))
+			t.Run(fmt.Sprintf("PERF-GO-10 : %s exécute %s", strings.Join(args, " "), strings.Join(c.algos, " puis ")), func(t *testing.T) {
+				var called []string
+				term := func(_ int, algo string) (*big.Int, error) {
+					called = append(called, algo)
+					return big.NewInt(0), nil
 				}
-			}
-			if !slices.Equal(named, c.algos) {
-				t.Errorf("les lignes de durée nomment %q, attendu %q", named, c.algos)
-			}
-			if !slices.Equal(called, named) {
-				t.Errorf("les algorithmes appelés sont %q, les lignes de durée nomment %q", called, named)
-			}
-		})
+				var stdout, stderr writeCounter
+				if code := run(args, &stdout, &stderr, term); code != 0 {
+					t.Fatalf("run %s rend le code %d, attendu 0", strings.Join(args, " "), code)
+				}
+				if got := strings.Join(stdout.chunks, ""); got != "0\n" {
+					t.Errorf("stdout reçoit %q, attendu le terme de l'espion, %q", got, "0\n")
+				}
+				var named []string
+				for _, chunk := range stderr.chunks {
+					for line := range strings.Lines(chunk) {
+						algo, _, _ := strings.Cut(line, " ")
+						named = append(named, algo)
+					}
+				}
+				if !slices.Equal(named, c.algos) {
+					t.Errorf("les lignes de durée nomment %q, attendu %q", named, c.algos)
+				}
+				if !slices.Equal(called, named) {
+					t.Errorf("les algorithmes appelés sont %q, les lignes de durée nomment %q", called, named)
+				}
+			})
+		}
 	}
 }
 
@@ -205,9 +216,10 @@ const (
 
 // PERF-GO-12, hors catalogue : garde de F6 (catalogue § 6, lacune « la durée est mesurée »), pendant de PERF-RS-14 et de
 // PERF-PY-31. Le contrat ne lit que le format des lignes de durée : `0.000 ms` y passe. La garde joue trois fois
-// `--time --algo all 10`; à chaque tour, un seul algorithme est lent, tour à tour fast, iterative et matrix. Le calcul
-// espion de PERF-GO-10 dort alors 20 ms pour lui seul, puis délègue à fib.Fib, et chronomètre son propre sommeil par
-// l'horloge même de la production (time.Now et time.Since lisent, comme time.Sleep, la même horloge monotone).
+// `--time --algo all 10`; à chaque tour, un seul algorithme est lent, tour à tour fast, iterative et matrix. Un calcul
+// espion, injecté comme celui de PERF-GO-10 (le termFunc que reçoit run), dort alors 20 ms pour lui seul, puis délègue à
+// fib.Fib, et chronomètre son propre sommeil par l'horloge même de la production (time.Now et time.Since lisent, comme
+// time.Sleep, la même horloge monotone).
 //
 // Trois assertions. (1) Le témoin : le sommeil chronométré vaut au moins 10 ms, sans quoi la garde serait à vide.
 // (2) La ligne de l'algorithme lent, plus 0,0005 ms (l'arrondi de %.3f), vaut au moins le sommeil chronométré : les quatre
