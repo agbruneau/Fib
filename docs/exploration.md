@@ -529,6 +529,7 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
   - Le défaut Windows de PERF-PY-23 (#35) avait passé `/code-review` le 2026-10-13 sans être vu : la session tournait sous Linux, et le témoin écrivait sur les flux bruts de CPython. Seul un audit fait sous Windows l'a trouvé. Le correctif n'est éprouvé que par émulation.
   - `tdd` reste absente de la session infonuagique (`Unknown skill: tdd`) : les `fib-dev` ont suivi le cycle à la main.
   - Un agent de tri, en éprouvant `rustup override`, a installé une chaîne Rust de plus (retirée), et un `fib-dev` a tué par `pkill yes` les boucles de charge d'un autre.
+- **Décision du propriétaire** : le dernier bit impair de `fast` en Go, en un produit comme en Rust et en Python, laissé ouvert par le tri, a été fait ensuite par un `fib-dev`. Le banc n'ayant que des indices pairs, la mesure a été un A/B apparié hors banc, sur les binaires d'avant et d'après, avec un étalonnage A contre A : `--time` −13,3 % à 999 999, temps mural dans le bruit. PERF-GO-13 en garde la forme par le texte, l'empreinte d'allocations étant la même aux grands n.
 - **À changer** :
   - Lancer `npm run check` sous Windows avant de fermer un chantier qui touche un flux standard ou une fin de ligne.
   - Dire au vérificateur, dès la première ronde, de ne retenir que des défauts de portée réelle, et à chaque prompt de ne tuer que ses propres processus.
