@@ -178,44 +178,35 @@ for (const n of SPIED_INDEXES) {
   }
 }
 
-// Le texte d'une fonction sans ses commentaires de ligne ni ses blocs `/* … */`, qui peuvent comparer les algorithmes
-// (« plus vite que fast »). Un « // » précédé d'un blanc, ou au tout début du texte, ouvre un commentaire de ligne, qu'il
-// commence la ligne ou la termine; il court jusqu'à la fin de la ligne. Un « // » collé au caractère qui le précède n'en ouvre
-// pas : celui de `const re = /\/\//; return fast(n);` suit un « \ », et retirer la fin de cette ligne perdrait `return fast(n);`.
-// La regex ci-dessous lit le texte de gauche à droite : chaînes, gabarits, commentaires de ligne et blocs; celui qui commence
-// le premier est consommé en entier. Un « // » ou un « /* » dans une chaîne ou un gabarit ne retire donc pas le code qui le
-// suit, et une apostrophe, un guillemet ou un accent grave dans un commentaire (« l'indice », « c'est ») n'ouvre pas de
-// chaîne, puisque le commentaire commence avant. Les littéraux regex, eux, ne sont pas lus (voir les survivants de la garde
-// plus bas).
-const withoutComments = (source: string) =>
-  source.replace(/("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)|(?<=^|\s)\/\/[^\n]*|\/\*[\s\S]*?\*\//gu, (_, literal?: string) => literal ?? ' ');
-
 // hors catalogue : garde du corps de chaque entrée de `algos` (F2; lacune de la garde d'identité ci-dessus, qui lit le nom et le
 // début de la source, et des espions, qui ne voient que l'aiguillage de `fib`). Un nom qui calcule par un autre algorithme rend les
 // mêmes valeurs, donc aucun cas de valeur ne le voit, et une expression de fonction nommée du même nom garde le début de la
-// source. Le texte de chaque entrée, commentaires de ligne et blocs retirés, ne nomme donc ni l'un des deux autres
-// algorithmes, ni `fib`, ni `fibList`, ni `algos`; son propre nom, celui de sa déclaration, est permis.
-// Rougit : `return fast(n);` en tête de `matrix`; `const re = /\/\//; return fast(n);` en tête de `matrix` (son « // » suit un
-// « \ » : il n'ouvre pas de commentaire); `{ iterative, matrix: function matrix(n: number) { return fast(n); }, fast }` dans la
-// table; `return fib(n, 'fast');` en tête de `matrix`; et `if (n < 64) return iterative(n);` en tête de `fast`.
+// source. Le texte brut de chaque entrée, `algos[algo].toString()`, ne nomme donc ni l'un des deux autres algorithmes, ni `fib`,
+// ni `fibList`, ni `algos`; son propre nom, celui de sa déclaration, est permis.
+// Le texte est lu brut, sans retirer les commentaires : le texte brut ne laisse rien cacher, ni un commentaire, ni un littéral
+// (chaîne, gabarit, regex) ne peut masquer un nom. Un retrait des commentaires par regex a été essayé et abandonné : chaque revue
+// y trouvait un survivant (une continuation de ligne dans une chaîne, un commentaire collé au code qui ouvre un faux bloc ou une
+// fausse chaîne, une fin de ligne en CR, U+2028 ou U+2029, un littéral regex tel que `/[ //]/` ou `/\/*/`).
+// Rougit : `return fast(n);` en tête de `matrix`; `const re = /\/\//; return fast(n);`; `const re = /[ //]/; return fast(n);`;
+// `const re = /\/*/; return fast(n); const end = /a*/;`; une continuation de ligne dans une chaîne (`const s = "a\`, un saut de
+// ligne, puis ` //"; if (s) return fast(n);`); un commentaire collé au code (`let q = 1;// voir /* ici`, un saut de ligne, puis
+// `if (q) return fast(n); /* fin */`, ou `let q = 1; // note if (q) return fast(n);`); un commentaire clos par CR, U+2028 ou U+2029;
+// `{ iterative, matrix: function matrix(n: number) { return fast(n); }, fast }` dans la table; `return fib(n, 'fast');`;
+// et `if (n < 64) return iterative(n);` en tête de `fast`.
 // Ce dernier rouge est voulu, non une erreur du test : F2 veut que chaque nom calcule par son propre algorithme à tout n, pas
 // seulement au-dessus d'un seuil. Un travail de performance qui aiguillerait les petits indices vers un autre algorithme
 // rougit ici avec raison; il doit d'abord changer F2 au PRD, puis ce test, au lieu d'assouplir le test seul.
-// Reste vert, à raison : un commentaire qui nomme un autre algorithme, seul sur sa ligne ou en fin de ligne, même avec une
-// apostrophe, un guillemet ou un accent grave. Par exemple `const bits = n.toString(2); // plus lent que fast` dans `matrix`,
-// ou, dans `fast`, `let f = 0n; // F(k), l'indice courant` suivi d'un `// plus rapide que matrix` seul sur sa ligne.
+// Le prix du texte brut est un faux rouge, bruyant, jamais silencieux : un commentaire de l'un de ces corps qui nomme un autre
+// algorithme (`// plus lent que fast` dans `matrix`) fait rougir la garde. Il faut alors écrire le commentaire autrement, « le
+// doublement rapide » au lieu de `fast`, et non revenir à un retrait des commentaires.
 // Survivants connus, laissés à la revue de code : une délégation par une fonction auxiliaire (`return viaFast(n);`, où `viaFast`,
 // définie hors de la table, rend `fast(n)`) ou par un nom calculé (`return pick('fa' + 'st')(n);`, où `pick` choisit dans un
-// objet défini hors de la table); le texte de l'entrée ne nomme alors aucun algorithme. Deux littéraux regex que
-// `withoutComments` lit mal survivent aussi, en tête de `matrix`. `const re = /[ //]/; return fast(n);` : son « // » suit un
-// blanc, donc `withoutComments` y lit un commentaire de ligne, qui emporte `return fast(n);`.
-// `const re = /\/*/; return fast(n); const end = /a*/;` : il y lit un bloc, de ce `/*` à l'`*/` de `/a*/`, qui emporte
-// `return fast(n);`. Cette liste n'est pas exhaustive.
+// objet défini hors de la table); le texte de l'entrée ne nomme alors aucun algorithme. Cette liste n'est pas exhaustive.
 const FORBIDDEN = [...ALGOS, 'fib', 'fibList', 'algos'];
 
 for (const algo of ALGOS) {
   test(`PERF-TS-10 : le corps de ${algo} ne nomme ni un autre algorithme, ni fib, ni fibList, ni algos`, () => {
-    const source = withoutComments(algos[algo].toString());
+    const source = algos[algo].toString();
     const named = FORBIDDEN.filter((name) => name !== algo && new RegExp(`\\b${name}\\b`, 'u').test(source));
     assert.deepEqual(named, [], source);
   });
