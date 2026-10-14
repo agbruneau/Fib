@@ -268,8 +268,9 @@ test('PERF-TS-11 : témoin, avec un fichier comme stdout, process.stdout charge 
   assert.deepEqual(launchToFile(['-e', '0']).modules.filter((m) => SYNC_WRITE_STREAM.test(m)), []);
 });
 
-// PERF-TS-12 : le `fib` de processIo (cli.ts) est celui de la bibliothèque (F2, F6). PERF-TS-8 et les autres le remplacent par un Io
-// d'essai et ne le voient pas : le contrat non plus, puisque les trois algorithmes rendent les mêmes valeurs.
+// PERF-TS-12 : le `fib` de processIo (cli.ts) est celui de la bibliothèque (F2, F6). PERF-TS-6 à 8 le remplacent par un Io d'essai et
+// ne le voient pas; PERF-TS-9 lance la vraie CLI, mais n'y voit que `iterative` remplacé par `fast` ou `matrix` (l'unité de la durée, plus haut).
+// Le contrat non plus ne le voit pas, puisque les trois algorithmes rendent les mêmes valeurs.
 // `run(args)` sans Io joue sous processIo : chaque ligne de durée doit avoir appelé l'entrée de la table `algos` (fib.ts, la même
 // instance de module que celle de cli.ts) qu'elle nomme. Des espions y remplacent les trois entrées : ils notent leur nom et rendent
 // 0n sans calculer, comme ceux de PERF-TS-10, donc n = 1000000 (la borne F8) ne coûte rien. Chaque entrée de EXECUTED est jouée à
@@ -279,10 +280,10 @@ test('PERF-TS-11 : témoin, avec un fichier comme stdout, process.stdout charge 
 // les lignes ne sont lues que par leur premier mot.
 // Rouge sous les mutants `fib: (n, algo) => fib(n, algo === 'matrix' ? 'fast' : algo)` (les tests et le contrat y restaient verts
 // avant cette garde), `fib: (n, algo) => fib(n, n > 10 && algo === 'matrix' ? 'fast' : algo)` (à n = 1000000 seulement) et
-// `fib: (n) => fib(n, 'fast')` dans processIo (cli.ts).
+// `fib: (n) => fib(n, 'fast')` (déjà rouge par PERF-TS-9) dans processIo (cli.ts).
 // Survivant connu, laissé à la revue de code : un aiguillage qui dépend de n hors de ces deux indices, tel que
 // `n > 10 && n < 1000000 && algo === 'matrix' ? 'fast' : algo`.
-const BOUNDS = [10, 1000000];
+const SPIED_INDEXES = [10, 1000000];
 
 // Remplace `write` sur un flux du processus et note les textes reçus, sans rien lui transmettre. `write` vient d'ordinaire du prototype
 // du flux, non de lui : restaurer, c'est alors supprimer la propriété posée, non la réaffecter, pour que le flux retrouve la valeur
@@ -316,11 +317,11 @@ function runOnProcessIo(args: string[]) {
   }
 }
 
-for (const n of BOUNDS) {
+for (const n of SPIED_INDEXES) {
   for (const [args, algos] of EXECUTED) {
     const options = args.slice(0, -1); // le dernier argument est l'indice, que n remplace
     test(`PERF-TS-12 : sous l’Io du processus, --time ${[...options, n].join(' ')} appelle ${algos.join(' puis ')} dans la table algos`, () => {
-      // Conversion explicite : `algos` est en lecture seule par le type, et ces espions sont les seuls à y écrire (comme PERF-TS-10).
+      // Conversion explicite : `algos` est en lecture seule par le type; seuls les espions (PERF-TS-10, PERF-TS-12) y écrivent, et chacun restaure la table dans finally.
       const spies = table as Record<Algo, (n: number) => bigint>;
       const original = { ...spies };
       const called: Algo[] = [];
