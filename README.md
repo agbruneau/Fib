@@ -66,7 +66,7 @@ Le scénario impair, terme `999999`, s'ajoute au banc le 2026-10-14 : il n'a pas
 
 | Lignes de code (`wc -l`, hors fichiers de test) | Go | Rust | TypeScript | Python |
 |---|---|---|---|---|
-| avant → final | 255 → 395 | 205 → 568 | 151 → 270 | 158 → 270 |
+| avant → final | 255 → 394 | 205 → 568 | 151 → 270 | 158 → 270 |
 
 - Rust compte aussi ses tests unitaires : 60 lignes dans `lib.rs` (dont PERF-RS-13) et 169 dans `main.rs` (PERF-RS-8, 11, 12 et 14). Sans eux, Rust compte 339 lignes. La cible d'environ 200 lignes (PRD, A3) est remplacée par l'ADR-0004.
 - `iterative` reste en O(n²) opérations sur les mots : à 1 000 000, il prend environ 1,6 s en Go et 5 s en Python, ce que F8 accepte.
