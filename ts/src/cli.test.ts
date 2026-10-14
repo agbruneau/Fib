@@ -269,8 +269,8 @@ test('PERF-TS-11 : témoin, avec un fichier comme stdout, process.stdout charge 
 });
 
 // PERF-TS-12 : le `fib` de processIo (cli.ts) est celui de la bibliothèque (F2, F6). PERF-TS-6 à 8 le remplacent par un Io d'essai et
-// ne le voient pas; PERF-TS-9 lance la vraie CLI, mais n'y voit que `iterative` remplacé par `fast` ou `matrix` (l'unité de la durée, plus haut).
-// Le contrat non plus ne le voit pas, puisque les trois algorithmes rendent les mêmes valeurs.
+// ne le voient pas; PERF-TS-9 lance la vraie CLI et n'y voit, le plus souvent mais sans garantie, que `iterative` remplacé par `fast` ou `matrix`
+// (l'unité de la durée, plus haut : sa borne basse lâche laisse passer un calcul de remplacement que la charge ralentit). Le contrat non plus ne le voit pas : les trois algorithmes rendent les mêmes valeurs.
 // `run(args)` sans Io joue sous processIo : chaque ligne de durée doit avoir appelé l'entrée de la table `algos` (fib.ts, la même
 // instance de module que celle de cli.ts) qu'elle nomme. Des espions y remplacent les trois entrées : ils notent leur nom et rendent
 // 0n sans calculer, comme ceux de PERF-TS-10, donc n = 1000000 (la borne F8) ne coûte rien. Chaque entrée de EXECUTED est jouée à
@@ -280,7 +280,7 @@ test('PERF-TS-11 : témoin, avec un fichier comme stdout, process.stdout charge 
 // les lignes ne sont lues que par leur premier mot.
 // Rouge sous les mutants `fib: (n, algo) => fib(n, algo === 'matrix' ? 'fast' : algo)` (les tests et le contrat y restaient verts
 // avant cette garde), `fib: (n, algo) => fib(n, n > 10 && algo === 'matrix' ? 'fast' : algo)` (à n = 1000000 seulement) et
-// `fib: (n) => fib(n, 'fast')` (déjà rouge par PERF-TS-9) dans processIo (cli.ts).
+// `fib: (n) => fib(n, 'fast')` (rouge aussi, d'ordinaire, sous PERF-TS-9, sans garantie) dans processIo (cli.ts).
 // Survivant connu, laissé à la revue de code : un aiguillage qui dépend de n hors de ces deux indices, tel que
 // `n > 10 && n < 1000000 && algo === 'matrix' ? 'fast' : algo`.
 const SPIED_INDEXES = [10, 1000000];
