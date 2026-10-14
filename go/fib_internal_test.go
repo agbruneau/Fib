@@ -6,7 +6,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"go/types"
 	"math/big"
 	"slices"
 	"strconv"
@@ -270,22 +269,31 @@ func TestPERFGO11_LAiguillageEtLesCorpsSeLisentDansLeTexte(t *testing.T) {
 // baissent pas à n = 5 ni à n = 101 (288 et 1 248), et de 5 % à n = 1023, de 18 % à n = 999 999, un écart que la version de
 // Go, celle de math/big et la taille des blocs déplaceraient. Le chronomètre est exclu. La garde lit donc le texte de
 // fib.go par go/parser, comme le volet statique de PERF-GO-11 (l'aide fibFuncs lit le fichier pour les deux), et compte
-// les appels de Mul par branche de la dernière étape : exactement un dans le bloc `if n&1 == 0 { … }`, le produit de
-// F(2k), et exactement un dans le reste des instructions après la boucle, la branche impaire, le produit de F(2k+1). Le
-// bloc pair doit finir par un return, sans quoi le reste n'est pas la branche impaire. Un total de deux après la boucle
-// ne suffisait pas : il laissait passer une Mul déplacée de la branche paire dans une aide, compensée par les deux
-// carrés de la branche impaire.
+// les appels de Mul par zone de la dernière étape, les instructions après la boucle : aucun avant le test de parité (les
+// instructions entre la boucle et le `if n&1 == 0`, et l'Init de ce `if`, que les deux parités exécutent), exactement un
+// dans le bloc du `if`, le produit de F(2k), et exactement un dans la branche impaire, les instructions qui suivent le
+// `if` (et son else, s'il en avait un), le produit de F(2k+1). Le bloc pair doit finir par un return, sans quoi ce qui le
+// suit n'est pas la branche impaire. La condition se lit dans l'arbre (isParityTest), non dans son texte. Deux comptes
+// plus larges laissaient passer des mutants. Un total de deux après la boucle laissait passer une Mul déplacée de la
+// branche paire dans une aide, compensée par les deux carrés de la branche impaire. Le reste après la boucle, compté
+// comme la branche impaire, laissait passer un produit impair calculé avant le test de parité : calculé puis jeté à chaque
+// n pair, sans qu'aucune branche le voie en trop.
 //
 // Rouge sous : les deux carrés de F(2k+1) (deux Mul dans la branche impaire); la branche paire `return evenStep(a, c)`,
 // où l'aide evenStep porte la Mul, avec les deux carrés dans la branche impaire (zéro Mul dans la paire, deux dans
 // l'impaire, pour un total de deux); la même aide avec le produit dans la branche impaire (zéro dans la paire); une aide
-// qui porte la Mul de la branche impaire (zéro dans l'impaire); un bloc pair qui ne finit pas par un return.
+// qui porte la Mul de la branche impaire (zéro dans l'impaire); un bloc pair qui ne finit pas par un return; le produit
+// impair hissé avant le test, `odd := …Mul…` puis `if n&1 == 0 { return … }`, ou dans l'Init du `if`, `var odd *big.Int`
+// puis `if odd = …Mul…; n&1 == 0 { … }` (une Mul avant le test de parité, zéro dans la branche impaire); une condition
+// mutée, `n&1 != 0` ou `n&1 == 1` avec les branches échangées, `n%2 == 0`, `n&3 == 0`, `1&n == 0` ou `n&1 == 0 && n > 0`
+// (plus de `if n&1 == 0` au niveau du corps); un second produit dans un else du `if` (deux dans la branche impaire).
+// Reste vert, par intention : le produit impair écrit dans un else du `if n&1 == 0 { return … }`, car c'est lui la branche
+// impaire.
 // Survivants connus, laissés à la revue de code : la garde ne compte que les appels écrits `x.Mul(…)` dans le corps de
 // fast, et ne voit ni ce qu'une branche calcule d'autre ni ce qu'une aide calcule. Une branche qui garde son produit et y
 // ajoute un carré par Exp (`x.Exp(x, big.NewInt(2), nil)`) reste verte; une branche qui garde une Mul sans emploi et
 // confie les deux carrés à une aide aussi.
 func TestPERFGO13_LaDerniereEtapeDeFastCompteUnProduitParBranche(t *testing.T) {
-	const wantMul = 1 // par branche
 	fset, funcs := fibFuncs(t)
 	fn := funcs["fast"]
 	if fn == nil {
@@ -296,15 +304,15 @@ func TestPERFGO13_LaDerniereEtapeDeFastCompteUnProduitParBranche(t *testing.T) {
 		t.Fatal("fast n'a plus de boucle for au niveau de son corps : réécrite ? Alors adapter PERF-GO-13")
 	}
 	last := fn.Body.List[loop+1:] // la dernière étape : les instructions après la boucle
-	// types.ExprString écrit chaque opérateur binaire entre espaces : « n & 1 == 0 ».
 	pos := slices.IndexFunc(last, func(stmt ast.Stmt) bool {
 		cond, ok := stmt.(*ast.IfStmt)
-		return ok && types.ExprString(cond.Cond) == "n & 1 == 0"
+		return ok && isParityTest(cond.Cond)
 	})
 	if pos < 0 {
 		t.Fatal("après la boucle, fast n'a plus de `if n&1 == 0 { … }` au niveau de son corps : réécrite ? Alors adapter PERF-GO-13")
 	}
-	even := last[pos].(*ast.IfStmt).Body
+	parity := last[pos].(*ast.IfStmt)
+	even := parity.Body
 	returns := false
 	if n := len(even.List); n > 0 {
 		_, returns = even.List[n-1].(*ast.ReturnStmt)
@@ -313,39 +321,51 @@ func TestPERFGO13_LaDerniereEtapeDeFastCompteUnProduitParBranche(t *testing.T) {
 		t.Fatalf("%s : le bloc de la branche paire ne finit pas par un return, donc le reste de fast n'est pas la branche impaire",
 			fset.Position(even.Pos()))
 	}
-	evenCalls := mulCalls(fset, even, nil)
-	var oddCalls []string // le reste des instructions, sans le bloc pair
-	for _, stmt := range last {
-		oddCalls = append(oddCalls, mulCalls(fset, stmt, even)...)
+	// Trois zones qui ne se recouvrent pas : ce que les deux parités exécutent avant le test, le bloc pair, la branche impaire.
+	var before, oddCalls []string
+	for _, stmt := range last[:pos] {
+		before = append(before, mulCalls(fset, stmt)...)
 	}
-	for _, branch := range []struct {
-		name  string
-		calls []string
-		why   string
+	if parity.Init != nil {
+		before = append(before, mulCalls(fset, parity.Init)...)
+	}
+	evenCalls := mulCalls(fset, even)
+	if parity.Else != nil {
+		oddCalls = append(oddCalls, mulCalls(fset, parity.Else)...)
+	}
+	for _, stmt := range last[pos+1:] {
+		oddCalls = append(oddCalls, mulCalls(fset, stmt)...)
+	}
+	for _, zone := range []struct {
+		subject string
+		calls   []string
+		want    int
+		why     string
 	}{
-		{"paire", evenCalls, "un produit pour F(2k) = F(k)(F(k) + 2F(k-1)); une Mul déplacée dans une aide la fait tomber à zéro"},
-		{"impaire", oddCalls, "un produit pour F(2k+1); les deux carrés en font deux, une Mul déplacée dans une aide zéro"},
+		{"le code qui précède le test de parité dans la dernière étape de fast", before, 0,
+			"un produit calculé avant le test l'est à chaque n, pair ou impair, et jeté à l'une des deux parités"},
+		{"la branche paire de la dernière étape de fast", evenCalls, 1,
+			"un produit pour F(2k) = F(k)(F(k) + 2F(k-1)); une Mul déplacée dans une aide la fait tomber à zéro"},
+		{"la branche impaire de la dernière étape de fast", oddCalls, 1,
+			"un produit pour F(2k+1); les deux carrés en font deux, une Mul déplacée dans une aide zéro"},
 	} {
-		t.Run(fmt.Sprintf("PERF-GO-13 : la branche %s de la dernière étape de fast appelle Mul exactement %d fois", branch.name, wantMul), func(t *testing.T) {
-			if len(branch.calls) != wantMul {
+		t.Run(fmt.Sprintf("PERF-GO-13 : %s appelle Mul exactement %d fois", zone.subject, zone.want), func(t *testing.T) {
+			if len(zone.calls) != zone.want {
 				where := ""
-				if len(branch.calls) > 0 {
-					where = " (" + strings.Join(branch.calls, ", ") + ")"
+				if len(zone.calls) > 0 {
+					where = " (" + strings.Join(zone.calls, ", ") + ")"
 				}
-				t.Errorf("la branche %s appelle Mul %d fois%s, attendu %d : %s (ADR-0004)",
-					branch.name, len(branch.calls), where, wantMul, branch.why)
+				t.Errorf("%s appelle Mul %d fois%s, attendu %d : %s (ADR-0004)",
+					zone.subject, len(zone.calls), where, zone.want, zone.why)
 			}
 		})
 	}
 }
 
-// mulCalls rend la position de chaque appel d'une méthode Mul sous root, sans descendre dans skip (nil : rien à écarter).
-func mulCalls(fset *token.FileSet, root, skip ast.Node) []string {
+// mulCalls rend la position de chaque appel d'une méthode Mul sous root.
+func mulCalls(fset *token.FileSet, root ast.Node) []string {
 	var calls []string
 	ast.Inspect(root, func(node ast.Node) bool {
-		if node == nil || node == skip {
-			return false
-		}
 		if call, ok := node.(*ast.CallExpr); ok {
 			if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Mul" {
 				calls = append(calls, fset.Position(call.Pos()).String())
@@ -378,6 +398,22 @@ func fibFuncs(t *testing.T) (*token.FileSet, map[string]*ast.FuncDecl) {
 func isIdent(e ast.Expr, name string) bool {
 	id, ok := e.(*ast.Ident)
 	return ok && id.Name == name
+}
+
+// isIntLit dit si e est le littéral entier value, écrit tel quel (« 0 », non « 0x0 »).
+func isIntLit(e ast.Expr, value string) bool {
+	lit, ok := e.(*ast.BasicLit)
+	return ok && lit.Kind == token.INT && lit.Value == value
+}
+
+// isParityTest dit si e est la condition `n&1 == 0`, lue dans l'arbre : une égalité entre `n & 1` et le littéral 0.
+func isParityTest(e ast.Expr) bool {
+	eq, ok := e.(*ast.BinaryExpr)
+	if !ok || eq.Op != token.EQL || !isIntLit(eq.Y, "0") {
+		return false
+	}
+	and, ok := eq.X.(*ast.BinaryExpr)
+	return ok && and.Op == token.AND && isIdent(and.X, "n") && isIntLit(and.Y, "1")
 }
 
 // clauseLiteral rend la chaîne que nomme un cas à une seule valeur littérale; ok est faux pour default ou plusieurs valeurs.
