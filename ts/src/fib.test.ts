@@ -178,33 +178,39 @@ for (const n of SPIED_INDEXES) {
   }
 }
 
-// Le texte d'une fonction sans ses commentaires de ligne qui commencent la ligne (après des blancs) ni ses blocs `/* … */`, qui
-// peuvent comparer les algorithmes (« plus vite que fast »). Un « // » au milieu d'une ligne de code n'ouvre pas de commentaire :
-// la regex ci-dessous ne sait pas lire les littéraux regex, et retirer la fin de la ligne à partir du « // » de
-// `const re = /\/\//; return fast(n);` perdrait `return fast(n);`. Un commentaire de fin de ligne reste donc dans le texte :
-// aucun des corps actuels n'y nomme un autre algorithme, `fib`, `fibList` ou `algos`, et un tel commentaire rougirait ici à tort
-// (il se place alors sur sa propre ligne). Les chaînes et les gabarits passent d'abord, tels quels : un « // » ou un « /* » dans
-// l'un d'eux ne retire pas le code qui le suit, et une apostrophe d'un commentaire qui commence la ligne (« a' », dans matrix)
-// n'ouvre pas de chaîne, puisque le commentaire est consommé en entier avant elle.
+// Le texte d'une fonction sans ses commentaires de ligne ni ses blocs `/* … */`, qui peuvent comparer les algorithmes
+// (« plus vite que fast »). Un « // » précédé d'un blanc, ou au tout début du texte, ouvre un commentaire de ligne, qu'il
+// commence la ligne ou la termine; il court jusqu'à la fin de la ligne. Un « // » collé au caractère qui le précède n'en ouvre
+// pas : celui de `const re = /\/\//; return fast(n);` suit un « \ », et retirer la fin de cette ligne perdrait `return fast(n);`.
+// La regex ci-dessous lit le texte de gauche à droite : chaînes, gabarits, commentaires de ligne et blocs; celui qui commence
+// le premier est consommé en entier. Un « // » ou un « /* » dans une chaîne ou un gabarit ne retire donc pas le code qui le
+// suit, et une apostrophe, un guillemet ou un accent grave dans un commentaire (« l'indice », « c'est ») n'ouvre pas de
+// chaîne, puisque le commentaire commence avant. Les littéraux regex, eux, ne sont pas lus (voir les survivants de la garde
+// plus bas).
 const withoutComments = (source: string) =>
-  source.replace(/("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)|^[ \t]*\/\/[^\n]*|\/\*[\s\S]*?\*\//gmsu, (_, literal?: string) => literal ?? ' ');
+  source.replace(/("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)|(?<=^|\s)\/\/[^\n]*|\/\*[\s\S]*?\*\//gu, (_, literal?: string) => literal ?? ' ');
 
 // hors catalogue : garde du corps de chaque entrée de `algos` (F2; lacune de la garde d'identité ci-dessus, qui lit le nom et le
 // début de la source, et des espions, qui ne voient que l'aiguillage de `fib`). Un nom qui calcule par un autre algorithme rend les
 // mêmes valeurs, donc aucun cas de valeur ne le voit, et une expression de fonction nommée du même nom garde le début de la
-// source. Le texte de chaque entrée, commentaires de début de ligne et blocs retirés, ne nomme donc ni l'un des deux autres
+// source. Le texte de chaque entrée, commentaires de ligne et blocs retirés, ne nomme donc ni l'un des deux autres
 // algorithmes, ni `fib`, ni `fibList`, ni `algos`; son propre nom, celui de sa déclaration, est permis.
-// Rougit : `return fast(n);` en tête de `matrix`; `const re = /\/\//; return fast(n);` en tête de `matrix` (un « // » dans un
-// littéral regex); `{ iterative, matrix: function matrix(n: number) { return fast(n); }, fast }` dans la table;
-// `return fib(n, 'fast');` en tête de `matrix`; et `if (n < 64) return iterative(n);` en tête de `fast`.
+// Rougit : `return fast(n);` en tête de `matrix`; `const re = /\/\//; return fast(n);` en tête de `matrix` (son « // » suit un
+// « \ » : il n'ouvre pas de commentaire); `{ iterative, matrix: function matrix(n: number) { return fast(n); }, fast }` dans la
+// table; `return fib(n, 'fast');` en tête de `matrix`; et `if (n < 64) return iterative(n);` en tête de `fast`.
 // Ce dernier rouge est voulu, non une erreur du test : F2 veut que chaque nom calcule par son propre algorithme à tout n, pas
 // seulement au-dessus d'un seuil. Un travail de performance qui aiguillerait les petits indices vers un autre algorithme
 // rougit ici avec raison; il doit d'abord changer F2 au PRD, puis ce test, au lieu d'assouplir le test seul.
+// Reste vert, à raison : un commentaire qui nomme un autre algorithme, seul sur sa ligne ou en fin de ligne, même avec une
+// apostrophe, un guillemet ou un accent grave. Par exemple `const bits = n.toString(2); // plus lent que fast` dans `matrix`,
+// ou, dans `fast`, `let f = 0n; // F(k), l'indice courant` suivi d'un `// plus rapide que matrix` seul sur sa ligne.
 // Survivants connus, laissés à la revue de code : une délégation par une fonction auxiliaire (`return viaFast(n);`, où `viaFast`,
 // définie hors de la table, rend `fast(n)`) ou par un nom calculé (`return pick('fa' + 'st')(n);`, où `pick` choisit dans un
-// objet défini hors de la table); le texte de l'entrée ne nomme alors aucun algorithme. Un littéral regex qui ouvre un faux `/*`
-// survit aussi : `const re = /\/*/; return fast(n); const end = /a*/;` en tête de `matrix`, car `withoutComments` y lit un bloc,
-// de ce `/*` à l'`*/` de `/a*/`, qui emporte `return fast(n);`. Cette liste n'est pas exhaustive.
+// objet défini hors de la table); le texte de l'entrée ne nomme alors aucun algorithme. Deux littéraux regex que
+// `withoutComments` lit mal survivent aussi, en tête de `matrix`. `const re = /[ //]/; return fast(n);` : son « // » suit un
+// blanc, donc `withoutComments` y lit un commentaire de ligne, qui emporte `return fast(n);`.
+// `const re = /\/*/; return fast(n); const end = /a*/;` : il y lit un bloc, de ce `/*` à l'`*/` de `/a*/`, qui emporte
+// `return fast(n);`. Cette liste n'est pas exhaustive.
 const FORBIDDEN = [...ALGOS, 'fib', 'fibList', 'algos'];
 
 for (const algo of ALGOS) {
