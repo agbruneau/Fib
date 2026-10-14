@@ -198,6 +198,8 @@ Pour éviter $10\,001$ conversions binaires $\to$ décimales de `BigInt` lors de
 
 ## 7. Suivi du 2026-10-14
 
+Les §§ 1 à 6 décrivent l'état du commit a92a808, tel que l'audit l'a lu; ils ne sont pas réécrits. Ce qui a changé depuis, et ce qu'ils affirmaient à tort, est ici.
+
 Cet audit a été vérifié constat par constat, sous Linux, avec Node 24.20.0 et TypeScript 7.0.2. Trois agents adverses (exactitude, tri, critique) ont lu le code, recompté et joué des mutants dans des copies. Les constats retenus ont été implémentés par `fib-dev`, puis revus par un vérificateur par branche et par `/code-review` ([agbruneau/Fib#45](https://github.com/agbruneau/Fib/pull/45)). En production, seul le commentaire de l'export `algos` change, à nombre de lignes constant.
 
 ### 7.1 Suite donnée aux constats

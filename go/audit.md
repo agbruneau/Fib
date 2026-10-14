@@ -181,6 +181,8 @@ return a
 
 ## 7. Suivi du 2026-10-14
 
+Les §§ 1 à 6 décrivent l'état du commit a92a808, tel que l'audit l'a lu; ils ne sont pas réécrits. Ce qui a changé depuis, et ce qu'ils affirmaient à tort, est ici.
+
 Cet audit a été vérifié constat par constat, sous Linux, avec Go 1.26.0. Trois agents adverses (exactitude, tri, critique) ont lu le code, recompté et joué des mutants dans des copies. Les constats retenus ont été implémentés par `fib-dev`, puis revus par un vérificateur par branche et par `/code-review` ([agbruneau/Fib#45](https://github.com/agbruneau/Fib/pull/45)). Le code de production de Go ne change que par le dernier bit impair de `fast`, décidé ensuite par le propriétaire; le reste ne fait qu'ajouter des gardes.
 
 ### 7.1 Suite donnée aux constats

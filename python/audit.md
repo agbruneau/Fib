@@ -186,6 +186,8 @@ AssertionError: Tuples differ: (b'stdout\r\n', b'stderr\r\n', 0) != (b'stdout\n'
 
 ## 7. Suivi du 2026-10-14
 
+Les §§ 1 à 6 décrivent l'état du commit a92a808, tel que l'audit l'a lu; ils ne sont pas réécrits. Ce qui a changé depuis, et ce qu'ils affirmaient à tort, est ici.
+
 Cet audit a été vérifié constat par constat, sous Linux, avec CPython 3.13.16. Trois agents adverses (exactitude, tri, critique) ont lu le code et les sources de CPython, émulé Windows et joué des mutants dans des copies. Les constats retenus ont été implémentés par `fib-dev`, puis revus par un vérificateur par branche et par `/code-review` ([agbruneau/Fib#45](https://github.com/agbruneau/Fib/pull/45)). En production, seul le commentaire de `_check_index` change, à nombre de lignes constant : `python/fib.py` reste à 270 lignes.
 
 ### 7.1 Suite donnée aux constats

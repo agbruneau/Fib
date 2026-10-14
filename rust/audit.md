@@ -182,6 +182,8 @@ fn iterative(n: u64) -> BigUint {
 
 ## 7. Suivi du 2026-10-14
 
+Les §§ 1 à 6 décrivent l'état du commit a92a808, tel que l'audit l'a lu; ils ne sont pas réécrits. Ce qui a changé depuis, et ce qu'ils affirmaient à tort, est ici.
+
 Cet audit a été vérifié constat par constat, sous Linux, avec rustc 1.97. Trois agents adverses (exactitude, tri, critique) ont lu le code, compté les allocations, lu le code machine et joué des mutants dans des copies. Les constats retenus ont été implémentés par `fib-dev`, puis revus par un vérificateur par branche et par `/code-review` ([agbruneau/Fib#45](https://github.com/agbruneau/Fib/pull/45)). Le code de production de Rust ne change pas : seules des gardes s'ajoutent, dans le module de tests de `src/main.rs`.
 
 ### 7.1 Suite donnée aux constats
