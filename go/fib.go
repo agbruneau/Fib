@@ -196,9 +196,12 @@ func fast(n int) *big.Int {
 	if n&1 == 0 {
 		return new(big.Int).Mul(a, new(big.Int).Add(a, new(big.Int).Lsh(c, 1)))
 	}
-	a2 := new(big.Int).Lsh(a, 1)
-	odd := new(big.Int).Sub(a2, c) // 2F(k) - F(k-1) : jamais négatif, car F(k) >= F(k-1)
-	odd.Mul(odd, a2.Add(a2, c))
+	// Les deux facteurs se calculent sur place : c, qui est à fast et ne sert plus, reçoit le premier, t le second.
+	// Le résultat est un entier neuf : rendre c ferait passer son new(big.Int) au tas, à tout n.
+	t := new(big.Int).Lsh(a, 1) // 2F(k)
+	c.Sub(t, c)                 // 2F(k) - F(k-1) : jamais négatif, car F(k) >= F(k-1)
+	t.Lsh(t, 1).Sub(t, c)       // 4F(k) - (2F(k) - F(k-1)) = 2F(k) + F(k-1)
+	odd := new(big.Int).Mul(c, t)
 	if n>>1&1 == 0 { // k = n >> 1 est pair
 		return odd.Add(odd, two)
 	}
