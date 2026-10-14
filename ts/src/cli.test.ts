@@ -1,4 +1,4 @@
-// Tests de garde de la CLI, joués dans le processus par run(args, io) (hors seams, catalogue § 6), sauf PERF-TS-9 et PERF-TS-11, qui lancent la source de la CLI (`ts/src/cli.ts`) dans un sous-processus.
+// Tests de garde de la CLI, joués dans le processus par run(args, io) (hors seams, catalogue § 6), sauf PERF-TS-9 et PERF-TS-11, qui lancent la source de la CLI (`ts/src/cli.ts`) dans un sous-processus, et PERF-TS-12, qui joue run(args) sous l'Io du processus, flux captés.
 // Ils protègent ce que le test de contrat ne peut pas éprouver; la grammaire, les bornes et les octets de sortie lui restent.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { terms } from '../../contracts/oracle.ts';
-import { fib, type Algo } from './fib.ts';
+import { algos as table, fib, type Algo } from './fib.ts';
 import { run, type Io } from './cli.ts';
 
 // Un Io d'essai : chaque écriture est enregistrée, flux par flux. Sans substitut, fib est le vrai et l'horloge reste figée.
@@ -54,8 +54,9 @@ for (const bad of ['fast', 'iterative', 'matrix'] as const) {
 
 // PERF-TS-8 : F6 (catalogue § 6). L'algorithme nommé s'exécute, une ligne par algorithme exécuté, dans l'ordre, en un seul appel
 // à stderr, et chaque durée est l'écart de deux lectures de l'horloge autour de son calcul.
-// Le test ne vérifie pas l'étendue exacte de cette fenêtre : l'horloge d'essai n'avance que dans fib, donc une fenêtre qui
-// engloberait aussi la mise en forme du terme passerait.
+// Ce premier test n'avance l'horloge que dans fib : l'étendue de la fenêtre est gardée par le second test de chaque entrée, plus bas
+// (ni la conversion décimale du terme ni l'écriture de stdout). L'analyse des arguments, elle aussi hors fenêtre (PRD F6), reste à la
+// revue de code : `parse` n'offre aucun point d'injection.
 // Le fib d'essai délègue au vrai et fait avancer l'horloge de son coût. Des coûts en fractions binaires, donc des différences
 // exactes; l'horloge ne part pas de 0, pour qu'une lecture absolue se voie.
 const COST: Record<Algo, [ms: number, line: string]> = {
@@ -85,6 +86,43 @@ for (const [args, algos] of EXECUTED) {
     });
     assert.equal(run(['--time', ...args], io), 0);
     assert.deepEqual(calls, algos, 'les algorithmes exécutés, dans l’ordre');
+    assert.deepEqual(stderr, [algos.map((a) => COST[a][1]).join('')]);
+  });
+}
+
+// La fenêtre du chronomètre ne couvre ni la conversion décimale du terme ni l'écriture de stdout (F6). Le fib d'essai rend aux
+// trois algorithmes un même objet, donc ils concordent (compute compare par !==), dont la conversion en texte avance l'horloge de
+// 8 ms; l'écriture de stdout l'avance de 16 ms. Les durées attendues sont les seuls coûts du calcul, COST.
+// Rouge sous le mutant `timed(durations, io, algo, () => String(io.fib(n, algo)))` dans compute (cli.ts), qui ajoute 8 ms à chaque
+// durée (vert avant cette garde). L'avance de 16 ms garde de même un chronomètre qui engloberait l'écriture; la structure actuelle
+// de run (écriture après compute) ne laisse pas de mutant d'une ligne qui l'éprouve.
+for (const [args, algos] of EXECUTED) {
+  test(`PERF-TS-8 : --time ${args.join(' ')} ne mesure ni la conversion décimale du terme ni l’écriture de stdout`, () => {
+    let now = 100;
+    const term = {
+      toString: () => {
+        now += 8;
+        return '55';
+      },
+    } as unknown as bigint;
+    const { io, stdout, stderr } = harness({
+      clock: () => now,
+      fib: (_n, algo) => {
+        now += COST[algo][0];
+        return term;
+      },
+    });
+    const slowWrite: Io = {
+      ...io,
+      stdout: {
+        write: (text, encoding) => {
+          now += 16;
+          return io.stdout.write(text, encoding);
+        },
+      },
+    };
+    assert.equal(run(['--time', ...args], slowWrite), 0);
+    assert.deepEqual(stdout, [['55\n', 'latin1']]);
     assert.deepEqual(stderr, [algos.map((a) => COST[a][1]).join('')]);
   });
 }
@@ -229,3 +267,81 @@ test('PERF-TS-11 : témoin, avec un fichier comme stdout, process.stdout charge 
   assert.ok(loaded.length > 0, 'internal/fs/sync_write_stream absent des modules de process.stdout');
   assert.deepEqual(launchToFile(['-e', '0']).modules.filter((m) => SYNC_WRITE_STREAM.test(m)), []);
 });
+
+// PERF-TS-12 : le `fib` de processIo (cli.ts) est celui de la bibliothèque (F2, F6). PERF-TS-8 et les autres le remplacent par un Io
+// d'essai et ne le voient pas : le contrat non plus, puisque les trois algorithmes rendent les mêmes valeurs.
+// `run(args)` sans Io joue sous processIo : chaque ligne de durée doit avoir appelé l'entrée de la table `algos` (fib.ts, la même
+// instance de module que celle de cli.ts) qu'elle nomme. Des espions y remplacent les trois entrées : ils notent leur nom et rendent
+// 0n sans calculer, comme ceux de PERF-TS-10, donc n = 1000000 (la borne F8) ne coûte rien. Chaque entrée de EXECUTED est jouée à
+// n = 10 et à n = 1000000; stdout reçoit le seul `0\n`, et les entrées appelées sont les noms des lignes de durée, dans l'ordre.
+// Les flux du processus sont captés le temps de l'appel, synchrone : rien n'y passe jusqu'au lanceur, que l'isolation par processus
+// ou `--test-isolation=none` ou `node ts/src/cli.test.ts` hébergent. Aucune durée n'est jugée (l'horloge de processIo est la réelle) :
+// les lignes ne sont lues que par leur premier mot.
+// Rouge sous les mutants `fib: (n, algo) => fib(n, algo === 'matrix' ? 'fast' : algo)` (les tests et le contrat y restaient verts
+// avant cette garde), `fib: (n, algo) => fib(n, n > 10 && algo === 'matrix' ? 'fast' : algo)` (à n = 1000000 seulement) et
+// `fib: (n) => fib(n, 'fast')` dans processIo (cli.ts).
+// Survivant connu, laissé à la revue de code : un aiguillage qui dépend de n hors de ces deux indices, tel que
+// `n > 10 && n < 1000000 && algo === 'matrix' ? 'fast' : algo`.
+const BOUNDS = [10, 1000000];
+
+// Remplace `write` sur un flux du processus et note les textes reçus, sans rien lui transmettre. `write` vient d'ordinaire du prototype
+// du flux, non de lui : restaurer, c'est alors supprimer la propriété posée, non la réaffecter, pour que le flux retrouve la valeur
+// héritée. Seule une propriété propre d'avant l'appel est réaffectée.
+function capture(stream: NodeJS.WriteStream) {
+  const own = Object.hasOwn(stream, 'write');
+  const original = stream.write;
+  const chunks: unknown[] = [];
+  stream.write = ((chunk: unknown) => {
+    chunks.push(chunk);
+    return true;
+  }) as typeof stream.write;
+  return {
+    chunks,
+    restore() {
+      if (own) stream.write = original;
+      else Reflect.deleteProperty(stream, 'write');
+    },
+  };
+}
+
+// run(args) sous l'Io du processus, ses deux flux captés. Rien n'est assertionné ici : les flux sont rendus avant le premier assert.
+function runOnProcessIo(args: string[]) {
+  const out = capture(process.stdout);
+  const err = capture(process.stderr);
+  try {
+    return { code: run(args), stdout: out.chunks, stderr: err.chunks };
+  } finally {
+    err.restore();
+    out.restore();
+  }
+}
+
+for (const n of BOUNDS) {
+  for (const [args, algos] of EXECUTED) {
+    const options = args.slice(0, -1); // le dernier argument est l'indice, que n remplace
+    test(`PERF-TS-12 : sous l’Io du processus, --time ${[...options, n].join(' ')} appelle ${algos.join(' puis ')} dans la table algos`, () => {
+      // Conversion explicite : `algos` est en lecture seule par le type, et ces espions sont les seuls à y écrire (comme PERF-TS-10).
+      const spies = table as Record<Algo, (n: number) => bigint>;
+      const original = { ...spies };
+      const called: Algo[] = [];
+      let result;
+      try {
+        for (const name of Object.keys(COST) as Algo[]) {
+          spies[name] = () => {
+            called.push(name);
+            return 0n;
+          };
+        }
+        result = runOnProcessIo(['--time', ...options, String(n)]);
+      } finally {
+        Object.assign(spies, original);
+      }
+      assert.equal(result.code, 0);
+      assert.deepEqual(result.stdout, ['0\n']);
+      assert.equal(result.stderr.length, 1, 'un seul appel à stderr');
+      const named = [...String(result.stderr[0]).matchAll(/^(\S+) \S+ ms$/gm)].map((m) => m[1]);
+      assert.deepEqual(named, algos, 'les lignes de durée');
+      assert.deepEqual(called, named, 'les entrées de la table appelées, dans l’ordre des lignes de durée');
+    });
+  }
+}
