@@ -269,6 +269,57 @@ func TestPERFGO11_LAiguillageEtLesCorpsSeLisentDansLeTexte(t *testing.T) {
 	}
 }
 
+// PERF-GO-13, hors catalogue : garde de l'optimisation de la dernière étape de fast (ADR-0004), qui rend F(2k+1) en un
+// produit, (2F(k) - F(k-1))(2F(k) + F(k-1)) + 2(-1)^k, et non en deux carrés, F(k)² + (F(k) + F(k-1))²; Rust et Python font
+// de même. Les valeurs ne distinguent pas les deux formes, et BIB-05 à 07, BIB-09 et PERF-GO-1 gardent la justesse seule.
+// Aucune mesure d'exécution ne les distingue sans fragilité (mesuré sous Go 1.26.0, Linux) : l'empreinte d'allocations de
+// fast est la même aux grands n (52 aux deux formes à n = 1023, 112 à n = 999 999) et le produit en alloue une de plus aux
+// petits n (10 contre 9 à n = 5), donc aucun plafond ne rougit le retour aux deux carrés; les octets alloués baissent de 2
+// à 11 % selon n, un écart que la version de Go, celle de math/big et la taille des blocs déplaceraient. Le chronomètre est
+// exclu. La garde lit donc le texte de fib.go par go/parser, comme le volet statique de PERF-GO-11 : après la boucle, fast
+// appelle Mul exactement deux fois, un produit par parité du dernier bit (F(2k) et F(2k+1)). Les deux carrés de F(2k+1) en
+// font trois; une Mul déplacée dans une aide, ou un carré par Exp, en laisse moins de deux : rouge par intention.
+// Survivant connu, laissé à la revue de code : une branche impaire qui garde son produit mais y ajoute un calcul qui n'est
+// pas une Mul (un carré par Exp, par exemple).
+func TestPERFGO13_LaDerniereEtapeDeFastCompteUnProduitParParite(t *testing.T) {
+	const wantMul = 2
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "fib.go", nil, 0) // go test s'exécute dans le dossier du paquet
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body []ast.Stmt
+	for _, decl := range file.Decls {
+		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv == nil && fn.Name.Name == "fast" {
+			body = fn.Body.List
+		}
+	}
+	if body == nil {
+		t.Fatal("fib.go ne déclare pas la fonction fast : renommée ? Alors adapter PERF-GO-13")
+	}
+	t.Run(fmt.Sprintf("PERF-GO-13 : après la boucle, fast appelle Mul exactement %d fois", wantMul), func(t *testing.T) {
+		loop := slices.IndexFunc(body, func(stmt ast.Stmt) bool { _, ok := stmt.(*ast.ForStmt); return ok })
+		if loop < 0 {
+			t.Fatal("fast n'a plus de boucle for au niveau de son corps : réécrite ? Alors adapter PERF-GO-13")
+		}
+		var calls []string // la position de chaque appel d'une méthode Mul après la boucle
+		for _, stmt := range body[loop+1:] {
+			ast.Inspect(stmt, func(node ast.Node) bool {
+				if call, ok := node.(*ast.CallExpr); ok {
+					if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Mul" {
+						calls = append(calls, fset.Position(call.Pos()).String())
+					}
+				}
+				return true
+			})
+		}
+		if len(calls) != wantMul {
+			t.Errorf("après la boucle, fast appelle Mul %d fois (%s), attendu %d : un produit pour F(2k), un pour F(2k+1); "+
+				"deux carrés pour F(2k+1) en font trois (ADR-0004)", len(calls), strings.Join(calls, ", "), wantMul)
+		}
+	})
+}
+
 // isIdent dit si e est l'identifiant name.
 func isIdent(e ast.Expr, name string) bool {
 	id, ok := e.(*ast.Ident)
