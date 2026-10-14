@@ -266,17 +266,16 @@ func TestPERFGO11_LAiguillageEtLesCorpsSeLisentDansLeTexte(t *testing.T) {
 	}
 }
 
-// bare défait les parenthèses et les déréférencements qui entourent e : `(algo) = x` écrit algo comme `algo = x`.
+// bare défait les parenthèses (ast.Unparen) et les déréférencements qui entourent e : `(algo) = x` écrit algo comme
+// `algo = x`, et `*p = x` écrit p comme `p = x`.
 func bare(e ast.Expr) ast.Expr {
+	e = ast.Unparen(e)
 	for {
-		switch x := e.(type) {
-		case *ast.ParenExpr:
-			e = x.X
-		case *ast.StarExpr:
-			e = x.X
-		default:
+		star, ok := e.(*ast.StarExpr)
+		if !ok {
 			return e
 		}
+		e = ast.Unparen(star.X)
 	}
 }
 
