@@ -193,3 +193,39 @@ Pour éviter $10\,001$ conversions binaires $\to$ décimales de `BigInt` lors de
 | **Lacune connue** | Câblage de `processIo.fib` (`cli.ts:103`) | `PERF-TS-9` n'exécute `cli.ts` en sous-processus qu'à $n = 10$ (ou avec `iterative` à $n = 100\,000$), où les trois algorithmes rendent `55`. Un mutant `processIo = { fib: (n) => fib(n, 'fast'), ... }` dans `cli.ts:103` laisserait `PERF-TS-8` (qui passe son propre `io.fib`) et `PERF-TS-9` verts. | Documenté au catalogue (`docs/cas-de-test.md` § 6) ; vérifié par lecture directe de `cli.ts:103` |
 | **Lacune connue** | Délégation interne dans un algorithme (`fib.ts:14-44`) | `PERF-TS-10` vérifie que `algos[algo]` commence par `function <algo>(` et est appelée par `fib`, mais ne peut pas détecter si le corps de `function matrix(n: number)` déléguait en interne à `return fast(n)`. | Documenté au catalogue § 6 ; vérifié par lecture directe de `fib.ts:14-44` |
 | **Lacune connue** | Point d'entrée `cli.ts:139-141` et étendue de la fenêtre `timed` | La garde `if (import.meta.main === undefined)` (pour Node < 22.18) et l'exclusion de `String(terms[0])` hors de la fenêtre `timed` (`cli.ts:91-95`) ne sont pas sollicitées par un mutant d'horloge dans `String(...)`. | Documenté dans `cli.test.ts:57-58` et au catalogue § 6 ; vérifié par lecture de `cli.ts:91-95, 139-141` |
+
+---
+
+## 7. Suivi du 2026-10-14
+
+Cet audit a été vérifié constat par constat, sous Linux, avec Node 24.20.0 et TypeScript 7.0.2. Trois agents adverses (exactitude, tri, critique) ont lu le code, recompté et joué des mutants dans des copies. Les constats retenus ont été implémentés par `fib-dev`, puis revus par un vérificateur par branche et par `/code-review` ([agbruneau/Fib#45](https://github.com/agbruneau/Fib/pull/45)). En production, seul le commentaire de l'export `algos` change, à nombre de lignes constant.
+
+### 7.1 Suite donnée aux constats
+
+| Constat | Suite |
+|---|---|
+| Décompte A3 : 270 lignes, et non 268 (§ 6.2) | Corrigé au PRD § 7 et au README § Coût, avec le recomptage des quatre langages. |
+| Câblage de `processIo.fib` (§ 6.2) | Fermé par PERF-TS-12. `run(args)` sans Io, donc sous `processIo`, est joué à n = 10 et à n = 1 000 000. Des espions qui ne calculent pas sont posés dans la table `algos`, et les flux du processus sont captés le temps de l'appel. Chaque ligne de durée doit avoir appelé l'entrée qu'elle nomme. Le mutant du catalogue, `fib: (n, algo) => fib(n, algo === 'matrix' ? 'fast' : algo)`, rougit. Le mutant que cite l'audit rougissait déjà PERF-TS-9 (§ 7.2). Reste à la revue de code : un aiguillage sur des valeurs de n que la garde ne joue pas. |
+| Délégation dans le corps d'un algorithme (§ 6.2) | Fermé par PERF-TS-10. Le corps de chaque entrée de `algos`, lu par `toString()`, commentaires de ligne et de bloc retirés, ne nomme aucun autre algorithme, ni `fib`, `fibList` ou `algos`. Les espions de PERF-TS-10 jouent aussi n = 1 000 000. Restent à la revue : une délégation par une fonction auxiliaire ou par un nom calculé. |
+| Point d'entrée `import.meta.main` et fenêtre de `timed` (§ 6.2) | La fenêtre est fermée par PERF-TS-8 : sous une horloge factice, la conversion décimale du terme et l'écriture de stdout n'entrent pas dans la durée. La garde `import.meta.main === undefined` reste sans test, aucun Node pris en charge ne l'atteignant. Elle est désormais nommée au catalogue § 6. |
+
+### 7.2 Errata
+
+Affirmations de cet audit que la vérification a trouvées inexactes :
+
+- § 6.2, câblage de `processIo.fib` : le mutant cité, `fib: (n) => fib(n, 'fast')`, fait rougir PERF-TS-9 : sous lui, `--time --algo iterative 100000` rapporte moins du vingtième du temps mural. Les trois algorithmes concordent à tout n, et non seulement à 10. La lacune du catalogue était `matrix` seul, remplacé par `fast`.
+- § 1.1 : HAR-6 ne garde pas A2. Il garde que la boucle différentielle reste hors du contrat. Aucun test ne garde A2, que seule la lecture des imports assure.
+- § 3.3 : le fichier `docs/adr/0003-formules-arithmetiques-par-langage.md` n'existe pas. L'ADR-0003 porte sur la taille de Go. Le choix des nombres de Lucas est écrit à l'ADR-0004, au PRD § 3 et au README.
+- § 1.2 : la compilation par `tsc` vient de l'ADR-0004 et du PRD § 5, et non de l'ADR-0002.
+- § 3.4 :
+  - le « + 1 » de `size` n'est pas « indispensable » jusqu'à n = 10 000, et PERF-TS-2 ne le garde pas : seul PERF-TS-5 rougit, sous `Math.round` ;
+  - V8 convertit par diviser pour régner, en temps sous-quadratique, et non « cubique sur la liste ».
+- § 3.2 : un bit à 1 coûte une seule addition (`a + b`). Les deux autres coefficients sont des copies.
+- En-tête :
+  - `node --test` compte 61 tests de premier niveau et 6 003 sous-tests, et non « 41 tests et 6 064 sous-tests et assertions » ;
+  - le PRD § 5 exige Node `^22.18` ou `>=24.2` et TypeScript 7, et non Node 24 LTS et TypeScript 6 ;
+  - le paquet installé est `typescript` 7.0.2, sans `@typescript/native-preview`.
+- § 1.1 : `tsconfig.build.json` compte 11 lignes et 245 octets.
+- § 4.2 : `Number` ne rend `Infinity` qu'au-delà d'environ 1,8 × 10^308, et non dès 10^308.
+- § 2.1 : les espions de PERF-TS-10 sont des tests de premier niveau, et non des sous-tests.
+- § 6.1 : « le calcul pur le plus rapide des quatre » n'est pas reproduit sous Linux. Sur 7 lancements de `--time 1000000`, les médianes donnent Go 5,7 ms, Rust 8,1 ms, TypeScript 8,6 ms et Python 31,6 ms.

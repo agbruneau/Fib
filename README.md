@@ -64,9 +64,9 @@ Temps total du processus, en millisecondes, médianes de 15 exécutions (`npm ru
 
 | Lignes de code (`wc -l`, hors fichiers de test) | Go | Rust | TypeScript | Python |
 |---|---|---|---|---|
-| avant → final | 255 → 385 | 205 → 501 | 151 → 268 | 158 → 270 |
+| avant → final | 255 → 385 | 205 → 563 | 151 → 270 | 158 → 270 |
 
-- Rust compte aussi ses tests unitaires : 60 lignes dans `lib.rs` (dont PERF-RS-13) et 102 dans `main.rs` (PERF-RS-8, 11 et 12). La cible d'environ 200 lignes (PRD, A3) est remplacée par l'ADR-0004.
+- Rust compte aussi ses tests unitaires : 60 lignes dans `lib.rs` (dont PERF-RS-13) et 164 dans `main.rs` (PERF-RS-8, 11, 12 et 14). Sans eux, Rust compte 339 lignes. La cible d'environ 200 lignes (PRD, A3) est remplacée par l'ADR-0004.
 - `iterative` reste en O(n²) opérations sur les mots : à 1 000 000, il prend environ 1,6 s en Go et 5 s en Python, ce que F8 accepte.
 
 Le détail des décisions et des mesures est dans l'[ADR-0004](docs/adr/0004-performance-du-calcul.md).

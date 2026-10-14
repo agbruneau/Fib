@@ -181,3 +181,42 @@ AssertionError: Tuples differ: (b'stdout\r\n', b'stderr\r\n', 0) != (b'stdout\n'
 | **PY-AUD-01** | **Majeure (Test sous Windows)** | Portabilité Windows du sous-test témoin de `PERF-PY-23` (`python/test_fib.py:523-528`) | Le témoin écrit directement dans `sys.__stdout__` et `sys.__stderr__` sans lancer `fib.py`. Sous Windows, CPython traduit `\n` en `\r\n` sur ces flux bruts, ce qui fait échouer `self.assertEqual((run.stdout, run.stderr, run.returncode), (b"stdout\n", b"stderr\n", 0))` et bloque `npm run check:py` sous Windows alors que `python/fib.py` est 100 % conforme. | Dans `python/test_fib.py:528`, normaliser `run.stdout.replace(b"\r\n", b"\n")` et `run.stderr.replace(b"\r\n", b"\n")` (ou comparer à `os.linesep.encode("ascii")`), puisque ce témoin vérifie uniquement que `sys.__stdout__` et `sys.__stderr__` restent ouverts après `HOSTILE`. |
 | **PY-AUD-02** | **Lacune connue** | Délégation interne dans un algorithme (`python/fib.py:19-53`) | Comme documenté dans `test_fib.py:761-763` et au catalogue § 6, `PERF-PY-30` vérifie l'identité et `__name__` des fonctions dans `_ALGOS`, mais ne peut pas voir si le corps de `_matrix` appelait `return _fast(n, kind)`. | Documenté au catalogue § 6 ; vérifié par lecture directe de `fib.py:19-53`. |
 | **PY-AUD-03** | **Lacune connue** | Mesure réelle de la durée (`F6`) et frontière exacte `bit_length() == 200_000` | `PERF-PY-27` vérifie l'ordre et le nom des algorithmes dans les lignes `--time` mais pas la valeur numérique issue de `time.perf_counter()`. Par ailleurs, dans `PERF-PY-19`, $10^{60\,205} + 1$ compte $199\,997$ bits et $10^{60\,206} + 1$ en compte $200\,001$, laissant le mutant `< STR_FROM_BITS` vs `<= STR_FROM_BITS` (`fib.py:191`) indifférent sur les puissances de 10 et les termes de Fibonacci. | Documenté au catalogue § 6 ; un sous-test `_text(1 << (STR_FROM_BITS - 1))` (exactement $200\,000$ bits) dans `PERF-PY-19` couvrirait la frontière exacte si souhaité. |
+
+---
+
+## 7. Suivi du 2026-10-14
+
+Cet audit a été vérifié constat par constat, sous Linux, avec CPython 3.13.16. Trois agents adverses (exactitude, tri, critique) ont lu le code et les sources de CPython, émulé Windows et joué des mutants dans des copies. Les constats retenus ont été implémentés par `fib-dev`, puis revus par un vérificateur par branche et par `/code-review` ([agbruneau/Fib#45](https://github.com/agbruneau/Fib/pull/45)). En production, seul le commentaire de `_check_index` change, à nombre de lignes constant : `python/fib.py` reste à 270 lignes.
+
+### 7.1 Suite donnée aux constats
+
+| ID | Suite |
+|---|---|
+| PY-AUD-01 | Corrigé. Le témoin « les deux flux, après HOSTILE » de PERF-PY-23 attend `os.linesep`, la fin de ligne native que gardent `sys.__stdout__` et `sys.__stderr__` (`\r\n` sous Windows), et non `\n`. Sous Windows émulé (flux reconfigurés en `\r\n`), l'ancien test rougit avec le message de l'audit, et le nouveau passe. Le mutant « HOSTILE sans `kept` » rougit encore. Ce sous-test, ajouté en #35 (2026-10-13), rendait `npm run check:py` rouge sous Windows. Le correctif reste à revérifier sur la machine Windows. |
+| PY-AUD-02 | Fermé par PERF-PY-30. Le code de `_iterative`, `_matrix` et `_fast` (`co_names`, récursivement) ne nomme aucun autre algorithme, ni `fib`, `fib_list`, `_ALGOS` ou `_fib_decimal`. Des espions qui ne calculent pas sont joués par `fib()` et `_fib_decimal` à huit indices : les bords de la plage, les abords de `DECIMAL_FROM` et le milieu. Restent à la revue : une délégation par un alias capturé ou par une fonction auxiliaire, et un aiguillage sur des valeurs de n que la garde ne joue pas. |
+| PY-AUD-03, durée | Fermé par PERF-PY-31. Un algorithme espion dort 20 ms, tour à tour pour chacun de `--algo all`, et chronomètre son sommeil par `time.perf_counter`. La ligne de l'algorithme lent vaut au moins ce sommeil, et les trois lignes au plus le temps mural de `main`. `--list` est éprouvé par un `fib_list` qui dort de même. Reste à la revue : l'étendue exacte de la fenêtre. |
+| PY-AUD-03, frontière de 200 000 bits | Fermé par PERF-PY-19, qui joue `1 << (STR_FROM_BITS - 1)`, soit 200 000 bits tout juste : le mutant `>=` rougit. F(288 085), qui compte aussi 200 000 bits, est le seul terme à cette frontière, et seuls `iterative` et `all` l'atteignent. |
+
+Ajouts hors audit :
+- PERF-PY-27 joue aussi 0, `DECIMAL_FROM - 1` et la borne F8, avec des espions qui ne calculent pas : un nom qui change selon n dans `compute` rougit.
+- Le commentaire de `_check_index`, faux, est corrigé. `_matrix(0.0)` lève `ValueError`. C'est `_fast` qui rendrait 0 pour 0.0 et 1 pour 1.5.
+
+### 7.2 Errata
+
+Affirmations de cet audit que la vérification a trouvées inexactes :
+
+- PY-AUD-03 :
+  - la frontière exacte de `STR_FROM_BITS` n'était pas au catalogue § 6, malgré le statut « Documenté » ;
+  - le mutant littéral est `x.bit_length() >= STR_FROM_BITS`, la ligne disant `>` ;
+  - le mutant n'est pas « indifférent sur les termes de Fibonacci », puisque F(288 085) compte exactement 200 000 bits.
+- § 2.1 : sans le contrôle de type, `_matrix(0.0)` lève `ValueError`, car `format(n, "b")` refuse un float ; il ne « retournerait » pas 0. C'est `_fast(0.0)` qui rend 0 et `_fast(1.5)` qui rend 1. L'audit recopiait le commentaire de `fib.py`, faux lui aussi, que ce suivi corrige.
+- § 1.2 :
+  - `-S` épargne environ 3 à 5 ms (PRD § 5 ; mesuré ici, 4,5 ms), et non « ~10 à 15 ms » ;
+  - la commande de lancement vient de l'ADR-0004 et du PRD § 5, et non de l'ADR-0002.
+- § 3.4 B : à n = 100 000, `_text` fait 20 divisions, et non 21, pour 21 tranches. Elles prennent environ 2 à 5 ms, et non « moins d'une milliseconde ».
+- § 5.1 :
+  - PERF-PY-28 échantillonne cinq indices de la plage, et non « toute la plage » ;
+  - PERF-PY-22 garde une optimisation, et non une exigence.
+- § 4 : `fib.py` compte 270 lignes, donc la plage va de 115 à 270.
+
+Les temps de la machine Windows (§ 1.2, § 6.1) n'ont pas pu être revérifiés.

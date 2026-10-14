@@ -513,7 +513,27 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
   - Écrire le handoff et les notes de version en dernier, après la vérification finale de `main`, et y laisser des marqueurs pour les comptes plutôt que des chiffres provisoires.
   - Vérifier dès le début de la file que la session peut publier ce qu'on lui demande en dernier (une étiquette, une release), pour annoncer tôt ce qui reviendra au propriétaire.
 
-## Bilan au 2026-10-13
+## 2026-10-14 — Audits par langage : vérification en workflow, `fib-dev`, `/code-review` ([agbruneau/Fib#45](https://github.com/agbruneau/Fib/pull/45))
+
+- **Contexte** : quatre `audit.md`, un par dossier de langage, écrits par un autre modèle (commit a92a808), étaient à implémenter. Aucun ticket : la demande du propriétaire en tenait lieu, et chaque prompt de `fib-dev` aussi.
+- **Démarche** :
+  - un workflow de vérification avant tout code, trois agents par audit : exactitude (chaque affirmation contre le code et par l'exécution), tri (chaque constat : à implémenter, déjà documenté, refusé ou faux, mutants joués dans des copies), critique adverse du tri ;
+  - un `fib-dev` par langage dans son worktree, suivi d'un vérificateur adverse par branche, puis deux rondes de correction, la seconde avec les constats de `/code-review` sur la plage `a92a808..1a4c6d2` ;
+  - la documentation (catalogue, README, PRD, suivi de chaque audit) écrite par l'orchestrateur seul, après les fusions.
+- **A aidé** :
+  - La vérification avant l'implémentation. Une quarantaine d'affirmations des audits étaient inexactes, dont six changeaient une décision : un mutant cité qui rougissait déjà PERF-TS-9, deux lacunes dites « documentées » absentes du catalogue, une garde (HAR-6) créditée d'une exigence qu'elle ne vérifie pas. Les implémenter à la lettre aurait ajouté des gardes inutiles et recopié ces erreurs dans le catalogue. Chaque audit garde désormais un § 7 de suivi et d'errata.
+  - Un invariant commun à Go, Rust et Python pour « la durée est mesurée » : l'espion chronomètre son propre sommeil avec l'horloge de la production, à l'intérieur de la fenêtre. La borne est exacte sans dépendre de la précision du sommeil, donc sans faux rouge sous charge ni sous Windows (390 exécutions sous charge en Go, 0 échec).
+  - Le vérificateur par branche, à chaque ronde : des commentaires faux que les `fib-dev` laissaient (« seuls ces trois tests », un survivant donné pour borné), et une famille de survivants de plus.
+- **Friction** :
+  - Les mutants d'une garde d'aiguillage forment une famille sans fin : un seuil sur n, une redéclaration, des parenthèses, un pointeur, une fonction auxiliaire, une copie en ligne. Chaque ronde en trouvait une. La règle qui a permis de s'arrêter : fermer ce qui l'est de façon déterministe et à coût nul, écrire le reste comme survivant, et ne jamais présenter une liste de survivants comme complète.
+  - Le défaut Windows de PERF-PY-23 (#35) avait passé `/code-review` le 2026-10-13 sans être vu : la session tournait sous Linux, et le témoin écrivait sur les flux bruts de CPython. Seul un audit fait sous Windows l'a trouvé. Le correctif n'est éprouvé que par émulation.
+  - `tdd` reste absente de la session infonuagique (`Unknown skill: tdd`) : les `fib-dev` ont suivi le cycle à la main.
+  - Un agent de tri, en éprouvant `rustup override`, a installé une chaîne Rust de plus (retirée), et un `fib-dev` a tué par `pkill yes` les boucles de charge d'un autre.
+- **À changer** :
+  - Lancer `npm run check` sous Windows avant de fermer un chantier qui touche un flux standard ou une fin de ligne.
+  - Dire au vérificateur, dès la première ronde, de ne retenir que des défauts de portée réelle, et à chaque prompt de ne tuer que ses propres processus.
+
+## Bilan au 2026-10-14
 
 | Skill | Usage |
 |---|---|
@@ -521,16 +541,16 @@ Une entrée par usage de skill (PRD § 9, objectif O2).
 | `/grill-with-docs` (`grilling`, `domain-modeling`) | utilisée : glossaire, ADR-0001 et ADR-0002, PRD éprouvé |
 | `/to-spec` | utilisée : spec #1 |
 | `/to-tickets` | utilisée : tickets #2 à #5, avec dépendances natives |
-| `tdd` | utilisée : catalogue de cas, puis cycles des quatre `fib-dev`; absente de la session infonuagique des 2026-10-12 et 2026-10-13 (`Unknown skill: tdd`), où les `fib-dev` ont suivi son cycle à la main |
+| `tdd` | utilisée : catalogue de cas, puis cycles des quatre `fib-dev`; absente de la session infonuagique des 2026-10-12, 2026-10-13 et 2026-10-14 (`Unknown skill: tdd`), où les `fib-dev` ont suivi son cycle à la main |
 | `/implement` | remplacée par l'agent `fib-dev`, qui applique `tdd` directement |
 | `resolving-merge-conflicts` | introuvable dans la session infonuagique : les conflits des vagues parallèles du 2026-10-13 (huit, dans six fichiers) ont été résolus à la main : par un `fib-dev` pour la fusion de #29 (cinq fichiers, code et documentation), par l'orchestrateur pour les trois autres (`docs/cas-de-test.md` deux fois, `CONTEXT.md`) |
 | `research`, `prototype` | non utilisées; un `prototype` aurait détecté plus tôt le piège de `go run` |
-| `/code-review` | utilisée trois fois le 2026-10-11, axes Standards et Spec : après la refactorisation, après l'optimisation, après la borne à 1 000 000; puis le 2026-10-12, sur les tickets #6 à #14 et sur #16; puis le 2026-10-13, sur #20, #21 et #25, puis quatre fois sur les pistes A, C, D et E (#27 à #36), une par vague et une dernière sur la fusion de #29, puis une sur le lot final (#39 à #43), soit huit passes ce jour-là |
+| `/code-review` | utilisée trois fois le 2026-10-11, axes Standards et Spec : après la refactorisation, après l'optimisation, après la borne à 1 000 000; puis le 2026-10-12, sur les tickets #6 à #14 et sur #16; puis le 2026-10-13, sur #20, #21 et #25, puis quatre fois sur les pistes A, C, D et E (#27 à #36), une par vague et une dernière sur la fusion de #29, puis une sur le lot final (#39 à #43), soit huit passes ce jour-là; puis le 2026-10-14, sur les gardes des audits par langage (#45) |
 | `diagnosing-bugs` | utilisée à l'étape 9 (#16), lue dans `mattpocock/skills` faute de plugin; précédée d'une boucle différentielle pour trouver l'écart |
 | `/improve-codebase-architecture`, `codebase-design`, `grilling` | utilisées à l'étape 10 (#20), lues dans `mattpocock/skills` : rapport de 5 candidats, *design it twice* à 4 prototypes, 2 tours de *grilling*; puis pour les pistes A, C, D et E : deux conceptions prototypées par piste, un critique adverse, une série de questions |
 | `/handoff` | utilisée deux fois, lue dans `mattpocock/skills` : à l'étape 11, puis à la fermeture du dépôt pour la version v1.0.0; chaque fois un document de reprise hors dépôt, envoyé au propriétaire |
 
-Hors skill : l'audit du PRD (2026-10-10), l'audit en workflow du 2026-10-11 (auditeurs en lecture seule), puis l'optimisation des performances et la borne à 1 000 000, confiées à des sous-agents `fib-dev`, l'épreuve des cas de test en workflow, et, le 2026-10-13, les workflows `ultracode` de livraison : un `fib-dev`, un vérificateur adverse par exécution et un tour de correction par ticket.
+Hors skill : l'audit du PRD (2026-10-10), l'audit en workflow du 2026-10-11 (auditeurs en lecture seule), puis l'optimisation des performances et la borne à 1 000 000, confiées à des sous-agents `fib-dev`, l'épreuve des cas de test en workflow, et, le 2026-10-13, les workflows `ultracode` de livraison : un `fib-dev`, un vérificateur adverse par exécution et un tour de correction par ticket; le 2026-10-14, la vérification en workflow des audits par langage, avant leur implémentation.
 
 Six leçons :
 
