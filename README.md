@@ -49,6 +49,8 @@ Temps total du processus, en millisecondes, médianes de 15 exécutions (`npm ru
 | `--algo all 100000` | 73,5 → 23,8 | 45,4 → 32,5 | 110,1 → 83,1 | 95,3 → 77,0 |
 | `--list 10000` | 78,6 → 23,2 | 107,2 → 25,2 | 206,3 → 71,8 | 229,2 → 65,3 |
 
+Le scénario impair, terme `999999`, s'ajoute au banc le 2026-10-14 : il n'a pas encore de mesure sous Windows.
+
 - Go et Rust sont au plancher du démarrage, environ 5 à 7 ms, sur les scénarios petit, terme `100000` et `matrix` : les différences y sont du bruit. Le plancher est d'environ 36 ms pour Node et 15 ms pour Python.
 - Le 2026-10-13, l'horloge `process.hrtime` ([agbruneau/Fib#21](https://github.com/agbruneau/Fib/issues/21)) a retiré de 1,8 à 2,6 ms au démarrage de TypeScript : le premier accès à `performance` chargeait jusqu'à 11 modules internes. C'est un A/B apparié sous Linux et Node 22.22, postérieur au tableau.
 - La colonne « avant » de Rust lance déjà le binaire. L'ancienne commande, `cargo run`, ajoutait environ 50 ms par lancement.
@@ -151,7 +153,7 @@ npm run differentiel
 - `check:<id>` vérifie un langage (`go`, `rust`, `ts` ou `py`) : analyse statique (aucune en Python), tests du langage, puis contrat.
 - `contract` compile Go, Rust et TypeScript, puis joue le contrat sur les implémentations présentes.
 - `check` vérifie les quatre langages.
-- `bench` compile, puis mesure le temps total et le temps de calcul de chaque langage sur sept scénarios, dont un terme à 1 000 000. Il prend aussi des identifiants de langage; sans `--runs`, il fait 11 exécutions.
+- `bench` compile, puis mesure le temps total et le temps de calcul de chaque langage sur huit scénarios, dont un terme à 1 000 000 et un terme impair, 999 999 (la branche impaire du dernier bit de `fast`). Il prend aussi des identifiants de langage; sans `--runs`, il fait 11 exécutions.
 - `differentiel` lance la boucle différentielle, un outil de recherche hors de `check` et de `contract` (ADR-0001) : elle joue les quatre CLI sur les mêmes entrées et rend les écarts, sans attendu ni référence, en code 1 s'il y en a.
 - `bench -- <id> --contre REF` mesure un travail de démarrage par un A/B apparié : la révision REF, extraite sous `.build/revisions/` (à vider par `npm run bench -- --nettoyer`, jamais par `Remove-Item -Recurse` : chaque révision porte un lien vers `node_modules`), contre l'arbre de travail, lancées en alternance, avec la médiane des différences par paire (ADR-0004). Sans `--runs`, l'A/B fait 100 paires ; un `--runs` impair est arrondi au pair supérieur, pour que chaque côté parte le premier aussi souvent.
 
