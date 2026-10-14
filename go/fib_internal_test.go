@@ -9,6 +9,7 @@ import (
 	"math/big"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -47,10 +48,14 @@ var identitySink *big.Int
 //
 // Limite : l'empreinte ne vérifie l'aiguillage qu'à n = 1023, et un corps qui en imite une autre la trompe : un `matrix` qui
 // calcule par fast puis alloue 15 entiers de plus retrouve les 67 allocations de matrix. Le volet statique ci-dessous lit
-// donc le texte de fib.go, et ferme ce que n = 1023 laisse passer : un aiguillage ou un corps qui dépend de n. Ce qui reste
-// aux deux volets, laissé à la revue de code : une délégation que le texte ne montre pas, par une variable de fonction
-// (`var delegate = fast`, puis `return delegate(n)`) ou par une fonction auxiliaire (`return help(n)`, où help appelle
-// fast), pour certains n seulement; et un aiguillage qui dépend de n posé dans Fib hors du `switch algo`.
+// donc le texte de fib.go, et ferme ce que n = 1023 laisse passer tant que le texte nomme la fonction vers laquelle il
+// aiguille. Ce qui reste aux deux volets, laissé à la revue de code : une délégation que le texte ne nomme pas, par une
+// variable de fonction (`var delegate = fast`, puis `return delegate(n)`) ou par une fonction auxiliaire (`return help(n)`,
+// où help appelle fast), appelée du corps d'un algorithme ou de Fib hors du `switch algo`. Elle survit à tout n quand la
+// fonction qui délègue imite aussi l'empreinte d'allocations (67 pour matrix, comme le `matrix` ci-dessus, avec help pour
+// fast), et, sans cette imitation, pour certains n seulement : tout n autre que 1023, par exemple
+// `if n > 10_000 { return help(n) }`. Reste aussi une réaffectation de algo par un pointeur (`p := &algo`, puis
+// `*p = "fast"`), que le volet statique ne lit pas.
 func TestPERFGO11_ChaqueNomAiguilleVersSaFonction(t *testing.T) {
 	const n = 1023
 	algos := []struct {
@@ -93,17 +98,25 @@ func TestPERFGO11_ChaqueNomAiguilleVersSaFonction(t *testing.T) {
 
 // PERF-GO-11, volet statique, hors catalogue : garde de F2, qui veut que chaque nom calcule par son propre algorithme, à
 // tout n. L'empreinte d'allocations ne le voit qu'à n = 1023, et un corps qui l'imite passe. Ce volet lit fib.go par
-// go/parser et go/ast (la bibliothèque standard) et vérifie deux choses. (a) Dans Fib, le `switch algo` a exactement les trois
-// cas "iterative", "matrix" et "fast", et le corps de chacun est la seule instruction `return <f>(n), nil`, où <f> est la
-// fonction du même nom. (b) Les corps de iterative, matrix et fast ne nomment (aucun *ast.Ident) ni l'une des deux autres
-// fonctions, ni Fib, ni FibList. Le code de production ne change pas, et les imports de ce fichier n'entrent ni dans
-// `go list -deps .` ni dans l'inittrace de cmd/fib (PERF-GO-7 et 8 y restent verts).
+// go/parser et go/ast (la bibliothèque standard) et vérifie trois choses. (a) Dans Fib, le `switch algo` a les trois cas
+// "iterative", "matrix" et "fast", et le corps de chacun est la seule instruction `return <f>(n), nil`, où <f> est la
+// fonction du même nom; une clause `default` est admise si son corps ne nomme aucun des trois algorithmes (le retour d'erreur
+// final de Fib peut y être déplacé). (b) Les corps de iterative, matrix et fast ne nomment (aucun *ast.Ident) ni l'une des
+// deux autres fonctions, ni Fib, ni FibList. (c) Dans tout le corps de Fib, switch compris ou non, chacun des noms
+// iterative, matrix et fast n'apparaît qu'une fois, dans le retour de son propre cas; Fib et FibList n'y sont jamais
+// nommés; et aucune affectation (*ast.AssignStmt, *ast.IncDecStmt) ne vise algo ou n. Un aiguillage posé hors du switch,
+// avant lui par exemple, rougit donc dès qu'il nomme un algorithme de plus, rappelle Fib ou réaffecte algo ou n. Le code de
+// production ne change pas, et les imports de ce fichier n'entrent ni dans `go list -deps .` ni dans l'inittrace de cmd/fib
+// (PERF-GO-7 et 8 y restent verts).
 //
 // Rouge sous : `case "matrix": if n > 10_000 { return fast(n), nil }; return matrix(n), nil` (a), ou la même condition
 // `if n%2 == 0` (a); `return fast(n)` en tête de matrix (b, et l'empreinte); un matrix qui calcule par fast puis alloue
 // 15 entiers (une variable de paquet que `new(int)` remplit) pour retrouver les 67 allocations de matrix (b); et
 // `if n < 64 { return iterative(n) }` en tête de fast (b), rouge par intention : même juste et plus rapide, il fait calculer
-// fast par iterative, et F2 veut un calcul par son propre algorithme à tout n.
+// fast par iterative, et F2 veut un calcul par son propre algorithme à tout n. Puis, avant le switch de Fib,
+// `if algo == "matrix" && n > 10_000 { return fast(n), nil }` (c, fast nommé deux fois), `if algo == "matrix" && n > 10_000
+// { algo = "fast" }` (c, algo réaffecté) et `if algo == "matrix" && n > 10_000 { return Fib(n, "fast") }` (c, Fib nommé).
+// Reste vert, par intention : le `return nil, fmt.Errorf(...)` final de Fib déplacé dans une clause `default`.
 // Survivants connus, laissés à la revue de code : voir la limite de PERF-GO-11 ci-dessus.
 func TestPERFGO11_LAiguillageEtLesCorpsSeLisentDansLeTexte(t *testing.T) {
 	algos := []string{"iterative", "matrix", "fast"}
@@ -139,9 +152,20 @@ func TestPERFGO11_LAiguillageEtLesCorpsSeLisentDansLeTexte(t *testing.T) {
 		for _, stmt := range switches[0].Body.List {
 			clause := stmt.(*ast.CaseClause) // le corps d'un switch ne compte que des clauses
 			where := fset.Position(clause.Pos())
+			if clause.List == nil { // default : seul un nom inconnu l'atteint, donc elle ne doit aiguiller vers aucun des trois
+				for _, body := range clause.Body {
+					ast.Inspect(body, func(node ast.Node) bool {
+						if id, ok := node.(*ast.Ident); ok && slices.Contains(algos, id.Name) {
+							t.Errorf("%s : la clause default nomme %s", fset.Position(id.Pos()), id.Name)
+						}
+						return true
+					})
+				}
+				continue
+			}
 			lit, ok := clauseLiteral(clause)
 			if !ok {
-				t.Errorf("%s : une clause n'est pas un seul nom d'algorithme entre guillemets (default, ou plusieurs valeurs)", where)
+				t.Errorf("%s : une clause n'est pas un seul nom d'algorithme entre guillemets (plusieurs valeurs, ou autre chose qu'une chaîne)", where)
 				continue
 			}
 			name, _ := strconv.Unquote(lit.Value)
@@ -153,6 +177,40 @@ func TestPERFGO11_LAiguillageEtLesCorpsSeLisentDansLeTexte(t *testing.T) {
 		slices.Sort(cases)
 		if want := []string{"fast", "iterative", "matrix"}; !slices.Equal(cases, want) {
 			t.Errorf("le switch algo de Fib a les cas %q, attendu exactement %q", cases, want)
+		}
+	})
+
+	t.Run("PERF-GO-11 : le corps de Fib nomme chaque algorithme une fois, ni Fib ni FibList, et n'affecte ni algo ni n", func(t *testing.T) {
+		watched := append([]string{"Fib", "FibList"}, algos...)
+		named := map[string][]string{} // pour chaque nom surveillé, la position de chacune de ses occurrences
+		ast.Inspect(funcs["Fib"].Body, func(node ast.Node) bool {
+			var targets []ast.Expr
+			switch node := node.(type) {
+			case *ast.Ident:
+				if slices.Contains(watched, node.Name) {
+					named[node.Name] = append(named[node.Name], fset.Position(node.Pos()).String())
+				}
+			case *ast.AssignStmt:
+				targets = node.Lhs
+			case *ast.IncDecStmt:
+				targets = []ast.Expr{node.X}
+			}
+			for _, target := range targets {
+				if isIdent(target, "algo") || isIdent(target, "n") {
+					t.Errorf("%s : Fib affecte %s", fset.Position(target.Pos()), target.(*ast.Ident).Name)
+				}
+			}
+			return true
+		})
+		for _, name := range []string{"Fib", "FibList"} {
+			if where := named[name]; len(where) > 0 {
+				t.Errorf("Fib nomme %s : %s", name, strings.Join(where, ", "))
+			}
+		}
+		for _, name := range algos {
+			if where := named[name]; len(where) != 1 {
+				t.Errorf("Fib nomme %s %d fois, attendu une seule, dans le retour de son cas : %s", name, len(where), strings.Join(where, ", "))
+			}
 		}
 	})
 
