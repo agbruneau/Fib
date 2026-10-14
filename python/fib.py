@@ -59,7 +59,7 @@ _ALGOS = {"iterative": _iterative, "matrix": _matrix, "fast": _fast}
 
 
 def _check_index(n):
-    # ni float ni bool : sans lui, matrix rendrait 0 pour 0.0
+    # ni float ni bool : sans lui, fast rendrait 1 pour 1.5 et 0 pour 0.0, et True passerait pour 1
     if type(n) is not int:
         raise TypeError(f"indice invalide : {n!r}")
     # Avant tout calcul : sur n < 0, les algorithmes rendraient un terme faux au lieu d'une erreur.
