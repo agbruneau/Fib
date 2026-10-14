@@ -54,9 +54,11 @@ EXECUTED = (
     ([str(DECIMAL_FROM)], ["fast"]),
     (["--algo", "matrix", str(DECIMAL_FROM)], ["matrix"]),
 )
-# PERF-PY-27, volet des bornes (F8) : mêmes colonnes. all à MAX_TERM reste en int (iterative est présent); matrix puis
-# le défaut (fast) passent en int à DECIMAL_FROM - 1, juste sous le seuil, et en Decimal à MAX_TERM.
+# PERF-PY-27, volet des bornes (F8) : mêmes colonnes. all à 0, le bas de la plage, puis à MAX_TERM, où il reste en int
+# (iterative est présent); matrix puis le défaut (fast) passent en int à DECIMAL_FROM - 1, juste sous le seuil, et en
+# Decimal à MAX_TERM.
 BOUNDS = (
+    (["--algo", "all", "0"], ["fast", "iterative", "matrix"]),
     (["--algo", "all", str(MAX_TERM)], ["fast", "iterative", "matrix"]),
     (["--algo", "matrix", str(DECIMAL_FROM - 1)], ["matrix"]),
     ([str(DECIMAL_FROM - 1)], ["fast"]),
@@ -676,16 +678,23 @@ class TestFib(unittest.TestCase):
                 self.assertRegex(err.chunks[0], r"\Afib: [^\n]*\n\Z")
                 self.assertNotRegex(err.chunks[0], r"\d\.\d{3} ms")
 
+    def duration_pairs(self, code, err):
+        """L'analyseur des lignes de durée, celui d'assert_executed et d'assert_measured : vérifie que main a rendu le
+        code 0 et que le faux stderr ne porte que des lignes `<algo> <ms> ms`, et rend leurs couples (nom, ms), dans
+        l'ordre. Une liste de couples, et non un dict indexé par le nom : une ligne en double ne se fond pas dans une
+        autre."""
+        text = "".join(err.chunks)
+        self.assertEqual(code, 0, f"stderr a reçu {err.chunks!r}")
+        self.assertRegex(text, r"\A(?:\w+ \d+\.\d{3} ms\n)+\Z")
+        return [(name, float(ms)) for name, ms, _ in map(str.split, text.splitlines())]
+
     def assert_executed(self, args, algos, noted):
         """Joue main(["--time", *args]) et vérifie que les lignes de durée portent algos, dans l'ordre, et que noted,
         que les espions de _ALGOS remplissent, porte les mêmes noms. Rend le faux stdout."""
         code, out, err = main_captured(["--time", *args])
-        self.assertEqual(code, 0, f"stderr a reçu {err.chunks!r}")
-        durations = "".join(err.chunks)
-        self.assertRegex(durations, r"\A(?:\w+ \d+\.\d{3} ms\n)+\Z")
-        lines = [line.split()[0] for line in durations.splitlines()]
-        self.assertEqual(lines, algos, "les lignes de durée")
-        self.assertEqual(noted, lines, "les algorithmes exécutés")
+        names = [name for name, _ in self.duration_pairs(code, err)]
+        self.assertEqual(names, algos, "les lignes de durée")
+        self.assertEqual(noted, names, "les algorithmes exécutés")
         return out
 
     def test_PERF_PY_27_l_algorithme_nomme_s_execute_et_porte_sa_ligne_de_duree_en_int_comme_en_decimal(self):
@@ -701,20 +710,27 @@ class TestFib(unittest.TestCase):
         Volet des bornes (F8), joué après EXECUTED : main joue BOUNDS sous des espions qui ne calculent pas (silent :
         ils notent leur nom et rendent kind(0)), donc MAX_TERM ne coûte rien; les noms notés égalent ceux des lignes de
         durée, dans l'ordre, et stdout reçoit le seul `0\\n`. EXECUTED ne joue compute qu'à n = 10 en int et à
-        DECIMAL_FROM en Decimal : un aiguillage qui dépend de n dans compute lui échappait. BOUNDS joue all à MAX_TERM
-        (int, iterative présent), puis matrix et le défaut (fast) à DECIMAL_FROM - 1 (int, juste sous le seuil) et à
-        MAX_TERM (Decimal).
+        DECIMAL_FROM en Decimal : un aiguillage qui dépend de n dans compute lui échappait. BOUNDS joue all à 0 (int, le
+        bas de la plage) et à MAX_TERM (int, iterative présent), puis matrix et le défaut (fast) à DECIMAL_FROM - 1
+        (int, juste sous le seuil) et à MAX_TERM (Decimal).
         Mutants rouges dans compute, chacun vert sur la suite d'avant, avec le jeu de BOUNDS qui le rougit :
         `fib(n, "fast" if a == "matrix" and n > 10 else a)` (all à MAX_TERM, matrix à DECIMAL_FROM - 1);
         `fib(n, "fast" if a == "iterative" and n > 10 else a)` (all à MAX_TERM);
         `fib(n, "fast" if a == "matrix" and 10 < n < MAX_TERM else a)` (matrix à DECIMAL_FROM - 1);
+        `fib(n, "fast" if a == "matrix" and n < 10 else a)` (all à 0);
+        `fib(n, "fast" if a == "iterative" and n < 10 else a)` (all à 0);
         `fib(n, "matrix" if a == "fast" and 10 < n < MAX_TERM else a)` (le défaut à DECIMAL_FROM - 1);
         `_fib_decimal(n, "fast" if a == "matrix" and n > 500_000 else a)` (matrix à MAX_TERM);
         `_fib_decimal(n, "matrix" if a == "fast" and n > 500_000 else a)` (le défaut à MAX_TERM).
-        Survivants, laissés à la revue de code : un aiguillage qui dépend de n dans une bande que BOUNDS ne joue pas.
-        En int, 10 < n < DECIMAL_FROM - 1 (`a == "matrix" and 10 < n < 100_000`), ou DECIMAL_FROM - 1 < n < MAX_TERM,
-        que seuls all et iterative atteignent. En Decimal, DECIMAL_FROM < n < MAX_TERM
-        (`a == "matrix" and 170_000 < n < 1_000_000`)."""
+        Survivants, laissés à la revue de code : dans compute, un aiguillage qui ne dépend que de l'algorithme, de n et
+        du chemin (int ou Decimal), et dont la condition est fausse à tous les points que EXECUTED et BOUNDS jouent.
+        Points joués : en int, fast et matrix à 0, 10, DECIMAL_FROM - 1 et MAX_TERM, iterative à 0, 10 et MAX_TERM; en
+        Decimal, fast et matrix à DECIMAL_FROM et MAX_TERM. Survivent donc, en int et pour les trois algorithmes,
+        0 < n < 10 et 10 < n < MAX_TERM (`a == "matrix" and 10 < n < 100_000`), à ceci près que DECIMAL_FROM - 1 est
+        joué pour fast et matrix, non pour iterative (`a == "iterative" and n == 169_999`); au-delà de DECIMAL_FROM - 1,
+        seuls all et iterative atteignent le chemin int. En Decimal, DECIMAL_FROM < n < MAX_TERM
+        (`a == "matrix" and 170_000 < n < 1_000_000`). PERF-PY-30 joue en plus fib() et _fib_decimal aux huit valeurs
+        de ROUTED."""
         for args, algos in EXECUTED:
             noted = []
             with self.subTest(args=args), algorithms(spying(noted)):
@@ -870,14 +886,17 @@ class TestFib(unittest.TestCase):
         l'autre), les deux côtés du seuil du chemin Decimal (DECIMAL_FROM - 1 et DECIMAL_FROM) et deux points
         intérieurs, 11 (le premier indice au-dessus du 10 de PERF-PY-27) et 500 000. Mutants rouges,
         `_ALGOS["fast" if n > T and algo == "matrix" else algo]` avec T = 10 ou 500 000, `n < 5` et la bande
-        `10 < n < 900_000`, dans fib() (verts sans cette garde), puis avec T = 500 000 dans _fib_decimal (vert de même;
-        avec T = 10, PERF-PY-27 le rougit déjà, par le matrix de DECIMAL_FROM). Depuis le volet des bornes de
-        PERF-PY-27, seul `n < 5` ne rougit que cette garde.
+        `10 < n < 900_000`, dans fib() (verts sur la suite d'avant l'audit), puis avec T = 500 000 dans _fib_decimal
+        (vert de même; avec T = 10, PERF-PY-27 le rougit déjà, par le matrix de DECIMAL_FROM). Depuis le volet des
+        bornes de PERF-PY-27, PERF-PY-27 les rougit tous aussi (`n < 5` par son `--algo all 0`) : aucun ne rougit cette
+        garde seule. Seule elle rougit, par exemple, `n == 11` dans fib(), `n == 500_000` dans fib() comme dans
+        _fib_decimal, et `n == 169_999 and algo == "iterative"` dans fib().
         Survivants, laissés à la revue de code : un aiguillage selon n dont la condition est fausse aux huit valeurs de
         ROUTED, soit sur une valeur précise (`n == 100`), soit sur une bande intérieure : 2 à 10, 12 à 169 998,
         170 001 à 499 999 ou 500 001 à 999 998 (`100 < n < 100_000 and algo == "matrix"`). Seul 10, dans la première
-        bande, est aussi joué sous un espion de _ALGOS : PERF-PY-26, 27 et 31 l'atteignent par compute, en int
-        seulement.
+        bande, est aussi joué sous un espion qui verrait l'aiguillage : PERF-PY-26, 27 et 31 l'atteignent par compute,
+        en int seulement (PERF-PY-28 joue aussi 10, 250 001, 300 001 et 600 000 sous un espion de _ALGOS, mais qui ne
+        regarde que kind : il ne voit pas un échange de fast et de matrix).
         Une entrée enveloppée (lambda, functools.partial) la rougit à tort, bruyamment, jamais en silence."""
         routes = {"_iterative", "_matrix", "_fast", "fib", "fib_list", "_ALGOS", "_fib_decimal"}
         for name, function in {"iterative": _iterative, "matrix": _matrix, "fast": _fast}.items():
@@ -904,15 +923,15 @@ class TestFib(unittest.TestCase):
         before = time.perf_counter()
         code, _, err = main_captured(["--time", *args])
         wall = (time.perf_counter() - before) * 1000
-        text = "".join(err.chunks)
-        self.assertEqual(code, 0, text)
-        self.assertRegex(text, r"\A(?:\w+ \d+\.\d{3} ms\n)+\Z")
-        durations = {line.split()[0]: float(line.split()[1]) for line in text.splitlines()}
-        self.assertEqual(list(durations), names)
+        pairs = self.duration_pairs(code, err)
+        self.assertEqual([name for name, _ in pairs], names)
+        durations = [ms for _, ms in pairs]
+        # les noms égalent names : la ligne de slow est à la place de slow dans names
+        slow_ms = durations[names.index(slow)]
         self.assertEqual(len(slept), 1, "un seul sommeil")
         self.assertGreaterEqual(slept[0], SLEEP * 1000 / 2, "témoin : le sommeil chronométré")
-        self.assertGreaterEqual(durations[slow] + ROUND, slept[0], f"la ligne {slow} est plus courte que son sommeil")
-        self.assertLessEqual(sum(durations.values()), wall + len(durations) * ROUND, "les lignes dépassent l'appel")
+        self.assertGreaterEqual(slow_ms + ROUND, slept[0], f"la ligne {slow} est plus courte que son sommeil")
+        self.assertLessEqual(sum(durations), wall + len(durations) * ROUND, "les lignes dépassent l'appel")
 
     def test_PERF_PY_31_la_duree_de_chaque_ligne_couvre_son_calcul_et_tient_dans_l_appel(self):
         """PERF-PY-31 : hors catalogue, garde de F6 (la durée est mesurée), même invariant que PERF-GO-12 et PERF-RS-14.
@@ -935,6 +954,9 @@ class TestFib(unittest.TestCase):
         (`* 1_000_000`, rougi par la somme); un départ commun à tous les algorithmes, donc des durées cumulées (rougi
         par la somme, aux tours de fast et d'iterative); des durées permutées entre algorithmes, les noms bons et les
         valeurs décalées d'un cran; --list sans chronomètre, `return fib_list(n), ["iterative 0.000 ms\\n"]`.
+        Une ligne en double, `fast 0.000 ms` de trop avant la vraie, rougit aussi les noms : duration_pairs, l'analyseur
+        d'assert_executed et d'assert_measured, rend une liste de couples (nom, ms), et non un dict indexé par le nom,
+        qui fond les doublons (PERF-PY-20, 27 et 29 la rougissent aussi).
         Survivant, laissé à la revue de code : l'étendue exacte de la fenêtre (une fenêtre qui engloberait aussi la mise
         en forme du terme passerait)."""
         for slow in COMPARISON:
