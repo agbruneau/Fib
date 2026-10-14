@@ -177,3 +177,40 @@ fn iterative(n: u64) -> BigUint {
 | **Observation** | Environnement Windows (`rustup override`) | La toolchain par défaut sous Windows (`msvc`) échoue sans `link.exe` (Visual Studio C++ Build Tools). L'override `rustup override set stable-x86_64-pc-windows-gnu` dépend du chemin absolu du répertoire et doit être réappliquée si le dépôt est déplacé. Un fichier `rust-toolchain.toml` n'est pas utilisé car il imposerait la cible `windows-gnu` sur Linux/macOS. | Documenté au PRD § 5 et au `README.md` |
 | **Lacune connue** | `std::mem::forget(lines)` (`src/main.rs:140`) | L'optimisation `std::mem::forget(lines)` dans `main()` n'est couverte par aucun test de garde (`main` ne peut pas être appelée par un test unitaire, et sa suppression laisse `cargo test` et le contrat verts). | Documenté au catalogue (`docs/cas-de-test.md` § 6) ; gardé par la revue de code |
 | **Lacune connue** | Mesure réelle de la durée (`F6`) et câblage de `main()` | Comme en Go, `PERF-RS-12` vérifie les noms d'algorithmes mais pas la valeur numérique issue de `Instant::now()`. De même, dans `main()` (`src/main.rs:136-147`), le passage de `fib` à `run(&args, fib)`, l'absence d'`eprint!` direct dans `compute` et le passage de `code` sans plafonnement à `ExitCode::from(code)` reposent sur l'inspection de `main.rs`. | Documenté dans `src/main.rs:205-206` et au catalogue § 6 ; vérifié par lecture directe |
+
+---
+
+## 7. Suivi du 2026-10-14
+
+Les §§ 1 à 6 décrivent l'état du commit a92a808, tel que l'audit l'a lu; ils ne sont pas réécrits. Ce qui a changé depuis, et ce qu'ils affirmaient à tort, est ici.
+
+Cet audit a été vérifié constat par constat, sous Linux, avec rustc 1.97. Trois agents adverses (exactitude, tri, critique) ont lu le code, compté les allocations, lu le code machine et joué des mutants dans des copies. Les constats retenus ont été implémentés par `fib-dev`, puis revus par un vérificateur par branche et par `/code-review` ([agbruneau/Fib#45](https://github.com/agbruneau/Fib/pull/45)). Le code de production de Rust ne change pas : seules des gardes s'ajoutent, dans le module de tests de `src/main.rs`.
+
+### 7.1 Suite donnée aux constats
+
+| Constat | Suite |
+|---|---|
+| `Vec::with_capacity` dans `fib_list` (§ 6.2) | Non fait. Il retire 13 réallocations sur 10 029 allocations. Un A/B apparié dans le processus (1 000 paires, trois passes) donne environ −0,01 ms sur 6,3 à 7 ms, soit −0,15 %, et le gain n'est plus rapide que dans 51 à 52 % des paires : c'est du bruit. La seule garde possible resserrerait la marge de PERF-RS-10, que les changements de croissance de `Vec` de la chaîne d'outils rendraient fragile. |
+| Override `rustup` liée au chemin (§ 6.2) | Documenté au PRD § 5 et au README § Prérequis. L'override se refait après un déplacement du dépôt ou dans un nouveau clone, et `rustup override unset --nonexistent` retire l'ancienne. C'est vérifié sous Linux. |
+| `std::mem::forget(lines)` sans garde (§ 6.2) | Laissé à la revue de code, comme le prévoit le catalogue § 6. Une garde exigerait d'extraire de `main` une fonction de production, et un allocateur compteur dans les tests de `main.rs`, pour un gain mesuré ici de 0,4 à 0,9 ms. |
+| Mesure réelle de la durée, F6, et câblage de `main` (§ 6.2) | La durée est gardée par PERF-RS-14. Un espion dort 20 ms, tour à tour pour chaque algorithme de `--algo all`, et chronomètre son sommeil par `Instant`. La ligne de l'algorithme lent vaut au moins ce sommeil, et les trois lignes au plus le temps mural de `run`. La durée de `--list` va du vingtième au tout du temps mural de `run` : le plafond est exact, le plancher dépend de la charge. Restent à la revue : l'étendue exacte de la fenêtre, une durée qui perdrait ses secondes entières (`subsec_nanos`), et le câblage de `main` (le calcul passé à `run`, le code de sortie). |
+
+Ajout de parité, hors audit : PERF-RS-12 joue aussi n = 1 000 000, avec un espion qui ne calcule pas, comme PERF-GO-10, PERF-TS-12 et PERF-PY-27. Un algorithme qui change selon n dans `compute` rougit.
+
+### 7.2 Errata
+
+Affirmations de cet audit que la vérification a trouvées inexactes :
+
+- § 3.4 : PERF-RS-4 à 7 ne gardent pas l'addition sans branche de `add`. Ils en vérifient les valeurs, non la forme : une forme à branche les laisse verts. Aucune garde n'est utile, car `rustc -O` compile les deux formes en `cmov`. Le catalogue § 6 le note désormais.
+- § 3.3 : l'inégalité « 4F(k)² ≥ 4 > F(k−1)² + 2 » est fausse dès k = 4. La conclusion tient pour une autre raison : F(k) ≥ F(k−1), donc 4F(k)² − F(k−1)² ≥ 3F(k)² ≥ 3 > 2.
+- § 4.1 :
+  - CLI-V04 ne dépend pas de `let _ =` : sous POSIX, le runtime de Rust rouvre `/dev/null` sur un fd 0 à 2 fermé au lancement ;
+  - CLI-A18 et CLI-A20 citent une valeur de `--algo` (`value.escape_default()`), non une option inconnue ;
+  - l'expression `BufWriter::with_capacity(1 << 16, std::io::stdout().lock())` n'existe pas telle quelle (`STDOUT_BUFFER`, et le verrou est pris dans `main`).
+- § 6.1, force 2 : rien n'empêche à la compilation une écriture partielle depuis `compute`. Le catalogue § 6 la laisse à la revue de code.
+- § 6.2, ligne 1 : les 28 allocations en sus des 10 001 chaînes sont 3 allocations initiales et 25 réallocations, et non « 28 réallocations ».
+- § 6.2, ligne 3 : `main` peut être appelée par un test. Elle y lirait les arguments du harnais, ce qui la rend inutile comme garde.
+- § 1.2 : le gain de 15 % de `lto` et `codegen-units` vient du commentaire de `Cargo.toml`, et non de l'ADR-0004.
+- § 3.4 : `QUADS` est l'initialiseur d'un `static`, évalué à la compilation, et non un bloc `const`.
+
+Les temps de la machine Windows (§ 6.1) n'ont pas pu être revérifiés.

@@ -137,7 +137,9 @@ for (const n of BAD_INDEXES) {
 // `{ iterative, matrix, fast: iterative }` et `{ iterative, matrix, fast: matrix }`. Le nom seul laisse passer une
 // enveloppe, car dans un littéral d'objet une fonction anonyme prend le nom de sa clé : `matrix: (n: number) => fast(n)`,
 // `matrix(n: number) { return fast(n); }` et `matrix: function (n: number) { return fast(n); }`. Le début de la source,
-// `function matrix(`, les rougit toutes les trois (la compilation de tsconfig.build.json l'émet de même).
+// `function matrix(`, les rougit toutes les trois (la compilation de tsconfig.build.json l'émet de même). L'expression de
+// fonction nommée du même nom, `matrix: function matrix(n: number) { return fast(n); }`, garde le nom et le début de la
+// source : le test du corps, plus bas, la rougit.
 for (const algo of ALGOS) {
   test(`PERF-TS-10 : la table algos range la fonction ${algo} sous le nom ${algo}`, () => {
     assert.equal(algos[algo].name, algo);
@@ -147,23 +149,73 @@ for (const algo of ALGOS) {
 
 // Rougit, par le test des deux autres noms, l'aiguillage de `fib` fixé à un nom : `algos[algo](n)` → `algos.fast(n)`,
 // `algos.matrix(n)` ou `algos.iterative(n)`. Le 0n des espions n'est comparé à rien.
-for (const algo of ALGOS) {
-  test(`PERF-TS-10 : fib(3, ${algo}) appelle l’entrée ${algo} de la table, et elle seule`, () => {
-    // Conversion explicite : `algos` est en lecture seule par le type, et ces espions sont les seuls à y écrire.
-    const table = algos as Record<Algo, (n: number) => bigint>;
-    const original = { ...table };
-    const called: Algo[] = [];
-    try {
-      for (const name of ALGOS) {
-        table[name] = () => {
-          called.push(name);
-          return 0n;
-        };
+// Les espions jouent aussi n = 1000000 (la borne F8; ils ne calculent rien, donc le coût est nul) : seul ce second indice rougit un
+// aiguillage qui dépend de n, `return algos[n > 10 && algo === 'matrix' ? 'fast' : algo](n);` dans `fib`, que n = 3 laisse passer.
+// Survivant connu, laissé à la revue de code : un aiguillage qui dépend de n hors de ces deux indices, tel que
+// `return algos[n > 10 && n < 1000000 && algo === 'matrix' ? 'fast' : algo](n);`.
+const SPIED_INDEXES = [3, 1000000];
+
+for (const n of SPIED_INDEXES) {
+  for (const algo of ALGOS) {
+    test(`PERF-TS-10 : fib(${n}, ${algo}) appelle l’entrée ${algo} de la table, et elle seule`, () => {
+      // Conversion explicite : `algos` est en lecture seule par le type; seuls les espions (PERF-TS-10, PERF-TS-12) y écrivent, et chacun restaure la table dans finally.
+      const table = algos as Record<Algo, (n: number) => bigint>;
+      const original = { ...table };
+      const called: Algo[] = [];
+      try {
+        for (const name of ALGOS) {
+          table[name] = () => {
+            called.push(name);
+            return 0n;
+          };
+        }
+        fib(n, algo);
+      } finally {
+        Object.assign(table, original);
       }
-      fib(3, algo);
-    } finally {
-      Object.assign(table, original);
-    }
-    assert.deepEqual(called, [algo]);
+      assert.deepEqual(called, [algo]);
+    });
+  }
+}
+
+// hors catalogue : garde du corps de chaque entrée de `algos` (F2; lacune de la garde d'identité ci-dessus, qui lit le nom et le
+// début de la source, et des espions, qui ne voient que l'aiguillage de `fib`). Un nom qui calcule par un autre algorithme rend les
+// mêmes valeurs, donc aucun cas de valeur ne le voit, et une expression de fonction nommée du même nom garde le début de la
+// source. Le texte brut de chaque entrée, `algos[algo].toString()`, ne nomme donc ni l'un des deux autres algorithmes, ni `fib`,
+// ni `fibList`, ni `algos`, ni `this`; son propre nom, celui de sa déclaration, est permis. `this` est interdit parce que `fib`
+// appelle `algos[algo](n)` en méthode : `this` vaut `algos` dans chaque entrée, et `Object.values(this)[2](n)` délègue à `fast`
+// sans nommer personne.
+// Le texte est lu brut, sans retirer les commentaires : ni un commentaire, ni un littéral (chaîne, gabarit, regex) ne peut masquer
+// un nom écrit dans le texte. Ce qui reste hors de portée est ce que le texte ne nomme pas : la délégation par une fonction
+// auxiliaire ou par un nom calculé (survivants ci-dessous), et la liste de ces survivants n'est pas exhaustive. Un retrait des
+// commentaires par regex a été essayé et abandonné : chaque revue y trouvait un survivant (une continuation de ligne dans une
+// chaîne, un commentaire collé au code qui ouvre un faux bloc ou une fausse chaîne, une fin de ligne en CR, U+2028 ou U+2029, un
+// littéral regex tel que `/[ //]/` ou `/\/*/`).
+// Rougit : `return fast(n);` en tête de `matrix`; `const re = /\/\//; return fast(n);`; `const re = /[ //]/; return fast(n);`;
+// `const re = /\/*/; return fast(n); const end = /a*/;`; une continuation de ligne dans une chaîne (`const s = "a\`, un saut de
+// ligne, puis ` //"; if (s) return fast(n);`); un commentaire collé au code (`let q = 1;// voir /* ici`, un saut de ligne, puis
+// `if (q) return fast(n); /* fin */`); un commentaire `//` clos par un saut de ligne CR, U+2028 ou U+2029, suivi de
+// `return fast(n);` (ces trois caractères sont du vrai code après le commentaire; le fichier les désigne ici par leur nom et ne
+// les contient pas); la délégation par `this`, qui passe tsc et toute la suite de valeurs :
+// `function matrix(this: unknown, n: number): bigint { if (n > 0) return Object.values(this as object)[2](n); …`;
+// `{ iterative, matrix: function matrix(n: number) { return fast(n); }, fast }` dans la table; `return fib(n, 'fast');`;
+// et `if (n < 64) return iterative(n);` en tête de `fast`.
+// Ce dernier rouge est voulu, non une erreur du test : F2 veut que chaque nom calcule par son propre algorithme à tout n, pas
+// seulement au-dessus d'un seuil. Un travail de performance qui aiguillerait les petits indices vers un autre algorithme
+// rougit ici avec raison; il doit d'abord changer F2 au PRD, puis ce test, au lieu d'assouplir le test seul.
+// Le prix du texte brut est un faux rouge, bruyant, jamais silencieux : un commentaire de l'un de ces corps qui nomme un autre
+// algorithme (`// plus lent que fast` dans `matrix`, ou `let q = 1; // note if (q) return fast(n);`, où toute la fin de la ligne
+// est un vrai commentaire et où rien ne délègue) fait rougir la garde, de même qu'un commentaire qui contient `this`. Il faut
+// alors écrire le commentaire autrement, « le doublement rapide » au lieu de `fast`, et non revenir à un retrait des commentaires.
+// Survivants connus, laissés à la revue de code : une délégation par une fonction auxiliaire (`return viaFast(n);`, où `viaFast`,
+// définie hors de la table, rend `fast(n)`) ou par un nom calculé (`return pick('fa' + 'st')(n);`, où `pick` choisit dans un
+// objet défini hors de la table); le texte de l'entrée ne nomme alors aucun algorithme. Cette liste n'est pas exhaustive.
+const FORBIDDEN = [...ALGOS, 'fib', 'fibList', 'algos', 'this'];
+
+for (const algo of ALGOS) {
+  test(`PERF-TS-10 : le corps de ${algo} ne nomme ni un autre algorithme, ni fib, ni fibList, ni algos, ni this`, () => {
+    const source = algos[algo].toString();
+    const named = FORBIDDEN.filter((name) => name !== algo && new RegExp(`\\b${name}\\b`, 'u').test(source));
+    assert.deepEqual(named, [], source);
   });
 }

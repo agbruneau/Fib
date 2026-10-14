@@ -150,7 +150,8 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
+    use std::{thread::sleep, time::Duration};
 
     /// Un `Write` qui garde les octets reçus et compte ses appels à `write`.
     #[derive(Default)]
@@ -222,30 +223,96 @@ mod tests {
 
     // PERF-RS-12 (F2 et F6), hors catalogue : l'algorithme nommé par une ligne de durée est celui qui calcule, un appel
     // chacun et dans l'ordre. Le contrat ne voit que le nom et le format de la ligne (catalogue § 6). Un espion note
-    // l'algorithme puis délègue à `fib`; mêmes quatre cas que PERF-GO-10. Rouge sous le mutant où un seul algorithme
-    // (`--algo iterative` ou `--algo matrix`) est calculé par `fast`, que PERF-RS-11 laisse passer.
+    // l'algorithme que `compute` passe à `term` et rend zéro sans calculer, comme PERF-TS-12 et PERF-PY-30 :
+    // n = MAX_TERM (la borne F8) ne coûte rien, et stdout ne porte que ce zéro. Mêmes quatre cas que PERF-GO-10,
+    // à n = 10 et à n = MAX_TERM. Rouge sous le mutant où un seul algorithme (`--algo iterative` ou `--algo matrix`)
+    // est calculé par `fast`, que PERF-RS-11 laisse passer, et sous celui où `compute` passe `Fast` à `term` pour
+    // `Matrix` quand n > 10, la ligne gardant son nom (vert à n = 10, rouge à n = MAX_TERM). Survivant connu, laissé à
+    // la revue : un aiguillage sur des valeurs de n que la garde ne joue pas, tel que `Matrix` calculé par `Fast` pour
+    // 10 < n < MAX_TERM.
     #[test]
     fn perf_rs_12_chaque_ligne_de_duree_nomme_l_algorithme_calcule() {
         let cases: [(&[&str], &[Algo]); 4] = [
-            (&["10"], &[Algo::Fast]),
-            (&["--algo", "iterative", "10"], &[Algo::Iterative]),
-            (&["--algo", "matrix", "10"], &[Algo::Matrix]),
-            (&["--algo", "all", "10"], &[Algo::Fast, Algo::Iterative, Algo::Matrix]),
+            (&[], &[Algo::Fast]),
+            (&["--algo", "iterative"], &[Algo::Iterative]),
+            (&["--algo", "matrix"], &[Algo::Matrix]),
+            (&["--algo", "all"], &[Algo::Fast, Algo::Iterative, Algo::Matrix]),
         ];
-        for (rest, expected) in cases {
-            let calls = RefCell::new(Vec::new());
-            let argv = args(&[&["--time"], rest].concat());
-            let Ok((_, durations)) = run(&argv, |n, algo| {
-                calls.borrow_mut().push(algo);
-                fib(n, algo)
-            }) else {
-                panic!("--time {} : run devait réussir", rest.join(" "))
-            };
-            let calls = calls.into_inner();
-            assert_eq!(calls, expected, "algorithmes calculés pour --time {}", rest.join(" "));
-            let named: Vec<&str> = durations.lines().map(|l| l.split(' ').next().unwrap_or("")).collect();
-            let called: Vec<&str> = calls.iter().map(|a| a.name()).collect();
-            assert_eq!(named, called, "lignes de durée pour --time {}", rest.join(" "));
+        for n in [10, MAX_TERM] {
+            for (rest, expected) in cases {
+                let calls = RefCell::new(Vec::new());
+                let argv = args(&[&["--time"][..], rest, &[&n.to_string()]].concat());
+                let shown = argv.join(" ");
+                let Ok((lines, durations)) = run(&argv, |_, algo| {
+                    calls.borrow_mut().push(algo);
+                    BigUint::ZERO
+                }) else {
+                    panic!("{shown} : run devait réussir")
+                };
+                let calls = calls.into_inner();
+                assert_eq!(calls, expected, "algorithmes calculés pour {shown}");
+                let named: Vec<&str> = durations.lines().map(|l| l.split(' ').next().unwrap_or("")).collect();
+                let called: Vec<&str> = calls.iter().map(|a| a.name()).collect();
+                assert_eq!(named, called, "lignes de durée pour {shown}");
+                assert_eq!(lines, ["0"], "stdout pour {shown}");
+            }
         }
+    }
+
+    /// Rend le temps mural de `run` (ms) et les lignes de durée (nom, ms), lus par l'horloge de `timed`.
+    fn timed_run(argv: &[&str], term: impl Fn(u64, Algo) -> BigUint) -> (f64, Vec<(String, f64)>) {
+        let owned = args(argv);
+        let start = Instant::now();
+        let result = run(&owned, term);
+        // `run` et `compute` libèrent déjà `Options`, le Vec des termes et les tampons de fib_list dans la fenêtre :
+        // seul le Vec<String> rendu par `run` (10 001 chaînes de --list, ~2 ms à libérer) l'est après `wall`.
+        let wall = start.elapsed().as_secs_f64() * 1000.0;
+        let Ok((_, text)) = result else { panic!("{argv:?} : run devait réussir") };
+        let lines = text.lines().map(|l| l.split(' ').collect::<Vec<_>>());
+        (wall, lines.map(|f| (f[0].to_string(), f[1].parse().expect("durée en ms"))).collect())
+    }
+
+    // PERF-RS-14 (F6), hors catalogue : la durée est mesurée; le contrat ne lit que le format (`0.000 ms` passe). Trois
+    // tours de `--time --algo all 10`, un seul algorithme lent par tour : l'espion dort 20 ms, chronomètre son sommeil
+    // par `Instant`, l'horloge de `timed`, puis délègue à `fib`. Témoin : ce sommeil chronométré vaut au moins
+    // SLEEP / 2 (sinon la garde tourne à vide). Les fenêtres d'horloge (sommeil, `timed`, temps mural de `run`) sont
+    // emboîtées sur un fil : la ligne lente, plus l'arrondi de `{:.3}`, vaut au moins le sommeil, et les trois lignes
+    // au plus le temps mural de `run`, sans dépendre de la précision du sommeil. Les assertions des trois tours, et le
+    // plafond de `--list <MAX_LIST>` (la ligne vaut au plus le temps mural), sont exactes sous toute charge. Le
+    // plancher de `--list` ne l'est pas : la ligne vaut au moins le vingtième du temps mural, car fib_list le remplit
+    // presque seul, mais ce temps couvre aussi l'analyse des arguments, hors de la fenêtre chronométrée, et une
+    // suspension d'environ 19 fois la durée de fib_list hors de cette fenêtre rougirait la garde à tort : il dépend
+    // toujours de la charge. Lire le temps mural avant de libérer le Vec de 10 001 chaînes n'y change presque rien :
+    // mesuré ~1,3 ms sur une fenêtre de 100 à 134 ms, soit ~1 %. Rouge sous une durée 0.000 ou 1.234, le chronomètre
+    // lancé après le calcul, des secondes, des microsecondes, un départ commun (durées cumulées), des durées permutées,
+    // fib_list hors du chronomètre, `as_millis` et `subsec_millis`. Survivants connus, laissés à la revue : l'étendue
+    // exacte de la fenêtre du chronomètre (englober aussi la mise en forme du terme passerait); une durée qui perd ses
+    // secondes entières (`subsec_nanos`), car aucune ligne n'atteint 1 s, et trois sommeils d'une seconde coûteraient
+    // 3 s par passe; un facteur 1001 au lieu de 1000, une précision de 0,1 % que l'invariant ne promet pas.
+    #[test]
+    fn perf_rs_14_la_duree_de_chaque_ligne_est_mesuree() {
+        const SLEEP: Duration = Duration::from_millis(20);
+        const ROUNDING: f64 = 0.0005;
+        for slow in [Algo::Fast, Algo::Iterative, Algo::Matrix] {
+            let slept = Cell::new(0.0);
+            let (wall, lines) = timed_run(&["--time", "--algo", "all", "10"], |n, algo| {
+                if algo == slow {
+                    let start = Instant::now();
+                    sleep(SLEEP);
+                    slept.set(start.elapsed().as_secs_f64() * 1000.0);
+                }
+                fib(n, algo)
+            });
+            let (name, slept) = (slow.name(), slept.get());
+            assert!(slept >= SLEEP.as_secs_f64() * 1000.0 / 2.0, "{name} lent : sommeil de {slept} ms, garde à vide");
+            let shown = lines.iter().find(|(l, _)| l == name).map_or(f64::NAN, |l| l.1);
+            assert!(shown + ROUNDING >= slept, "{name} lent : {lines:?} pour {slept} ms de sommeil");
+            let sum: f64 = lines.iter().map(|l| l.1).sum();
+            assert!(sum <= wall + 3.0 * ROUNDING, "{name} lent : {lines:?} dépasse le temps mural {wall} ms");
+        }
+        let max = MAX_LIST.to_string();
+        let (wall, lines) = timed_run(&["--time", "--list", &max], fib);
+        let ms = lines.first().map_or(f64::NAN, |l| l.1);
+        assert!(ms + ROUNDING >= wall / 20.0 && ms <= wall + ROUNDING, "--list : {ms} ms sur {wall} ms de temps mural");
     }
 }

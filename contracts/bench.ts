@@ -11,6 +11,8 @@ const SCENARIOS: [name: string, args: string[]][] = [
   ['petit (10)', ['10']],
   ['terme (100000, fast)', ['100000']],
   ['terme (1000000, fast)', ['1000000']],
+  // Le seul indice impair : la branche impaire du dernier bit de fast (les autres indices sont pairs).
+  ['terme (999999, fast)', ['999999']],
   ['matrix 100000', ['--algo', 'matrix', '100000']],
   ['iterative 100000', ['--algo', 'iterative', '100000']],
   ['all 100000', ['--algo', 'all', '100000']],

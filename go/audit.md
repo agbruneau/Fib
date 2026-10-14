@@ -176,3 +176,41 @@ return a
 | **Lacune connue** | Garde d'aiguillage (`PERF-GO-11`) | `PERF-GO-11` (`fib_internal_test.go:46`) n'échantillonne l'empreinte d'allocations qu'à $n = 1023$. Un aiguillage conditionnel dépendant de $n$ (ex. `if n > 10_000 { return fast(n), nil }` dans la branche `"matrix"`) ou un corps de `matrix` appelant `fast` tout en simulant 15 allocations factices lui échapperait. | Documenté au catalogue § 6 ; couvert par la revue de code |
 | **Lacune connue** | Mesure réelle de la durée (`F6`) | Contrairement à `PERF-TS-8` et `PERF-TS-9` en TypeScript, `PERF-GO-10` vérifie le nom de l'algorithme chronométré mais ne vérifie pas que la durée affichée dans `<algo> <durée> ms` provient réellement de `time.Since(start)` (une constante `"0.000 ms"` passerait `PERF-GO-10` et le contrat). | Documenté au catalogue § 6 ; vérifié par lecture de `main.go:120-122` |
 | **Lacune connue** | Point d'entrée `main()` | `main()` (`main.go:184-186`) contient `os.Exit(run(os.Args[1:], os.Stdout, os.Stderr, fib.Fib))`. Comme `PERF-GO-9` et `PERF-GO-10` testent `run(...)` directement, un mutant dans `main()` qui bornerait le code de sortie à 2 ou passerait une fonction câblée sur `fast` à la place de `fib.Fib` survivrait aux tests unitaires (le second serait toutefois détecté sur les allocations ou durées si testé de bout en bout, mais pas par le contrat sur la valeur). | Documenté dans `main_test.go:117-119` ; vérifié par lecture directe de `main.go:185` |
+
+---
+
+## 7. Suivi du 2026-10-14
+
+Les §§ 1 à 6 décrivent l'état du commit a92a808, tel que l'audit l'a lu; ils ne sont pas réécrits. Ce qui a changé depuis, et ce qu'ils affirmaient à tort, est ici.
+
+Cet audit a été vérifié constat par constat, sous Linux, avec Go 1.26.0. Trois agents adverses (exactitude, tri, critique) ont lu le code, recompté et joué des mutants dans des copies. Les constats retenus ont été implémentés par `fib-dev`, puis revus par un vérificateur par branche et par `/code-review` ([agbruneau/Fib#45](https://github.com/agbruneau/Fib/pull/45)). Le code de production de Go ne change que par le dernier bit impair de `fast`, décidé ensuite par le propriétaire; le reste ne fait qu'ajouter des gardes.
+
+### 7.1 Suite donnée aux constats
+
+| Constat | Suite |
+|---|---|
+| Erreurs d'écriture ignorées (§ 6.2) | Conforme par conception, rien à faire. La justification de l'audit est fausse (§ 7.2). |
+| PERF-GO-11 n'échantillonne que n = 1023 (§ 6.2) | Fermé pour le mutant de l'audit et pour la délégation de corps, par un volet statique de PERF-GO-11 qui lit `fib.go` par `go/parser`. Dans `Fib`, chaque nom d'algorithme n'apparaît que dans le retour de son propre cas, et `algo` et `n` ne sont ni réécrits, ni redéclarés, ni pris par adresse. Les corps de `iterative`, `matrix` et `fast` ne nomment ni les deux autres, ni `Fib`, ni `FibList`. Restent à la revue de code : une délégation par une variable de fonction ou par une fonction auxiliaire, et la copie en ligne du code de `fast`, à tout n si elles imitent l'empreinte d'allocations. |
+| Mesure réelle de la durée, F6 (§ 6.2) | Fermé par PERF-GO-12. Un calcul espion dort 20 ms, tour à tour pour chaque algorithme de `--algo all`, et chronomètre son sommeil par `time.Since`. La ligne de l'algorithme lent vaut au moins ce sommeil, et les trois lignes au plus le temps mural de `run`. Restent à la revue : la fenêtre de `--list` (`FibList` n'est pas injectable) et l'étendue exacte de la fenêtre. |
+| Point d'entrée `main()` (§ 6.2) | Laissé à la revue de code, comme le prévoit le catalogue § 6. Le code 3 est inatteignable avec le vrai `fib.Fib`, si bien que le borner à 2 est un mutant équivalent. Seule une garde du texte de `main` verrait le calcul passé à `run`. |
+| Dernier bit impair de `fast` en deux carrés (§ 3.3) | Fait à la demande du propriétaire, comme en Rust et en Python : F(2k+1) = (2F(k) − F(k−1))(2F(k) + F(k−1)) + 2(−1)^k, en un produit. `go/fib.go` passe de 199 à 208 lignes. PERF-GO-13 garde la forme en lisant `fib.go` (un appel de `Mul` dans le bloc `if n&1 == 0`, un dans la branche impaire qui le suit, et aucun avant le test de parité : un total de deux laissait passer une `Mul` déplacée dans une aide, compensée par les deux carrés, ou un produit impair calculé avant le test), puisque l'empreinte d'allocations ne la distingue pas sans fragilité (51 contre 52 allocations à n = 1023). Les deux facteurs de la branche impaire se calculent sur place dans `c` et dans un entier temporaire : 9, 33, 51 et 111 allocations de `fast` à n = 5, 101, 1023 et 999 999 contre 10, 34, 52 et 112, et 428 319 octets contre 478 506 à n = 999 999 (non chronométré). La justesse reste gardée par BIB-05 à 07, BIB-09 et PERF-GO-1. Mesures, sous Linux, par le banc, qui gagne un scénario impair, terme `999999` (`contracts/bench.ts`). Banc ordinaire, la mesure d'un travail de calcul (ADR-0004), avant (7d126ea) et après, 31 exécutions, colonne calcul : 6,9 → 6,0 ms à 999 999, mais 6,5 → 5,9 ms aussi à 1 000 000, dont le code n'a pas changé ; l'écart impair − pair passe de +0,4 à +0,1 ms. La dérive de la machine entre deux passes masque donc la plus grande part du gain. L'A/B du banc (`--contre 7d126ea`, 100 paires) n'apparie que le temps total, et n'y distingue pas l'effet du bruit (−1,7 % à 999 999, −1,8 % au pair inchangé). En complément, hors banc, un A/B apparié des deux binaires sur `--time` donne −1,10 ms (−15,6 %) à 999 999, −9,6 % à 100 001 et −2,5 % à 1 000 000. Apparier aussi la durée de calcul dans l'A/B du banc rendrait cette mesure reproductible (suite proposée au propriétaire). |
+
+Ajout de parité, hors audit : PERF-GO-10 joue aussi n = 1 000 000, avec un calcul espion qui ne calcule pas, comme PERF-TS-12, PERF-RS-12 et PERF-PY-27. Un nom qui change selon n dans `compute` rougit.
+
+### 7.2 Errata
+
+Affirmations de cet audit que la vérification a trouvées inexactes :
+
+- § 6.2, PERF-GO-11 : le second échappement, un corps de `matrix` qui appelle `fast` et imite son empreinte par 15 allocations factices, ne figurait pas au catalogue § 6, malgré le statut « Documenté ». Il est désormais fermé par le volet statique.
+- § 6.2, erreurs d'écriture :
+  - un stderr fermé au lancement est dans le contrat (PRD § 4, CLI-V04), non hors contrat ;
+  - sous POSIX, ce n'est pas l'erreur ignorée qui fait passer CLI-V04, mais le runtime de Go, qui rouvre `/dev/null` sur les fd 0 à 2 fermés au démarrage ;
+  - la liste oublie `fmt.Fprintf(stderr, …)` (`main.go:165`).
+- § 3.4 : à n = 10 000, `text.Grow` réserve 10 471 047 octets (environ 10,5 Mo), et non « ~2,1 Mo ». C'est F(10 000) qui compte 2 090 chiffres.
+- § 4.2 :
+  - `--list 10000` fait exactement 160 appels à `Write` (⌈10 461 936 / 65 536⌉), et non « ~165 » ;
+  - `%+q` ne cite que la valeur de `--algo` et le nom d'une option inconnue, et non tous les arguments invalides.
+- § 1.2 : HAR-7 garde la commande de lancement (le binaire), mais pas la commande de build.
+- § 3.3 : « inférieure à la milliseconde » dépend de la machine. Sous Linux, la dernière étape coûte, à n = 999 999, de 4,6 à 5,2 ms en deux carrés, contre 3,2 à 3,7 ms en un produit.
+
+Les temps de la machine Windows (§ 6.1) n'ont pas pu être revérifiés.

@@ -9,13 +9,15 @@ import (
 	"os"
 	"os/exec"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"fib"
 )
 
-// writeCounter, le puits d'écriture de PERF-GO-6, 9 et 10, n'implémente que Write : il garde le texte de chaque appel,
+// writeCounter, le puits d'écriture de PERF-GO-6, 9, 10 et 12, n'implémente que Write : il garde le texte de chaque appel,
 // dans l'ordre. len(chunks) est le nombre d'appels, ce qu'un appel système coûterait; size, le total des octets reçus.
 type writeCounter struct{ chunks []string }
 
@@ -151,43 +153,138 @@ func TestPERFGO9_UneDiscordanceRend3SansStdoutNiDuree(t *testing.T) {
 	}
 }
 
-// PERF-GO-10, hors catalogue : garde de F2 et de F6 (catalogue § 6), pendant de PERF-TS-8 : l'algorithme que nomme une ligne
-// de durée est celui qui a calculé. Le calcul espion note l'algorithme qu'on lui demande, puis délègue à fib.Fib : les
-// algorithmes appelés doivent être ceux que nomment les lignes de durée, dans l'ordre, un appel chacun. Rouge sous : un
-// algorithme calculé par un autre (fast pour iterative, par exemple) que la ligne nomme quand même.
+// PERF-GO-10, hors catalogue : garde de F2 et de F6 (catalogue § 6), pendant de PERF-TS-8 et de PERF-TS-12 : l'algorithme que
+// nomme une ligne de durée est celui qui a calculé. Le calcul espion note l'algorithme qu'on lui demande et rend
+// big.NewInt(0), sans calculer : les algorithmes appelés doivent être ceux que nomment les lignes de durée, dans l'ordre, un
+// appel chacun. Chaque cas est joué à n = 10 et à n = maxTerm (1000000, la borne F8) : sans calcul, la borne ne coûte rien, et
+// un nom passé au calcul qui dépend de n se voit aux deux bouts de la plage. stdout reçoit le seul `0\n`, le terme que
+// l'espion a rendu. Rouge sous : un algorithme calculé par un autre (fast pour iterative, par exemple) que la ligne nomme
+// quand même, et, dans compute, `name := algo; if o.n > 10 && name == "matrix" { name = "fast" }` puis `term(o.n, name)`, la
+// ligne de durée gardant algo (vert avant que la garde joue n = maxTerm).
+// Survivant connu, laissé à la revue de code : un aiguillage qui dépend de n hors de ces deux indices, tel que
+// `o.n == 12345` ou `o.n > 10 && o.n < maxTerm`.
 func TestPERFGO10_LAlgorithmeNommeEstCeluiQuiCalcule(t *testing.T) {
-	for _, c := range []struct {
-		args  []string
-		algos []string
-	}{
-		{[]string{"10"}, []string{"fast"}},
-		{[]string{"--algo", "iterative", "10"}, []string{"iterative"}},
-		{[]string{"--algo", "matrix", "10"}, []string{"matrix"}},
-		{[]string{"--algo", "all", "10"}, []string{"fast", "iterative", "matrix"}},
-	} {
-		args := append([]string{"--time"}, c.args...)
-		t.Run(fmt.Sprintf("PERF-GO-10 : %s exécute %s", strings.Join(args, " "), strings.Join(c.algos, " puis ")), func(t *testing.T) {
-			var called []string
+	for _, n := range []int{10, maxTerm} {
+		for _, c := range []struct {
+			options []string
+			algos   []string
+		}{
+			{nil, []string{"fast"}},
+			{[]string{"--algo", "iterative"}, []string{"iterative"}},
+			{[]string{"--algo", "matrix"}, []string{"matrix"}},
+			{[]string{"--algo", "all"}, []string{"fast", "iterative", "matrix"}},
+		} {
+			args := append(append([]string{"--time"}, c.options...), strconv.Itoa(n))
+			t.Run(fmt.Sprintf("PERF-GO-10 : %s exécute %s", strings.Join(args, " "), strings.Join(c.algos, " puis ")), func(t *testing.T) {
+				var called []string
+				term := func(_ int, algo string) (*big.Int, error) {
+					called = append(called, algo)
+					return big.NewInt(0), nil
+				}
+				var stdout, stderr writeCounter
+				if code := run(args, &stdout, &stderr, term); code != 0 {
+					t.Fatalf("run %s rend le code %d, attendu 0", strings.Join(args, " "), code)
+				}
+				if got := strings.Join(stdout.chunks, ""); got != "0\n" {
+					t.Errorf("stdout reçoit %q, attendu le terme de l'espion, %q", got, "0\n")
+				}
+				var named []string
+				for _, chunk := range stderr.chunks {
+					for line := range strings.Lines(chunk) {
+						algo, _, _ := strings.Cut(line, " ")
+						named = append(named, algo)
+					}
+				}
+				if !slices.Equal(named, c.algos) {
+					t.Errorf("les lignes de durée nomment %q, attendu %q", named, c.algos)
+				}
+				if !slices.Equal(called, named) {
+					t.Errorf("les algorithmes appelés sont %q, les lignes de durée nomment %q", called, named)
+				}
+			})
+		}
+	}
+}
+
+// sleepSpan : la durée que dort le calcul lent de PERF-GO-12. roundHalf : la demi-unité de %.3f, en ms, l'erreur d'arrondi
+// d'une ligne de durée. floatSlack : la marge de l'arithmétique flottante, en ms, pour une égalité exacte à l'arrondi près.
+const (
+	sleepSpan  = 20 * time.Millisecond
+	roundHalf  = 0.0005
+	floatSlack = 1e-9
+)
+
+// PERF-GO-12, hors catalogue : garde de F6 (catalogue § 6, lacune « la durée est mesurée »), pendant de PERF-RS-14 et de
+// PERF-PY-31. Le contrat ne lit que le format des lignes de durée : `0.000 ms` y passe. La garde joue trois fois
+// `--time --algo all 10`; à chaque tour, un seul algorithme est lent, tour à tour fast, iterative et matrix. Un calcul
+// espion, injecté comme celui de PERF-GO-10 (le termFunc que reçoit run), dort alors 20 ms pour lui seul, puis délègue à
+// fib.Fib, et chronomètre son propre sommeil par l'horloge même de la production (time.Now et time.Since lisent, comme
+// time.Sleep, la même horloge monotone).
+//
+// Trois assertions. (1) Le témoin : le sommeil chronométré vaut au moins 10 ms, sans quoi la garde serait à vide.
+// (2) La ligne de l'algorithme lent, plus 0,0005 ms (l'arrondi de %.3f), vaut au moins le sommeil chronométré : les quatre
+// lectures d'horloge (début de la fenêtre de production, début et fin du sommeil de l'espion, fin de la fenêtre) sont
+// emboîtées sur un même fil et une même horloge monotone, donc l'inégalité est exacte, sans dépendre de la précision du
+// sommeil ni de la charge, y compris sous Windows. (3) La somme des trois lignes vaut au plus le temps mural de l'appel de
+// run, lu par la même horloge, plus 3 × 0,0005 ms : les trois fenêtres sont disjointes et comprises dans l'appel.
+//
+// Rouge sous : une durée constante (0.000, ou une constante réaliste comme 1.234); le chronomètre lancé après le calcul;
+// des secondes ou des microsecondes au lieu de millisecondes; un départ commun à tous les algorithmes (durées cumulées);
+// des durées permutées entre algorithmes, les noms justes et les valeurs décalées d'un cran.
+// Survivants connus, laissés à la revue de code : l'étendue exacte de la fenêtre (une fenêtre qui engloberait aussi la mise
+// en forme du terme passerait); la fenêtre de --list, que FibList, appelé sans calcul en paramètre, ne laisse pas ralentir
+// (une borne du vingtième du temps mural y serait instable sous Windows, où nanotime avance par ticks, jusqu'à 15,6 ms,
+// alors que FibList(10000) prend environ 4 ms).
+func TestPERFGO12_LaDureeEstMesuree(t *testing.T) {
+	ms := func(d time.Duration) float64 { return float64(d) / float64(time.Millisecond) }
+	for _, slow := range comparison {
+		t.Run(fmt.Sprintf("PERF-GO-12 : si %s dort %d ms, sa ligne de durée le couvre et les trois lignes tiennent dans l'appel", slow, sleepSpan.Milliseconds()), func(t *testing.T) {
+			var slept time.Duration
 			term := func(n int, algo string) (*big.Int, error) {
-				called = append(called, algo)
+				if algo == slow {
+					begin := time.Now()
+					time.Sleep(sleepSpan)
+					slept = time.Since(begin)
+				}
 				return fib.Fib(n, algo)
 			}
-			var stdout, stderr writeCounter
-			if code := run(args, &stdout, &stderr, term); code != 0 {
-				t.Fatalf("run %s rend le code %d, attendu 0", strings.Join(args, " "), code)
+			var stderr writeCounter
+			begin := time.Now()
+			code := run([]string{"--time", "--algo", "all", "10"}, io.Discard, &stderr, term)
+			wall := time.Since(begin)
+			if code != 0 {
+				t.Fatalf("run --time --algo all 10 rend le code %d, attendu 0", code)
 			}
-			var named []string
+			if slept < sleepSpan/2 {
+				t.Fatalf("le calcul lent de %s n'a dormi que %v pour %v demandés : la garde serait à vide", slow, slept, sleepSpan)
+			}
+			var names []string
+			var slowMs, total float64
 			for _, chunk := range stderr.chunks {
 				for line := range strings.Lines(chunk) {
-					algo, _, _ := strings.Cut(line, " ")
-					named = append(named, algo)
+					fields := strings.Fields(line)
+					if len(fields) != 3 || fields[2] != "ms" {
+						t.Fatalf("ligne de durée illisible : %q", line)
+					}
+					d, err := strconv.ParseFloat(fields[1], 64)
+					if err != nil {
+						t.Fatalf("ligne de durée illisible : %q (%v)", line, err)
+					}
+					names = append(names, fields[0])
+					total += d
+					if fields[0] == slow {
+						slowMs = d
+					}
 				}
 			}
-			if !slices.Equal(named, c.algos) {
-				t.Errorf("les lignes de durée nomment %q, attendu %q", named, c.algos)
+			if !slices.Equal(names, comparison) {
+				t.Fatalf("les lignes de durée nomment %q, attendu %q", names, comparison)
 			}
-			if !slices.Equal(called, named) {
-				t.Errorf("les algorithmes appelés sont %q, les lignes de durée nomment %q", called, named)
+			if slowMs+roundHalf+floatSlack < ms(slept) {
+				t.Errorf("la ligne de %s donne %.3f ms, moins que les %.3f ms que le calcul a dormi dans sa fenêtre", slow, slowMs, ms(slept))
+			}
+			if limit := ms(wall) + 3*roundHalf + floatSlack; total > limit {
+				t.Errorf("les trois lignes totalisent %.3f ms, plus que les %.3f ms de l'appel de run : les fenêtres se recouvrent ou l'unité est fausse", total, ms(wall))
 			}
 		})
 	}
