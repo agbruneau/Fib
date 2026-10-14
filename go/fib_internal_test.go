@@ -6,6 +6,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"go/types"
 	"math/big"
 	"slices"
 	"strconv"
@@ -43,19 +44,19 @@ var identitySink *big.Int
 // par Fib elle-même, pas par un détour qui ne servirait qu'à elle.
 //
 // n = 1023 : tous ses bits valent 1, donc matrix ajoute à chaque bit son produit par Q, que fast n'a pas; les trois comptes
-// valent 4, 67 et 52 sous Go 1.26. La garde vérifie d'abord qu'ils diffèrent deux à deux : si une évolution de math/big ou
+// valent 4, 67 et 51 sous Go 1.26. La garde vérifie d'abord qu'ils diffèrent deux à deux : si une évolution de math/big ou
 // d'un algorithme les confondait, elle échouerait sur ce constat au lieu de ne plus rien garder.
 //
 // Limite : l'empreinte ne vérifie l'aiguillage qu'à n = 1023, et un corps qui en imite une autre la trompe : un `matrix` qui
-// calcule par fast puis alloue 15 entiers de plus retrouve les 67 allocations de matrix. Le volet statique ci-dessous lit
+// calcule par fast puis alloue 16 entiers de plus retrouve les 67 allocations de matrix. Le volet statique ci-dessous lit
 // donc le texte de fib.go, et ferme ce que n = 1023 laisse passer tant que le texte nomme la fonction vers laquelle il
 // aiguille et que algo et n, qui choisissent le cas et l'entier, restent les paramètres de Fib. Ce qui reste, rejoué et laissé
 // à la revue de code (la liste dit ce qu'on a rejoué, non que rien d'autre ne passe) : un calcul que le texte ne rattache à
 // aucun nom d'algorithme, par une variable de fonction (`var delegate = fast`, puis `return delegate(n)`), par une fonction
 // auxiliaire (`return help(n)`, où help appelle fast) ou par la copie en ligne du code d'un algorithme (celui de fast, dans
 // `if n > 10_000 { … }`), le tout dans le corps d'un autre algorithme, ou dans Fib hors du `switch algo`. Il survit à tout n
-// quand ce corps imite aussi l'empreinte d'allocations (67 pour matrix, comme le `matrix` ci-dessus : le calcul de fast, 52,
-// plus 15 entiers), et, sans cette imitation, pour certains n seulement : tout n autre que 1023, par exemple
+// quand ce corps imite aussi l'empreinte d'allocations (67 pour matrix, comme le `matrix` ci-dessus : le calcul de fast, 51,
+// plus 16 entiers), et, sans cette imitation, pour certains n seulement : tout n autre que 1023, par exemple
 // `if n > 10_000 { return help(n) }`.
 func TestPERFGO11_ChaqueNomAiguilleVersSaFonction(t *testing.T) {
 	const n = 1023
@@ -115,7 +116,7 @@ func TestPERFGO11_ChaqueNomAiguilleVersSaFonction(t *testing.T) {
 //
 // Rouge sous : `case "matrix": if n > 10_000 { return fast(n), nil }; return matrix(n), nil` (a), ou la même condition
 // `if n%2 == 0` (a); `return fast(n)` en tête de matrix (b, et l'empreinte); un matrix qui calcule par fast puis alloue
-// 15 entiers (une variable de paquet que `new(int)` remplit) pour retrouver les 67 allocations de matrix (b); et
+// 16 entiers (une variable de paquet que `new(int)` remplit) pour retrouver les 67 allocations de matrix (b); et
 // `if n < 64 { return iterative(n) }` en tête de fast (b), rouge par intention : même juste et plus rapide, il fait calculer
 // fast par iterative, et F2 veut un calcul par son propre algorithme à tout n. Puis, avant le switch de Fib, sous la
 // condition `algo == "matrix" && n > 10_000` : `{ return fast(n), nil }` (c, fast nommé deux fois), `{ algo = "fast" }` (c,
@@ -128,17 +129,7 @@ func TestPERFGO11_ChaqueNomAiguilleVersSaFonction(t *testing.T) {
 // Survivants connus, laissés à la revue de code : voir la limite de PERF-GO-11 ci-dessus.
 func TestPERFGO11_LAiguillageEtLesCorpsSeLisentDansLeTexte(t *testing.T) {
 	algos := []string{"iterative", "matrix", "fast"}
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "fib.go", nil, 0) // go test s'exécute dans le dossier du paquet
-	if err != nil {
-		t.Fatal(err)
-	}
-	funcs := map[string]*ast.FuncDecl{}
-	for _, decl := range file.Decls {
-		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv == nil {
-			funcs[fn.Name.Name] = fn
-		}
-	}
+	fset, funcs := fibFuncs(t)
 	for _, name := range append([]string{"Fib", "FibList"}, algos...) {
 		if funcs[name] == nil {
 			t.Fatalf("fib.go ne déclare pas la fonction %s : renommée ? Alors adapter PERF-GO-11", name)
@@ -273,51 +264,114 @@ func TestPERFGO11_LAiguillageEtLesCorpsSeLisentDansLeTexte(t *testing.T) {
 // produit, (2F(k) - F(k-1))(2F(k) + F(k-1)) + 2(-1)^k, et non en deux carrés, F(k)² + (F(k) + F(k-1))²; Rust et Python font
 // de même. Les valeurs ne distinguent pas les deux formes, et BIB-05 à 07, BIB-09 et PERF-GO-1 gardent la justesse seule.
 // Aucune mesure d'exécution ne les distingue sans fragilité (mesuré sous Go 1.26.0, Linux) : l'empreinte d'allocations de
-// fast est la même aux grands n (52 aux deux formes à n = 1023, 112 à n = 999 999) et le produit en alloue une de plus aux
-// petits n (10 contre 9 à n = 5), donc aucun plafond ne rougit le retour aux deux carrés; les octets alloués baissent de 2
-// à 11 % selon n, un écart que la version de Go, celle de math/big et la taille des blocs déplaceraient. Le chronomètre est
-// exclu. La garde lit donc le texte de fib.go par go/parser, comme le volet statique de PERF-GO-11 : après la boucle, fast
-// appelle Mul exactement deux fois, un produit par parité du dernier bit (F(2k) et F(2k+1)). Les deux carrés de F(2k+1) en
-// font trois; une Mul déplacée dans une aide, ou un carré par Exp, en laisse moins de deux : rouge par intention.
-// Survivant connu, laissé à la revue de code : une branche impaire qui garde son produit mais y ajoute un calcul qui n'est
-// pas une Mul (un carré par Exp, par exemple).
-func TestPERFGO13_LaDerniereEtapeDeFastCompteUnProduitParParite(t *testing.T) {
-	const wantMul = 2
+// fast est la même aux deux formes aux petits n (9 à n = 5, 33 à n = 101) et ne diffère que d'une unité aux grands (51 pour
+// le produit contre 52 pour les deux carrés à n = 1023, 111 contre 112 à n = 999 999), donc aucun plafond ne rougit le
+// retour aux deux carrés sans dépendre de la réserve que nat.make laisse aux entiers de math/big; les octets alloués ne
+// baissent pas à n = 5 ni à n = 101 (288 et 1 248), et de 5 % à n = 1023, de 18 % à n = 999 999, un écart que la version de
+// Go, celle de math/big et la taille des blocs déplaceraient. Le chronomètre est exclu. La garde lit donc le texte de
+// fib.go par go/parser, comme le volet statique de PERF-GO-11 (l'aide fibFuncs lit le fichier pour les deux), et compte
+// les appels de Mul par branche de la dernière étape : exactement un dans le bloc `if n&1 == 0 { … }`, le produit de
+// F(2k), et exactement un dans le reste des instructions après la boucle, la branche impaire, le produit de F(2k+1). Le
+// bloc pair doit finir par un return, sans quoi le reste n'est pas la branche impaire. Un total de deux après la boucle
+// ne suffisait pas : il laissait passer une Mul déplacée de la branche paire dans une aide, compensée par les deux
+// carrés de la branche impaire.
+//
+// Rouge sous : les deux carrés de F(2k+1) (deux Mul dans la branche impaire); la branche paire `return evenStep(a, c)`,
+// où l'aide evenStep porte la Mul, avec les deux carrés dans la branche impaire (zéro Mul dans la paire, deux dans
+// l'impaire, pour un total de deux); la même aide avec le produit dans la branche impaire (zéro dans la paire); une aide
+// qui porte la Mul de la branche impaire (zéro dans l'impaire); un bloc pair qui ne finit pas par un return.
+// Survivants connus, laissés à la revue de code : la garde ne compte que les appels écrits `x.Mul(…)` dans le corps de
+// fast, et ne voit ni ce qu'une branche calcule d'autre ni ce qu'une aide calcule. Une branche qui garde son produit et y
+// ajoute un carré par Exp (`x.Exp(x, big.NewInt(2), nil)`) reste verte; une branche qui garde une Mul sans emploi et
+// confie les deux carrés à une aide aussi.
+func TestPERFGO13_LaDerniereEtapeDeFastCompteUnProduitParBranche(t *testing.T) {
+	const wantMul = 1 // par branche
+	fset, funcs := fibFuncs(t)
+	fn := funcs["fast"]
+	if fn == nil {
+		t.Fatal("fib.go ne déclare pas la fonction fast : renommée ? Alors adapter PERF-GO-13")
+	}
+	loop := slices.IndexFunc(fn.Body.List, func(stmt ast.Stmt) bool { _, ok := stmt.(*ast.ForStmt); return ok })
+	if loop < 0 {
+		t.Fatal("fast n'a plus de boucle for au niveau de son corps : réécrite ? Alors adapter PERF-GO-13")
+	}
+	last := fn.Body.List[loop+1:] // la dernière étape : les instructions après la boucle
+	// types.ExprString écrit chaque opérateur binaire entre espaces : « n & 1 == 0 ».
+	pos := slices.IndexFunc(last, func(stmt ast.Stmt) bool {
+		cond, ok := stmt.(*ast.IfStmt)
+		return ok && types.ExprString(cond.Cond) == "n & 1 == 0"
+	})
+	if pos < 0 {
+		t.Fatal("après la boucle, fast n'a plus de `if n&1 == 0 { … }` au niveau de son corps : réécrite ? Alors adapter PERF-GO-13")
+	}
+	even := last[pos].(*ast.IfStmt).Body
+	returns := false
+	if n := len(even.List); n > 0 {
+		_, returns = even.List[n-1].(*ast.ReturnStmt)
+	}
+	if !returns {
+		t.Fatalf("%s : le bloc de la branche paire ne finit pas par un return, donc le reste de fast n'est pas la branche impaire",
+			fset.Position(even.Pos()))
+	}
+	evenCalls := mulCalls(fset, even, nil)
+	var oddCalls []string // le reste des instructions, sans le bloc pair
+	for _, stmt := range last {
+		oddCalls = append(oddCalls, mulCalls(fset, stmt, even)...)
+	}
+	for _, branch := range []struct {
+		name  string
+		calls []string
+		why   string
+	}{
+		{"paire", evenCalls, "un produit pour F(2k) = F(k)(F(k) + 2F(k-1)); une Mul déplacée dans une aide la fait tomber à zéro"},
+		{"impaire", oddCalls, "un produit pour F(2k+1); les deux carrés en font deux, une Mul déplacée dans une aide zéro"},
+	} {
+		t.Run(fmt.Sprintf("PERF-GO-13 : la branche %s de la dernière étape de fast appelle Mul exactement %d fois", branch.name, wantMul), func(t *testing.T) {
+			if len(branch.calls) != wantMul {
+				where := ""
+				if len(branch.calls) > 0 {
+					where = " (" + strings.Join(branch.calls, ", ") + ")"
+				}
+				t.Errorf("la branche %s appelle Mul %d fois%s, attendu %d : %s (ADR-0004)",
+					branch.name, len(branch.calls), where, wantMul, branch.why)
+			}
+		})
+	}
+}
+
+// mulCalls rend la position de chaque appel d'une méthode Mul sous root, sans descendre dans skip (nil : rien à écarter).
+func mulCalls(fset *token.FileSet, root, skip ast.Node) []string {
+	var calls []string
+	ast.Inspect(root, func(node ast.Node) bool {
+		if node == nil || node == skip {
+			return false
+		}
+		if call, ok := node.(*ast.CallExpr); ok {
+			if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Mul" {
+				calls = append(calls, fset.Position(call.Pos()).String())
+			}
+		}
+		return true
+	})
+	return calls
+}
+
+// fibFuncs lit fib.go par go/parser et rend l'ensemble de positions du fichier et ses fonctions sans receveur, par nom : la
+// lecture que partagent PERF-GO-11 et PERF-GO-13.
+func fibFuncs(t *testing.T) (*token.FileSet, map[string]*ast.FuncDecl) {
+	t.Helper()
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, "fib.go", nil, 0) // go test s'exécute dans le dossier du paquet
 	if err != nil {
 		t.Fatal(err)
 	}
-	var body []ast.Stmt
+	funcs := map[string]*ast.FuncDecl{}
 	for _, decl := range file.Decls {
-		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv == nil && fn.Name.Name == "fast" {
-			body = fn.Body.List
+		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv == nil {
+			funcs[fn.Name.Name] = fn
 		}
 	}
-	if body == nil {
-		t.Fatal("fib.go ne déclare pas la fonction fast : renommée ? Alors adapter PERF-GO-13")
-	}
-	t.Run(fmt.Sprintf("PERF-GO-13 : après la boucle, fast appelle Mul exactement %d fois", wantMul), func(t *testing.T) {
-		loop := slices.IndexFunc(body, func(stmt ast.Stmt) bool { _, ok := stmt.(*ast.ForStmt); return ok })
-		if loop < 0 {
-			t.Fatal("fast n'a plus de boucle for au niveau de son corps : réécrite ? Alors adapter PERF-GO-13")
-		}
-		var calls []string // la position de chaque appel d'une méthode Mul après la boucle
-		for _, stmt := range body[loop+1:] {
-			ast.Inspect(stmt, func(node ast.Node) bool {
-				if call, ok := node.(*ast.CallExpr); ok {
-					if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Mul" {
-						calls = append(calls, fset.Position(call.Pos()).String())
-					}
-				}
-				return true
-			})
-		}
-		if len(calls) != wantMul {
-			t.Errorf("après la boucle, fast appelle Mul %d fois (%s), attendu %d : un produit pour F(2k), un pour F(2k+1); "+
-				"deux carrés pour F(2k+1) en font trois (ADR-0004)", len(calls), strings.Join(calls, ", "), wantMul)
-		}
-	})
+	return fset, funcs
 }
 
 // isIdent dit si e est l'identifiant name.
