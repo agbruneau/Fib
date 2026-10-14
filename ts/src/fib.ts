@@ -114,9 +114,9 @@ export function fibList(n: number): string[] {
   return terms;
 }
 
-// Exportée pour les seules gardes (PERF-TS-10) : les tests du nom lisent la table, trois tests y substituent des espions.
+// Exportée pour les seules gardes (PERF-TS-10, PERF-TS-12) : les tests du nom lisent la table, les espions de ces deux gardes y écrivent.
 // Lecture seule par le type seulement (aucun coût à l'exécution) : une affectation `algos.matrix = …` est une erreur de
-// `tsc`, et seuls ces trois tests la convertissent en `Record` pour écrire. Pas de `Object.freeze` : il ferait rougir les
+// `tsc`, et seuls ces espions la convertissent en `Record` pour écrire. Pas de `Object.freeze` : il ferait rougir les
 // espions à tort. La seam du PRD § 5 reste fib et fibList.
 export const algos: Readonly<Record<Algo, (n: number) => bigint>> = { iterative, matrix, fast };
 

@@ -151,12 +151,14 @@ for (const algo of ALGOS) {
 // `algos.matrix(n)` ou `algos.iterative(n)`. Le 0n des espions n'est comparé à rien.
 // Les espions jouent aussi n = 1000000 (la borne F8; ils ne calculent rien, donc le coût est nul) : seul ce second indice rougit un
 // aiguillage qui dépend de n, `return algos[n > 10 && algo === 'matrix' ? 'fast' : algo](n);` dans `fib`, que n = 3 laisse passer.
+// Survivant connu, laissé à la revue de code : un aiguillage qui dépend de n hors de ces deux indices, tel que
+// `return algos[n > 10 && n < 1000000 && algo === 'matrix' ? 'fast' : algo](n);`.
 const SPIED_INDEXES = [3, 1000000];
 
 for (const n of SPIED_INDEXES) {
   for (const algo of ALGOS) {
     test(`PERF-TS-10 : fib(${n}, ${algo}) appelle l’entrée ${algo} de la table, et elle seule`, () => {
-      // Conversion explicite : `algos` est en lecture seule par le type, et ces espions sont les seuls à y écrire.
+      // Conversion explicite : `algos` est en lecture seule par le type; seuls les espions (PERF-TS-10, PERF-TS-12) y écrivent, et chacun restaure la table dans finally.
       const table = algos as Record<Algo, (n: number) => bigint>;
       const original = { ...table };
       const called: Algo[] = [];
