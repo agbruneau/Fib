@@ -206,9 +206,12 @@ func TestPERFGO11_LAiguillageEtLesCorpsSeLisentDansLeTexte(t *testing.T) {
 				t.Fatalf("Fib n'a pas de paramètre %s avec un objet résolu : renommé ? Alors adapter PERF-GO-11", name)
 			}
 		}
-		flag := func(verb string, exprs ...ast.Expr) { // signale chaque expression qui est algo ou n, parenthèses et * défaits
+		// flag signale chaque expression qui est algo ou n, parenthèses défaites : `(algo) = x` écrit algo comme `algo = x`.
+		// Pas de déréférencement à défaire : `*algo` et `*n` ne compilent pas (string et int), et `*p = x` écrit la valeur
+		// pointée, non p. Pour `p := &algo; *p = "fast"`, c'est le contrôle de l'adresse prise (`&algo`) qui rougit.
+		flag := func(verb string, exprs ...ast.Expr) {
 			for _, e := range exprs {
-				if id, ok := bare(e).(*ast.Ident); ok && params[id.Name] != nil {
+				if id, ok := ast.Unparen(e).(*ast.Ident); ok && params[id.Name] != nil {
 					t.Errorf("%s : Fib %s %s", fset.Position(id.Pos()), verb, id.Name)
 				}
 			}
@@ -263,19 +266,6 @@ func TestPERFGO11_LAiguillageEtLesCorpsSeLisentDansLeTexte(t *testing.T) {
 				return true
 			})
 		})
-	}
-}
-
-// bare défait les parenthèses (ast.Unparen) et les déréférencements qui entourent e : `(algo) = x` écrit algo comme
-// `algo = x`, et `*p = x` écrit p comme `p = x`.
-func bare(e ast.Expr) ast.Expr {
-	e = ast.Unparen(e)
-	for {
-		star, ok := e.(*ast.StarExpr)
-		if !ok {
-			return e
-		}
-		e = ast.Unparen(star.X)
 	}
 }
 
