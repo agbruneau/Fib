@@ -150,7 +150,8 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
+    use std::{thread::sleep, time::Duration};
 
     /// Un `Write` qui garde les octets reçus et compte ses appels à `write`.
     #[derive(Default)]
@@ -247,5 +248,49 @@ mod tests {
             let called: Vec<&str> = calls.iter().map(|a| a.name()).collect();
             assert_eq!(named, called, "lignes de durée pour --time {}", rest.join(" "));
         }
+    }
+
+    /// Rend le temps mural de `run` (ms) et les lignes de durée (nom, ms), lus par l'horloge de `timed`.
+    fn timed_run(argv: &[&str], term: impl Fn(u64, Algo) -> BigUint) -> (f64, Vec<(String, f64)>) {
+        let start = Instant::now();
+        let Ok((_, text)) = run(&args(argv), term) else { panic!("{argv:?} : run devait réussir") };
+        let wall = start.elapsed().as_secs_f64() * 1000.0;
+        let lines = text.lines().map(|l| l.split(' ').collect::<Vec<_>>());
+        (wall, lines.map(|f| (f[0].to_string(), f[1].parse().expect("durée en ms"))).collect())
+    }
+
+    // PERF-RS-14 (F6), hors catalogue : la durée est mesurée; le contrat ne lit que le format (`0.000 ms` passe). Trois
+    // tours de `--time --algo all 10`, un seul algorithme lent par tour : l'espion dort 20 ms, chronomètre son sommeil
+    // par `Instant`, l'horloge de `timed`, puis délègue à `fib`. Les quatre lectures d'horloge sont emboîtées sur un
+    // fil : la ligne lente, plus l'arrondi de `{:.3}`, vaut au moins le sommeil, et les trois lignes au plus le temps
+    // mural de `run`, sans dépendre de la précision du sommeil. `--list 10000` ajoute que fib_list remplit presque
+    // seule la fenêtre : la ligne va du vingtième au tout du temps mural. Rouge sous une durée 0.000 ou 1.234, le
+    // chronomètre lancé après le calcul, des secondes, des microsecondes, un départ commun (durées cumulées), des durées
+    // permutées, fib_list hors de la fenêtre et `as_millis`. Survivant connu, laissé à la revue : l'étendue exacte de la
+    // fenêtre (englober aussi la mise en forme du terme passerait).
+    #[test]
+    fn perf_rs_14_la_duree_de_chaque_ligne_est_mesuree() {
+        const SLEEP: Duration = Duration::from_millis(20);
+        const ROUNDING: f64 = 0.0005;
+        for slow in [Algo::Fast, Algo::Iterative, Algo::Matrix] {
+            let slept = Cell::new(0.0);
+            let (wall, lines) = timed_run(&["--time", "--algo", "all", "10"], |n, algo| {
+                if algo == slow {
+                    let start = Instant::now();
+                    sleep(SLEEP);
+                    slept.set(start.elapsed().as_secs_f64() * 1000.0);
+                }
+                fib(n, algo)
+            });
+            let (name, slept) = (slow.name(), slept.get());
+            assert!(slept >= SLEEP.as_secs_f64() * 500.0, "{name} lent : sommeil de {slept} ms, garde à vide");
+            let shown = lines.iter().find(|(l, _)| l == name).map_or(f64::NAN, |l| l.1);
+            assert!(shown + ROUNDING >= slept, "{name} lent : {lines:?} pour {slept} ms de sommeil");
+            let sum: f64 = lines.iter().map(|l| l.1).sum();
+            assert!(sum <= wall + 3.0 * ROUNDING, "{name} lent : {lines:?} dépasse le temps mural {wall} ms");
+        }
+        let (wall, lines) = timed_run(&["--time", "--list", "10000"], fib);
+        let ms = lines.first().map_or(f64::NAN, |l| l.1);
+        assert!(ms + ROUNDING >= wall / 20.0 && ms <= wall + ROUNDING, "--list : {ms} ms sur {wall} ms de temps mural");
     }
 }
